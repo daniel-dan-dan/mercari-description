@@ -43,6 +43,8 @@ function init() {
   el('category').addEventListener('change', renderMeasurements);
   el('generate-btn').addEventListener('click', generateDescription);
   el('copy-btn').addEventListener('click', copyResult);
+  el('copy-title-btn').addEventListener('click', copyTitle);
+  el('sell-btn').addEventListener('click', openMercariSell);
   el('retry-btn').addEventListener('click', retryGeneration);
 }
 
@@ -430,6 +432,11 @@ async function generateDescription() {
     const measurementText = formatMeasurements(measurements);
     const description = buildDescription(aiData, measurementText);
     el('result-text').value = description;
+    // 商品名（タイトル）をセット
+    const brand = aiData.brand || '';
+    const item = aiData.item || '';
+    const title = [brand, item].filter(Boolean).join(' ').trim();
+    el('title-text').value = title;
     el('result-section').hidden = false;
     hideStatus('status');
     // 結果までスクロール
@@ -444,20 +451,64 @@ async function generateDescription() {
 }
 
 // ----- コピー -----
-async function copyResult() {
-  const text = el('result-text').value;
+async function copyToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text);
-    showStatus('copy-status', '✅ クリップボードにコピーしました', 'success');
-    setTimeout(() => hideStatus('copy-status'), 2000);
+    return true;
   } catch (err) {
-    // フォールバック
-    const ta = el('result-text');
+    // フォールバック（iOS Safari対策）
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
     ta.select();
-    document.execCommand('copy');
-    showStatus('copy-status', '✅ コピーしました', 'success');
-    setTimeout(() => hideStatus('copy-status'), 2000);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch {}
+    document.body.removeChild(ta);
+    return ok;
   }
+}
+
+async function copyResult() {
+  const text = el('result-text').value;
+  const ok = await copyToClipboard(text);
+  showStatus('copy-status', ok ? '✅ 説明文をコピーしました' : '❌ コピーに失敗しました', ok ? 'success' : 'error');
+  setTimeout(() => hideStatus('copy-status'), 2000);
+}
+
+async function copyTitle() {
+  const text = el('title-text').value;
+  if (!text) { alert('商品名が空です'); return; }
+  const ok = await copyToClipboard(text);
+  showStatus('copy-status', ok ? '✅ 商品名をコピーしました' : '❌ コピーに失敗しました', ok ? 'success' : 'error');
+  setTimeout(() => hideStatus('copy-status'), 2000);
+}
+
+// ----- メルカリで出品する -----
+async function openMercariSell() {
+  const desc = el('result-text').value;
+  if (!desc) { alert('説明文が空です'); return; }
+  // まず説明文をクリップボードにコピー
+  const ok = await copyToClipboard(desc);
+  showStatus('copy-status',
+    ok ? '✅ 説明文をコピーしました。メルカリアプリで貼り付けてください' : '⚠️ コピーに失敗しましたが、メルカリを開きます',
+    ok ? 'success' : 'error');
+  // メルカリの出品画面を開く
+  // ディープリンク: mercari://sell（iOS/Android共通、インストール済みならアプリ起動）
+  // フォールバック: https://jp.mercari.com/sell（未インストールならWebで開く）
+  const deepLink = 'mercari://sell';
+  const webLink = 'https://jp.mercari.com/sell';
+  // iOS Safariではmercari://を直接叩くと失敗時にエラーが出るため、hidden iframe経由で試行
+  const iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  iframe.src = deepLink;
+  document.body.appendChild(iframe);
+  // 500ms後、まだページにいればWebへ遷移
+  setTimeout(() => {
+    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    window.location.href = webLink;
+  }, 600);
 }
 
 // ----- 再生成 -----
