@@ -1,0 +1,24 @@
+{
+  "name": "メルカリ説明文AI生成",
+  "short_name": "説明文AI",
+  "description": "古着の写真から、メルカリ出品用の説明文を自動生成するAIツール",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f5f7",
+  "theme_color": "#384878",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

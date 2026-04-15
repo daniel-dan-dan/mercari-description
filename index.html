@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#384878">
+  <title>メルカリ説明文AI生成</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- 初期設定（APIキー未登録時のみ表示） -->
+    <section id="setup-screen" class="screen" hidden>
+      <h1>初期設定</h1>
+      <p class="note">ご自分のAnthropic APIキーを入力してください。キーは端末内のみに保存されます。</p>
+      <label for="api-key">Anthropic API キー</label>
+      <input type="password" id="api-key" placeholder="sk-ant-..." autocomplete="off">
+      <div class="button-row">
+        <button id="save-key" class="btn primary">保存</button>
+      </div>
+      <p class="note small">
+        APIキーの取得: <br>
+        <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a> にログインし、Settings → API Keys から発行
+      </p>
+    </section>
+
+    <!-- メイン画面 -->
+    <section id="main-screen" class="screen" hidden>
+      <header>
+        <h1>メルカリ説明文AI生成</h1>
+        <button id="settings-btn" class="icon-btn" title="設定">⚙️</button>
+      </header>
+
+      <!-- Step 1: 写真アップロード -->
+      <div class="step">
+        <h2>① 写真をアップロード</h2>
+        <p class="note">全体写真・タグ写真・ディテール写真を複数枚選べます（最低: 全体1枚 + タグ1枚）</p>
+        <label class="file-label" for="photo-input">
+          📷 写真を選ぶ / 撮影する
+        </label>
+        <input type="file" id="photo-input" accept="image/*" multiple capture="environment" hidden>
+        <div id="photo-preview" class="preview-grid"></div>
+      </div>
+
+      <!-- Step 2: カテゴリと採寸 -->
+      <div class="step">
+        <h2>② カテゴリと採寸を入力</h2>
+        <label for="category">カテゴリ</label>
+        <select id="category">
+          <option value="">選択してください</option>
+          <option value="suit">スーツ（ジャケット＋パンツ＋ベスト）</option>
+          <option value="outer">アウター（コート・ブルゾン等）</option>
+          <option value="tops">トップス（シャツ・ニット等）</option>
+          <option value="bottoms">ボトムス（パンツ単体）</option>
+        </select>
+        <div id="measurement-fields"></div>
+      </div>
+
+      <!-- Step 3: 生成 -->
+      <div class="step">
+        <button id="generate-btn" class="btn primary large" disabled>説明文を生成</button>
+        <p id="status" class="status" hidden></p>
+      </div>
+
+      <!-- Step 4: 結果表示 -->
+      <div id="result-section" class="step" hidden>
+        <h2>✨ 生成結果</h2>
+        <textarea id="result-text" rows="20" spellcheck="false"></textarea>
+        <div class="button-row">
+          <button id="copy-btn" class="btn primary">📋 コピー</button>
+          <button id="retry-btn" class="btn">🔄 やり直す</button>
+        </div>
+        <p id="copy-status" class="status" hidden></p>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
