@@ -402,8 +402,6 @@ function buildDescription(aiData, measurementText) {
 
 ${appeal}
 
-大変人気のアイテムのため、気になる方はお早めに！
-
 【商品名】${brand} ${item}
 
 【サイズ】${tagSize}（平置き採寸）
