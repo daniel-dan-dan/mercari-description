@@ -405,11 +405,15 @@ ${appeal}
 大変人気のアイテムのため、気になる方はお早めに！
 
 【商品名】${brand} ${item}
+
 【サイズ】${tagSize}（平置き採寸）
 ${measurementText}
 ※多少の誤差はご了承ください。
+
 【カラー】${color}
+
 【素材】${material}
+
 【状態】${condition}
 
 ✅即購入OKです！
