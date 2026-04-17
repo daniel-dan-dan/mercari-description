@@ -5,7 +5,7 @@
  * ============================================================ */
 
 const STORAGE_KEY = 'mercari_desc_api_key';
-const MODEL = 'claude-sonnet-4-6';  // 最新のSonnet 4.6
+const MODEL = 'claude-opus-4-7';  // 最新のOpus 4.7（画像解析・説明文品質を最大化）
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ
 
 // ----- 画面制御 -----
