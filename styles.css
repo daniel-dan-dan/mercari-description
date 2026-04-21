@@ -409,6 +409,57 @@ textarea {
   color: #a855f7;
 }
 
+/* ========== 最終サイズバッジ（生成結果画面） ========== */
+.final-size-badge {
+  margin: 4px 0 16px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #fff4f7 0%, #f4efff 100%);
+  border: 1.5px solid rgba(168, 85, 247, 0.25);
+  border-radius: 16px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "head size"
+    "note note";
+  gap: 4px 12px;
+  align-items: center;
+  box-shadow: 0 4px 14px -6px rgba(168, 85, 247, 0.2);
+}
+.final-size-badge.warn {
+  background: linear-gradient(135deg, #fff6e0 0%, #ffe8d8 100%);
+  border-color: rgba(255, 152, 0, 0.5);
+}
+.final-size-badge .fs-head {
+  grid-area: head;
+  font-size: 13px;
+  font-weight: 700;
+  color: #4a3570;
+  letter-spacing: 0.02em;
+}
+.final-size-badge .fs-size {
+  grid-area: size;
+  font-size: 32px;
+  font-weight: 900;
+  line-height: 1;
+  background: linear-gradient(135deg, #ff4757 0%, #a855f7 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  padding: 0 4px;
+}
+.final-size-badge.warn .fs-size {
+  background: linear-gradient(135deg, #ff9800 0%, #ff4757 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.final-size-badge .fs-note {
+  grid-area: note;
+  font-size: 12px;
+  color: #6b5d7d;
+  line-height: 1.5;
+}
+
 /* ========== ステータス ========== */
 .status {
   padding: 12px 14px;

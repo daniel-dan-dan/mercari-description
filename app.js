@@ -508,6 +508,7 @@ async function generateDescription() {
     const item = aiData.item || '';
     const title = [brand, item].filter(Boolean).join(' ').trim();
     el('title-text').value = title;
+    renderFinalSize(aiData);
     el('result-section').hidden = false;
     hideStatus('status');
     // 結果までスクロール
@@ -699,6 +700,7 @@ async function resetAll() {
   el('title-text').value = '';
   el('result-text').value = '';
   el('result-section').hidden = true;
+  const fsb = el('final-size-badge'); if (fsb) fsb.hidden = true;
   hideStatus('status');
   hideStatus('copy-status');
   try { await clearSessionDb(); } catch (e) { console.warn(e); }
@@ -796,36 +798,53 @@ function parseSpokenNumber(text) {
 }
 
 // ----- サイズ推定（S/M/L相当） -----
+// スコア: XS=0, S=1, M=2, L=3, XL=4, XXL=5, XXXL=6
+// 閾値はユニクロメンズ公式サイズ表を基準: M=身幅52/肩幅45/着丈69/ウエスト75/股下75
+const SIZE_LABELS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
+
+function scoreChest(v)    { return clampScore((v - 46) / 3); }     // M中心=52
+function scoreShoulder(v) { return clampScore((v - 40) / 2.5); }   // M中心=45
+function scoreLength(v)   { return clampScore((v - 63) / 3); }     // M中心=69
+function scoreWaist(v)    { return clampScore((v - 67) / 4); }     // M中心=75
+function scoreInseam(v)   { return clampScore((v - 71) / 2); }     // M中心=75
+function clampScore(s)    { return Math.max(0, Math.min(6, s)); }
+
+// 採寸値のみからサイズを推定（Step2のリアルタイム表示用）
+function computeMeasurementSize() {
+  const cat = el('category').value;
+  if (!cat) return null;
+  const prefix = cat === 'suit' ? 'j_' : '';
+  const isBottom = cat === 'bottoms';
+  const read = (k) => {
+    const v = parseFloat((el('m-' + k) || {}).value);
+    return v > 0 ? v : null;
+  };
+  if (isBottom) {
+    return estimateBottomWeighted({ waist: read('waist'), inseam: read('inseam') });
+  }
+  return estimateTopWeighted({
+    chest:    read(prefix + 'chest'),
+    shoulder: read(prefix + 'shoulder'),
+    length:   read(prefix + 'length'),
+  });
+}
+
 function updateSizeSuggestion() {
   const panel = el('size-suggestion');
   if (!panel) return;
   const cat = el('category').value;
   if (!cat) { panel.hidden = true; return; }
 
-  // 基準となる採寸値を取得
-  let base = null;
-  if (cat === 'bottoms') {
-    const waist = parseFloat((el('m-waist') || {}).value);
-    if (waist > 0) base = { name: 'ウエスト', value: waist, type: 'bottom' };
-  } else if (cat === 'suit') {
-    const chest = parseFloat((el('m-j_chest') || {}).value);
-    if (chest > 0) base = { name: 'ジャケット身幅', value: chest, type: 'top' };
-  } else {
-    const chest = parseFloat((el('m-chest') || {}).value);
-    if (chest > 0) base = { name: '身幅', value: chest, type: 'top' };
-  }
+  const result = computeMeasurementSize();
+  if (!result) { panel.hidden = true; return; }
 
-  if (!base) { panel.hidden = true; return; }
-
-  const size = base.type === 'bottom' ? estimateBottomSize(base.value) : estimateTopSize(base.value);
-  const table = base.type === 'bottom' ? sizeReferenceBottoms() : sizeReferenceTops();
-
+  const isBottom = cat === 'bottoms';
+  const table = isBottom ? sizeReferenceBottoms() : sizeReferenceTops();
   panel.innerHTML = `
-    <div class="size-main">📏 採寸からの推定: <strong>${size}サイズ相当</strong>
-      <span class="size-hint">(${base.name} ${base.value}cm基準)</span>
-    </div>
+    <div class="size-main">📏 採寸からの推定: <strong>${result.size}サイズ相当</strong></div>
+    <div class="size-hint">${result.detail}</div>
     <details class="size-ref">
-      <summary>サイズ目安表（一般的なメンズ基準）</summary>
+      <summary>サイズ目安表（ユニクロメンズ基準）</summary>
       ${table}
       <p class="note small">※ブランドにより±2〜3cm程度の差があります。タグ表記との併用をおすすめします。</p>
     </details>
@@ -833,47 +852,142 @@ function updateSizeSuggestion() {
   panel.hidden = false;
 }
 
-function estimateTopSize(chest) {
-  if (chest < 47) return 'XS';
-  if (chest < 50) return 'S';
-  if (chest < 53) return 'M';
-  if (chest < 56) return 'L';
-  if (chest < 59) return 'XL';
-  if (chest < 62) return 'XXL';
-  return 'XXXL';
+// 加重スコアリング: 身幅60% + 肩幅30% + 着丈10%（入力された寸法だけで再正規化）
+function estimateTopWeighted({ chest, shoulder, length }) {
+  const parts = [];
+  if (chest    != null) parts.push({ w: 0.60, s: scoreChest(chest),       label: `身幅${chest}`    });
+  if (shoulder != null) parts.push({ w: 0.30, s: scoreShoulder(shoulder), label: `肩幅${shoulder}` });
+  if (length   != null) parts.push({ w: 0.10, s: scoreLength(length),     label: `着丈${length}`   });
+  if (parts.length === 0) return null;
+  return combineScores(parts);
 }
 
-function estimateBottomSize(waist) {
-  if (waist < 67) return 'XS';
-  if (waist < 71) return 'S';
-  if (waist < 76) return 'M';
-  if (waist < 81) return 'L';
-  if (waist < 85) return 'XL';
-  if (waist < 89) return 'XXL';
-  return 'XXXL';
+// 加重スコアリング: ウエスト80% + 股下20%
+function estimateBottomWeighted({ waist, inseam }) {
+  const parts = [];
+  if (waist  != null) parts.push({ w: 0.80, s: scoreWaist(waist),   label: `ウエスト${waist}` });
+  if (inseam != null) parts.push({ w: 0.20, s: scoreInseam(inseam), label: `股下${inseam}`    });
+  if (parts.length === 0) return null;
+  return combineScores(parts);
+}
+
+function combineScores(parts) {
+  const totalW = parts.reduce((a, p) => a + p.w, 0);
+  const avg = parts.reduce((a, p) => a + p.w * p.s, 0) / totalW;
+  const idx = Math.max(0, Math.min(6, Math.round(avg)));
+  const size = SIZE_LABELS[idx];
+  const detail = `${parts.map(p => p.label).join(' / ')} → 加重平均 ${avg.toFixed(2)}`;
+  return { size, detail, score: avg, index: idx };
+}
+
+// タグ表記をS/M/L/XL/XXL/XXXLへ正規化
+function normalizeTagSize(raw) {
+  if (!raw) return null;
+  const t = String(raw).toUpperCase().trim();
+  if (t === '---' || t === '' || t === 'FREE' || t === 'ONE SIZE') return null;
+
+  // 文字表記
+  if (/^(XXXL|LLL|3L)$/.test(t)) return 'XXXL';
+  if (/^(XXL|2L)$/.test(t))      return 'XXL';
+  if (/^(XL|LL)$/.test(t))       return 'XL';
+  if (/^L$/.test(t))             return 'L';
+  if (/^M$/.test(t))             return 'M';
+  if (/^S$/.test(t))             return 'S';
+  if (/^(XS|SS)$/.test(t))       return 'XS';
+
+  // W28等のインチ表記ウエスト
+  const wInch = t.match(/^W\s*(\d{2})/);
+  if (wInch) {
+    const cm = parseFloat(wInch[1]) * 2.54;
+    return SIZE_LABELS[Math.round(scoreWaist(cm))];
+  }
+
+  // 数字のみ（欧州メンズ表記を基準）: 46=S, 48=M, 50=L, 52=XL, 54=XXL
+  const nm = t.match(/(\d{2,3})/);
+  if (nm) {
+    const num = parseFloat(nm[1]);
+    if (num >= 60 && num <= 110) {
+      // ウエスト(cm)表記
+      return SIZE_LABELS[Math.round(scoreWaist(num))];
+    }
+    if (num >= 34 && num <= 58) {
+      // 欧州メンズスーツ/ジャケット表記
+      if (num <= 42) return 'XS';
+      if (num <= 46) return 'S';
+      if (num <= 48) return 'M';
+      if (num <= 50) return 'L';
+      if (num <= 52) return 'XL';
+      if (num <= 54) return 'XXL';
+      return 'XXXL';
+    }
+  }
+  return null;
+}
+
+// 最終サイズ（タグ+採寸）を生成結果画面に表示
+function renderFinalSize(aiData) {
+  const badge = el('final-size-badge');
+  if (!badge) return;
+  const measurement = computeMeasurementSize();
+  const tagRaw = aiData?.tag_size || '';
+  const tagNorm = normalizeTagSize(tagRaw);
+
+  if (!measurement && !tagNorm) {
+    badge.hidden = true;
+    return;
+  }
+
+  // タグが読めればタグを最終回答、採寸は整合チェック用
+  let finalSize, note, warn = false;
+  if (tagNorm && measurement) {
+    const diff = Math.abs(SIZE_LABELS.indexOf(tagNorm) - measurement.index);
+    finalSize = tagNorm;
+    if (diff >= 2) {
+      warn = true;
+      note = `⚠️ タグ「${tagRaw}」→${tagNorm} と 採寸推定 ${measurement.size}（${measurement.detail}）が${diff}段階ズレています。オーバー/スリムシルエットの可能性。`;
+    } else if (diff === 1) {
+      note = `タグ「${tagRaw}」→${tagNorm}・採寸推定 ${measurement.size} （1段階差・許容範囲）`;
+    } else {
+      note = `タグ「${tagRaw}」→${tagNorm}・採寸推定 ${measurement.size} が一致`;
+    }
+  } else if (tagNorm) {
+    finalSize = tagNorm;
+    note = `タグ「${tagRaw}」→${tagNorm}（採寸未入力）`;
+  } else {
+    finalSize = measurement.size;
+    note = `採寸推定: ${measurement.detail}（タグ読取不可）`;
+  }
+
+  badge.className = 'final-size-badge' + (warn ? ' warn' : '');
+  badge.innerHTML = `
+    <div class="fs-head">🏷 メルカリのサイズ選択推奨</div>
+    <div class="fs-size">${finalSize}</div>
+    <div class="fs-note">${note}</div>
+  `;
+  badge.hidden = false;
 }
 
 function sizeReferenceTops() {
   return `<table class="size-table">
-    <tr><th>サイズ</th><th>身幅(cm)</th><th>タグ表記例</th></tr>
-    <tr><td>XS</td><td>〜46</td><td>44 / XS</td></tr>
-    <tr><td>S</td><td>47〜49</td><td>46 / S</td></tr>
-    <tr><td>M</td><td>50〜52</td><td>48 / M</td></tr>
-    <tr><td>L</td><td>53〜55</td><td>50 / L</td></tr>
-    <tr><td>XL</td><td>56〜58</td><td>52 / XL</td></tr>
-    <tr><td>XXL</td><td>59〜61</td><td>54 / XXL</td></tr>
+    <tr><th>サイズ</th><th>身幅(cm)</th><th>肩幅(cm)</th><th>着丈(cm)</th><th>タグ例</th></tr>
+    <tr><td>XS</td><td>〜47</td><td>〜41</td><td>〜65</td><td>44 / XS</td></tr>
+    <tr><td>S</td><td>48〜50</td><td>42〜43</td><td>66〜67</td><td>46 / S</td></tr>
+    <tr><td>M</td><td>51〜53</td><td>44〜46</td><td>68〜70</td><td>48 / M</td></tr>
+    <tr><td>L</td><td>54〜56</td><td>47〜48</td><td>71〜73</td><td>50 / L</td></tr>
+    <tr><td>XL</td><td>57〜59</td><td>49〜50</td><td>74〜76</td><td>52 / XL</td></tr>
+    <tr><td>XXL</td><td>60〜62</td><td>51〜53</td><td>77〜79</td><td>54 / XXL</td></tr>
   </table>`;
 }
 
 function sizeReferenceBottoms() {
   return `<table class="size-table">
-    <tr><th>サイズ</th><th>ウエスト(cm)</th><th>タグ表記例</th></tr>
-    <tr><td>XS</td><td>〜66</td><td>W28 / 64</td></tr>
-    <tr><td>S</td><td>67〜70</td><td>W29 / 68</td></tr>
-    <tr><td>M</td><td>71〜75</td><td>W30 / 72</td></tr>
-    <tr><td>L</td><td>76〜80</td><td>W32 / 76</td></tr>
-    <tr><td>XL</td><td>81〜84</td><td>W34 / 82</td></tr>
-    <tr><td>XXL</td><td>85〜88</td><td>W36 / 86</td></tr>
+    <tr><th>サイズ</th><th>ウエスト(cm)</th><th>股下(cm)</th><th>タグ例</th></tr>
+    <tr><td>XS</td><td>〜68</td><td>〜72</td><td>W26 / 62</td></tr>
+    <tr><td>S</td><td>69〜72</td><td>73〜74</td><td>W28 / 70</td></tr>
+    <tr><td>M</td><td>73〜76</td><td>75〜76</td><td>W30 / 75</td></tr>
+    <tr><td>L</td><td>77〜80</td><td>77〜78</td><td>W32 / 79</td></tr>
+    <tr><td>XL</td><td>81〜84</td><td>79〜80</td><td>W34 / 83</td></tr>
+    <tr><td>XXL</td><td>85〜88</td><td>81〜82</td><td>W36 / 87</td></tr>
   </table>`;
 }
 
