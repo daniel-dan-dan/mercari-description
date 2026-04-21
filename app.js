@@ -7,6 +7,10 @@
 const STORAGE_KEY = 'mercari_desc_api_key';
 const MODEL = 'claude-opus-4-7';  // 最新のOpus 4.7（画像解析・説明文品質を最大化）
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ
+const MAX_PHOTOS = 20;               // アップロード可能な写真枚数
+const DB_NAME = 'mercari_desc_state';
+const DB_VERSION = 1;
+const DB_STORE = 'session';
 
 // ----- 画面制御 -----
 const el = (id) => document.getElementById(id);
@@ -28,7 +32,7 @@ function hideStatus(target) {
 }
 
 // ----- 初期起動判定 -----
-function init() {
+async function init() {
   const key = localStorage.getItem(STORAGE_KEY);
   if (!key) {
     showScreen('setup-screen');
@@ -39,13 +43,29 @@ function init() {
   // イベントバインド
   el('save-key').addEventListener('click', saveApiKey);
   el('settings-btn').addEventListener('click', openSettings);
+  el('reset-btn').addEventListener('click', resetAll);
   el('photo-input').addEventListener('change', handlePhotoSelect);
-  el('category').addEventListener('change', renderMeasurements);
+  el('category').addEventListener('change', () => {
+    renderMeasurements();
+    scheduleSave();
+  });
   el('generate-btn').addEventListener('click', generateDescription);
   el('copy-btn').addEventListener('click', copyResult);
   el('copy-title-btn').addEventListener('click', copyTitle);
   el('sell-btn').addEventListener('click', openMercariSell);
   el('retry-btn').addEventListener('click', retryGeneration);
+  el('title-text').addEventListener('input', scheduleSave);
+  el('result-text').addEventListener('input', scheduleSave);
+
+  // 前回のセッションを復元
+  if (key) {
+    try {
+      const saved = await loadSession();
+      if (saved) restoreState(saved);
+    } catch (e) {
+      console.warn('セッション復元失敗:', e);
+    }
+  }
 }
 
 // ----- APIキー設定 -----
@@ -71,8 +91,18 @@ let uploadedImages = [];  // { dataUrl, mediaType, base64 }
 async function handlePhotoSelect(e) {
   const files = Array.from(e.target.files);
   if (!files.length) return;
+  const remaining = MAX_PHOTOS - uploadedImages.length;
+  if (remaining <= 0) {
+    alert(`写真は最大${MAX_PHOTOS}枚までです`);
+    e.target.value = '';
+    return;
+  }
+  const toAdd = files.slice(0, remaining);
+  if (files.length > remaining) {
+    alert(`最大${MAX_PHOTOS}枚までなので、先頭の${remaining}枚のみ追加します`);
+  }
   showStatus('status', '画像を処理中...', 'loading');
-  for (const file of files) {
+  for (const file of toAdd) {
     try {
       const processed = await processImage(file);
       uploadedImages.push(processed);
@@ -85,6 +115,7 @@ async function handlePhotoSelect(e) {
   updateGenerateButton();
   hideStatus('status');
   e.target.value = '';  // 同じファイル再選択可能に
+  scheduleSave();
 }
 
 function processImage(file) {
@@ -129,6 +160,7 @@ function renderPreviews() {
       uploadedImages.splice(Number(b.dataset.idx), 1);
       renderPreviews();
       updateGenerateButton();
+      scheduleSave();
     });
   });
 }
@@ -184,7 +216,11 @@ function renderMeasurements() {
   const cat = el('category').value;
   const container = el('measurement-fields');
   container.innerHTML = '';
-  if (!cat) { updateGenerateButton(); return; }
+  if (!cat) {
+    updateGenerateButton();
+    updateSizeSuggestion();
+    return;
+  }
 
   const schema = MEASUREMENT_SCHEMA[cat];
   schema.forEach((section, si) => {
@@ -198,6 +234,7 @@ function renderMeasurements() {
         <label for="m-${f.key}">${f.label}</label>
         <input type="number" id="m-${f.key}" inputmode="decimal" step="0.5" min="0">
         <span class="unit">cm</span>
+        <button type="button" class="voice-btn" data-target="m-${f.key}" title="音声入力">🎤</button>
       `;
       div.appendChild(row);
     });
@@ -215,16 +252,32 @@ function renderMeasurements() {
           <label for="m-yuki">ゆき丈</label>
           <input type="number" id="m-yuki" inputmode="decimal" step="0.5" min="0">
           <span class="unit">cm</span>
+          <button type="button" class="voice-btn" data-target="m-yuki" title="音声入力">🎤</button>
         </div>
       </div>
     `;
     container.appendChild(raglanDiv);
     el('raglan-toggle').addEventListener('change', (e) => {
       el('raglan-field').hidden = !e.target.checked;
+      scheduleSave();
     });
   }
 
+  // 採寸値入力イベント（サイズ推定＋保存）
+  container.querySelectorAll('input[type="number"]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      updateSizeSuggestion();
+      scheduleSave();
+    });
+  });
+
+  // 音声入力ボタン
+  container.querySelectorAll('.voice-btn').forEach(btn => {
+    btn.addEventListener('click', () => startVoiceInput(btn));
+  });
+
   updateGenerateButton();
+  updateSizeSuggestion();
 }
 
 function collectMeasurements() {
@@ -534,6 +587,294 @@ function retryGeneration() {
   if (confirm('もう一度AI生成を実行しますか？（APIコールが発生します）')) {
     generateDescription();
   }
+}
+
+// ----- IndexedDB 状態永続化 -----
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains(DB_STORE)) {
+        d.createObjectStore(DB_STORE, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function saveSession(state) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    tx.objectStore(DB_STORE).put({ id: 'current', ...state, _savedAt: Date.now() });
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function loadSession() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readonly');
+    const req = tx.objectStore(DB_STORE).get('current');
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function clearSessionDb() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    tx.objectStore(DB_STORE).delete('current');
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function collectState() {
+  const category = el('category').value;
+  const measurements = {};
+  document.querySelectorAll('#measurement-fields input[type="number"]').forEach(inp => {
+    measurements[inp.id] = inp.value;
+  });
+  const raglanToggle = el('raglan-toggle');
+  return {
+    photos: uploadedImages,
+    category,
+    raglanChecked: raglanToggle ? raglanToggle.checked : false,
+    measurements,
+    title: el('title-text').value,
+    result: el('result-text').value,
+    resultVisible: !el('result-section').hidden,
+  };
+}
+
+let _saveTimer = null;
+function scheduleSave() {
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    saveSession(collectState()).catch(e => console.warn('保存失敗:', e));
+  }, 400);
+}
+
+function restoreState(s) {
+  if (!s) return;
+  if (Array.isArray(s.photos) && s.photos.length) {
+    uploadedImages = s.photos;
+    renderPreviews();
+  }
+  if (s.category) {
+    el('category').value = s.category;
+    renderMeasurements();
+    if (s.raglanChecked && el('raglan-toggle')) {
+      el('raglan-toggle').checked = true;
+      el('raglan-field').hidden = false;
+    }
+    if (s.measurements) {
+      for (const [id, val] of Object.entries(s.measurements)) {
+        const inp = document.getElementById(id);
+        if (inp) inp.value = val;
+      }
+    }
+    updateSizeSuggestion();
+  }
+  if (s.title) el('title-text').value = s.title;
+  if (s.result) el('result-text').value = s.result;
+  if (s.resultVisible && s.result) {
+    el('result-section').hidden = false;
+  }
+  updateGenerateButton();
+}
+
+// ----- リセット -----
+async function resetAll() {
+  if (!confirm('写真・採寸・説明文をすべてリセットしますか？（この操作は取り消せません）')) return;
+  uploadedImages = [];
+  renderPreviews();
+  el('category').value = '';
+  renderMeasurements();
+  el('title-text').value = '';
+  el('result-text').value = '';
+  el('result-section').hidden = true;
+  hideStatus('status');
+  hideStatus('copy-status');
+  try { await clearSessionDb(); } catch (e) { console.warn(e); }
+  updateGenerateButton();
+  updateSizeSuggestion();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ----- 音声入力 -----
+function startVoiceInput(btn) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    alert('このブラウザは音声入力に対応していません');
+    return;
+  }
+  const targetId = btn.dataset.target;
+  const target = document.getElementById(targetId);
+  if (!target) return;
+
+  const rec = new SR();
+  rec.lang = 'ja-JP';
+  rec.continuous = false;
+  rec.interimResults = false;
+  rec.maxAlternatives = 3;
+
+  btn.classList.add('listening');
+  btn.textContent = '🔴';
+
+  const stop = () => {
+    btn.classList.remove('listening');
+    btn.textContent = '🎤';
+  };
+  rec.onend = stop;
+  rec.onerror = (e) => {
+    stop();
+    if (e.error !== 'no-speech' && e.error !== 'aborted') {
+      console.warn('音声認識エラー:', e.error);
+    }
+  };
+  rec.onresult = (e) => {
+    const alts = e.results[0] || [];
+    let parsed = null;
+    for (let i = 0; i < alts.length; i++) {
+      const t = alts[i]?.transcript || '';
+      const n = parseSpokenNumber(t);
+      if (n !== null) { parsed = n; break; }
+    }
+    if (parsed !== null) {
+      target.value = String(parsed);
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+    } else {
+      const first = alts[0]?.transcript || '';
+      alert(`数字として認識できませんでした: "${first}"\n例: "四十八" や "48.5" とはっきり発声してください`);
+    }
+  };
+  try { rec.start(); } catch (e) { stop(); console.warn(e); }
+}
+
+// 日本語音声から数値を抽出（整数・小数対応）
+function parseSpokenNumber(text) {
+  if (!text) return null;
+  // 全角→半角、読点除去
+  const normalized = text
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[,，、]/g, '')
+    .replace(/てん|[・．]/g, '.');
+  // 通常数字: 48 / 48.5
+  const m = normalized.match(/(\d+(?:\.\d+)?)/);
+  if (m) return parseFloat(m[1]);
+  // 簡易漢数字（2桁まで）
+  const digits = { 〇:0,零:0,一:1,二:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9 };
+  let s = text.replace(/\s/g, '');
+  // 「百」対応
+  let hundreds = 0;
+  const hm = s.match(/([一二三四五六七八九])?百/);
+  if (hm) { hundreds = (hm[1] ? digits[hm[1]] : 1) * 100; s = s.replace(hm[0], ''); }
+  // 「十」対応
+  let tens = 0;
+  const tm = s.match(/([一二三四五六七八九])?十/);
+  if (tm) { tens = (tm[1] ? digits[tm[1]] : 1) * 10; s = s.replace(tm[0], ''); }
+  // 一の位
+  let ones = 0;
+  const om = s.match(/[一二三四五六七八九〇零]/);
+  if (om) { ones = digits[om[0]]; s = s.replace(om[0], ''); }
+  // 小数部（点以降の漢数字）
+  let frac = '';
+  const fm = s.match(/[点．.]([一二三四五六七八九〇零]+)/);
+  if (fm) {
+    frac = fm[1].split('').map(c => digits[c] ?? '').join('');
+  }
+  const intPart = hundreds + tens + ones;
+  if (intPart === 0 && !om && !tm && !hm) return null;
+  const out = parseFloat(frac ? `${intPart}.${frac}` : String(intPart));
+  return isNaN(out) ? null : out;
+}
+
+// ----- サイズ推定（S/M/L相当） -----
+function updateSizeSuggestion() {
+  const panel = el('size-suggestion');
+  if (!panel) return;
+  const cat = el('category').value;
+  if (!cat) { panel.hidden = true; return; }
+
+  // 基準となる採寸値を取得
+  let base = null;
+  if (cat === 'bottoms') {
+    const waist = parseFloat((el('m-waist') || {}).value);
+    if (waist > 0) base = { name: 'ウエスト', value: waist, type: 'bottom' };
+  } else if (cat === 'suit') {
+    const chest = parseFloat((el('m-j_chest') || {}).value);
+    if (chest > 0) base = { name: 'ジャケット身幅', value: chest, type: 'top' };
+  } else {
+    const chest = parseFloat((el('m-chest') || {}).value);
+    if (chest > 0) base = { name: '身幅', value: chest, type: 'top' };
+  }
+
+  if (!base) { panel.hidden = true; return; }
+
+  const size = base.type === 'bottom' ? estimateBottomSize(base.value) : estimateTopSize(base.value);
+  const table = base.type === 'bottom' ? sizeReferenceBottoms() : sizeReferenceTops();
+
+  panel.innerHTML = `
+    <div class="size-main">📏 採寸からの推定: <strong>${size}サイズ相当</strong>
+      <span class="size-hint">(${base.name} ${base.value}cm基準)</span>
+    </div>
+    <details class="size-ref">
+      <summary>サイズ目安表（一般的なメンズ基準）</summary>
+      ${table}
+      <p class="note small">※ブランドにより±2〜3cm程度の差があります。タグ表記との併用をおすすめします。</p>
+    </details>
+  `;
+  panel.hidden = false;
+}
+
+function estimateTopSize(chest) {
+  if (chest < 47) return 'XS';
+  if (chest < 50) return 'S';
+  if (chest < 53) return 'M';
+  if (chest < 56) return 'L';
+  if (chest < 59) return 'XL';
+  if (chest < 62) return 'XXL';
+  return 'XXXL';
+}
+
+function estimateBottomSize(waist) {
+  if (waist < 67) return 'XS';
+  if (waist < 71) return 'S';
+  if (waist < 76) return 'M';
+  if (waist < 81) return 'L';
+  if (waist < 85) return 'XL';
+  if (waist < 89) return 'XXL';
+  return 'XXXL';
+}
+
+function sizeReferenceTops() {
+  return `<table class="size-table">
+    <tr><th>サイズ</th><th>身幅(cm)</th><th>タグ表記例</th></tr>
+    <tr><td>XS</td><td>〜46</td><td>44 / XS</td></tr>
+    <tr><td>S</td><td>47〜49</td><td>46 / S</td></tr>
+    <tr><td>M</td><td>50〜52</td><td>48 / M</td></tr>
+    <tr><td>L</td><td>53〜55</td><td>50 / L</td></tr>
+    <tr><td>XL</td><td>56〜58</td><td>52 / XL</td></tr>
+    <tr><td>XXL</td><td>59〜61</td><td>54 / XXL</td></tr>
+  </table>`;
+}
+
+function sizeReferenceBottoms() {
+  return `<table class="size-table">
+    <tr><th>サイズ</th><th>ウエスト(cm)</th><th>タグ表記例</th></tr>
+    <tr><td>XS</td><td>〜66</td><td>W28 / 64</td></tr>
+    <tr><td>S</td><td>67〜70</td><td>W29 / 68</td></tr>
+    <tr><td>M</td><td>71〜75</td><td>W30 / 72</td></tr>
+    <tr><td>L</td><td>76〜80</td><td>W32 / 76</td></tr>
+    <tr><td>XL</td><td>81〜84</td><td>W34 / 82</td></tr>
+    <tr><td>XXL</td><td>85〜88</td><td>W36 / 86</td></tr>
+  </table>`;
 }
 
 // ----- 起動 -----

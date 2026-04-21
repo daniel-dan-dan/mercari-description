@@ -31,13 +31,16 @@
     <section id="main-screen" class="screen" hidden>
       <header>
         <h1>メルカリ説明文AI生成</h1>
-        <button id="settings-btn" class="icon-btn" title="設定">⚙️</button>
+        <div class="header-actions">
+          <button id="reset-btn" class="icon-btn" title="入力内容をリセット">🗑️</button>
+          <button id="settings-btn" class="icon-btn" title="設定">⚙️</button>
+        </div>
       </header>
 
       <!-- Step 1: 写真アップロード -->
       <div class="step">
         <h2>① 写真をアップロード</h2>
-        <p class="note">全体写真・タグ写真・ディテール写真を複数枚選べます（最低: 全体1枚 + タグ1枚）</p>
+        <p class="note">全体写真・タグ写真・ディテール写真を複数枚選べます（最大20枚、最低: 全体1枚 + タグ1枚）</p>
         <label class="file-label" for="photo-input">
           📷 写真を選ぶ / 撮影する
         </label>
@@ -57,6 +60,7 @@
           <option value="bottoms">ボトムス（パンツ単体）</option>
         </select>
         <div id="measurement-fields"></div>
+        <div id="size-suggestion" class="size-suggestion" hidden></div>
       </div>
 
       <!-- Step 3: 生成 -->
