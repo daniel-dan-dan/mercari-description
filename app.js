@@ -222,6 +222,16 @@ function renderMeasurements() {
     return;
   }
 
+  // 連続音声入力バー
+  const voiceBar = document.createElement('div');
+  voiceBar.className = 'multi-voice-bar';
+  voiceBar.innerHTML = `
+    <button type="button" id="multi-voice-btn" class="multi-voice-btn">🎤 まとめて音声入力</button>
+    <div id="multi-voice-status" class="multi-voice-status"></div>
+    <div class="multi-voice-hint">例:「肩幅 45」「袖丈 60.5」… 続けて話せます</div>
+  `;
+  container.appendChild(voiceBar);
+
   const schema = MEASUREMENT_SCHEMA[cat];
   schema.forEach((section, si) => {
     const div = document.createElement('div');
@@ -234,7 +244,6 @@ function renderMeasurements() {
         <label for="m-${f.key}">${f.label}</label>
         <input type="number" id="m-${f.key}" inputmode="decimal" step="0.5" min="0">
         <span class="unit">cm</span>
-        <button type="button" class="voice-btn" data-target="m-${f.key}" title="音声入力">🎤</button>
       `;
       div.appendChild(row);
     });
@@ -252,7 +261,6 @@ function renderMeasurements() {
           <label for="m-yuki">ゆき丈</label>
           <input type="number" id="m-yuki" inputmode="decimal" step="0.5" min="0">
           <span class="unit">cm</span>
-          <button type="button" class="voice-btn" data-target="m-yuki" title="音声入力">🎤</button>
         </div>
       </div>
     `;
@@ -271,10 +279,14 @@ function renderMeasurements() {
     });
   });
 
-  // 音声入力ボタン
-  container.querySelectorAll('.voice-btn').forEach(btn => {
-    btn.addEventListener('click', () => startVoiceInput(btn));
-  });
+  // 連続音声入力
+  const mvBtn = el('multi-voice-btn');
+  if (mvBtn) {
+    mvBtn.addEventListener('click', () => {
+      if (mvBtn._stopFn) mvBtn._stopFn();
+      else startMultiVoiceInput(mvBtn);
+    });
+  }
 
   updateGenerateButton();
   updateSizeSuggestion();
@@ -709,54 +721,137 @@ async function resetAll() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-// ----- 音声入力 -----
-function startVoiceInput(btn) {
+// ----- 連続音声入力（ラベル＋数値を1度のマイク押下で複数入力） -----
+function startMultiVoiceInput(btn) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
     alert('このブラウザは音声入力に対応していません');
     return;
   }
-  const targetId = btn.dataset.target;
-  const target = document.getElementById(targetId);
-  if (!target) return;
-
+  const statusEl = el('multi-voice-status');
   const rec = new SR();
   rec.lang = 'ja-JP';
-  rec.continuous = false;
+  rec.continuous = true;
   rec.interimResults = false;
   rec.maxAlternatives = 3;
 
-  btn.classList.add('listening');
-  btn.textContent = '🔴';
+  let active = true;
+  const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
 
   const stop = () => {
+    active = false;
     btn.classList.remove('listening');
-    btn.textContent = '🎤';
+    btn.textContent = '🎤 まとめて音声入力';
+    btn._stopFn = null;
+    try { rec.stop(); } catch {}
+    setStatus('');
   };
-  rec.onend = stop;
+  btn._stopFn = stop;
+  btn.classList.add('listening');
+  btn.textContent = '⏹ 停止（録音中…）';
+  setStatus('話してください（例:「肩幅 45」「袖丈 60.5」）');
+
+  rec.onresult = (e) => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const result = e.results[i];
+      if (!result.isFinal) continue;
+      let matched = null;
+      for (let a = 0; a < result.length; a++) {
+        const t = result[a]?.transcript || '';
+        const m = parseMeasurementUtterance(t);
+        if (m) { matched = m; break; }
+      }
+      if (matched) {
+        const target = el(matched.fieldId);
+        if (target) {
+          target.value = String(matched.value);
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          setStatus(`✅ ${matched.label}: ${matched.value} cm`);
+        } else {
+          setStatus(`⚠️ ${matched.label} の入力欄が見つかりません（ラグランONを確認）`);
+        }
+      } else {
+        const first = result[0]?.transcript || '';
+        setStatus(`⚠️ 認識できませんでした: "${first}"`);
+      }
+    }
+  };
+  rec.onend = () => {
+    if (active) {
+      try { rec.start(); } catch { stop(); }
+    }
+  };
   rec.onerror = (e) => {
-    stop();
-    if (e.error !== 'no-speech' && e.error !== 'aborted') {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      alert('マイクのアクセスが許可されていません');
+      stop();
+    } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
       console.warn('音声認識エラー:', e.error);
     }
   };
-  rec.onresult = (e) => {
-    const alts = e.results[0] || [];
-    let parsed = null;
-    for (let i = 0; i < alts.length; i++) {
-      const t = alts[i]?.transcript || '';
-      const n = parseSpokenNumber(t);
-      if (n !== null) { parsed = n; break; }
-    }
-    if (parsed !== null) {
-      target.value = String(parsed);
-      target.dispatchEvent(new Event('input', { bubbles: true }));
-    } else {
-      const first = alts[0]?.transcript || '';
-      alert(`数字として認識できませんでした: "${first}"\n例: "四十八" や "48.5" とはっきり発声してください`);
-    }
-  };
   try { rec.start(); } catch (e) { stop(); console.warn(e); }
+}
+
+// 「ラベル 数値」発話を解析して対象フィールドIDと値を返す
+function parseMeasurementUtterance(text) {
+  if (!text) return null;
+  const cat = el('category').value;
+  if (!cat) return null;
+
+  const normalized = text
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[,，、]/g, '')
+    .replace(/\s+/g, '');
+
+  const suitPrefixed = [
+    { keys: ['ジャケット肩幅','ジャケ肩幅'], field: 'j_shoulder', label: 'ジャケット肩幅' },
+    { keys: ['ジャケット身幅','ジャケ身幅'], field: 'j_chest',    label: 'ジャケット身幅' },
+    { keys: ['ジャケット袖丈','ジャケ袖丈'], field: 'j_sleeve',   label: 'ジャケット袖丈' },
+    { keys: ['ジャケット着丈','ジャケ着丈'], field: 'j_length',   label: 'ジャケット着丈' },
+    { keys: ['ベスト肩幅'],                  field: 'v_shoulder', label: 'ベスト肩幅' },
+    { keys: ['ベスト身幅'],                  field: 'v_chest',    label: 'ベスト身幅' },
+    { keys: ['ベスト着丈'],                  field: 'v_length',   label: 'ベスト着丈' },
+    { keys: ['パンツウエスト','ズボンウエスト','パンツウェスト','ズボンウェスト'], field: 'p_waist', label: 'パンツウエスト' },
+    { keys: ['パンツ股下','ズボン股下'],      field: 'p_inseam',   label: 'パンツ股下' },
+    { keys: ['パンツ股上','ズボン股上'],      field: 'p_rise',     label: 'パンツ股上' },
+    { keys: ['パンツ裾幅','ズボン裾幅','パンツ裾','ズボン裾'], field: 'p_hem', label: 'パンツ裾幅' },
+  ];
+  const common = [
+    { keys: ['ゆき丈','裄丈','ユキ丈','ユキタケ','ユキたけ'], field: 'yuki',     label: 'ゆき丈' },
+    { keys: ['肩幅','かたはば'],                              field: 'shoulder', label: '肩幅' },
+    { keys: ['身幅','みはば'],                                field: 'chest',    label: '身幅' },
+    { keys: ['袖丈','そでたけ','そで丈'],                      field: 'sleeve',   label: '袖丈' },
+    { keys: ['着丈','きたけ','き丈'],                          field: 'length',   label: '着丈' },
+    { keys: ['ウエスト','ウェスト','胴回り','どうまわり'],      field: 'waist',    label: 'ウエスト' },
+    { keys: ['股下','またした'],                              field: 'inseam',   label: '股下' },
+    { keys: ['股上','またがみ'],                              field: 'rise',     label: '股上' },
+    { keys: ['裾幅','すそはば','裾','すそ'],                   field: 'hem',      label: '裾幅' },
+  ];
+  const dict = cat === 'suit' ? [...suitPrefixed, ...common] : common;
+
+  for (const entry of dict) {
+    for (const key of entry.keys) {
+      const idx = normalized.indexOf(key);
+      if (idx < 0) continue;
+      const rest = normalized.slice(idx + key.length) + ' ' + normalized.slice(0, idx);
+      const n = parseSpokenNumber(rest);
+      if (n === null) continue;
+      return { fieldId: 'm-' + resolveFieldKey(entry.field, cat), value: n, label: entry.label };
+    }
+  }
+  return null;
+}
+
+function resolveFieldKey(baseKey, cat) {
+  if (/^[jpv]_/.test(baseKey)) return baseKey;
+  if (baseKey === 'yuki') return 'yuki';
+  if (cat === 'suit') {
+    const bottomKeys = ['waist','inseam','rise','hem'];
+    const jacketKeys = ['shoulder','chest','sleeve','length'];
+    if (bottomKeys.includes(baseKey)) return 'p_' + baseKey;
+    if (jacketKeys.includes(baseKey)) return 'j_' + baseKey;
+  }
+  return baseKey;
 }
 
 // 日本語音声から数値を抽出（整数・小数対応）
