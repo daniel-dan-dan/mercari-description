@@ -479,6 +479,7 @@ textarea {
 }
 
 /* ========== ステータス ========== */
+.status[hidden] { display: none !important; }
 .status {
   padding: 12px 14px;
   border-radius: 12px;
