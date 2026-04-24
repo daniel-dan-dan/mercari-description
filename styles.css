@@ -591,6 +591,7 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
   padding: 12px;
   overflow: auto;
 }
+.modal[hidden] { display: none; }
 .modal-content.compose {
   background: white;
   border-radius: 20px;
