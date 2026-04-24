@@ -58,6 +58,15 @@ async function init() {
   el('result-text').addEventListener('input', scheduleSave);
   el('compose-open-btn').addEventListener('click', openImageCompose);
   el('compose-close').addEventListener('click', closeImageCompose);
+  el('unify-brightness-btn').addEventListener('click', unifyPhotoBrightness);
+  el('adjust-open-btn').addEventListener('click', openAdjustModal);
+  el('adjust-close').addEventListener('click', closeAdjustModal);
+  el('adjust-apply-btn').addEventListener('click', applyCurrentAdjustment);
+  el('adjust-reset-btn').addEventListener('click', resetAdjustSliders);
+  el('adjust-revert-btn').addEventListener('click', revertCurrentPhoto);
+  ['adjust-brightness', 'adjust-temp', 'adjust-contrast'].forEach(id => {
+    el(id).addEventListener('input', onAdjustSliderInput);
+  });
 
   // 前回のセッションを復元
   if (key) {
@@ -135,7 +144,11 @@ function processImage(file) {
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
         const base64 = dataUrl.split(',')[1];
-        resolve({ dataUrl, mediaType: 'image/jpeg', base64 });
+        resolve({
+          dataUrl, mediaType: 'image/jpeg', base64,
+          originalDataUrl: dataUrl,
+          adjust: { brightness: 0, temp: 0, contrast: 0 },
+        });
       };
       img.onerror = reject;
       img.src = reader.result;
@@ -167,6 +180,8 @@ function renderPreviews() {
   });
   const composeBtn = el('compose-open-btn');
   if (composeBtn) composeBtn.hidden = uploadedImages.length < 2;
+  const brightnessActions = el('brightness-actions');
+  if (brightnessActions) brightnessActions.hidden = uploadedImages.length < 2;
 }
 
 async function saveBlobToDevice(blob, filename) {
@@ -703,7 +718,11 @@ function scheduleSave() {
 function restoreState(s) {
   if (!s) return;
   if (Array.isArray(s.photos) && s.photos.length) {
-    uploadedImages = s.photos;
+    uploadedImages = s.photos.map(p => ({
+      ...p,
+      originalDataUrl: p.originalDataUrl || p.dataUrl,
+      adjust: p.adjust || { brightness: 0, temp: 0, contrast: 0 },
+    }));
     renderPreviews();
   }
   if (s.category) {
@@ -1765,6 +1784,316 @@ async function applyCompose() {
   // カメラロールに自動保存（iOSは共有シート→「画像を保存」）
   const blob = await (await fetch(dataUrl)).blob();
   await saveBlobToDevice(blob, `mercari-compose-${Date.now()}.jpg`);
+}
+
+// ----- 画像の明るさ統一＆手動調整 -----
+// 自動統一（案B＋案C）:
+//   1枚目に対してグレーワールド補正(0.6)をかけニュートラル化し、それを基準画像とする
+//   各写真のRGBチャネル平均を refMean*0.4 + overallAvg*0.6 に揃える
+// 手動調整（モーダル）:
+//   明るさ / 色温度(+暖色) / コントラスト の3スライダー、各 -50〜+50
+//   brightness offset = val * 2.55
+//   contrast factor   = 1 + val/50 (128中心)
+//   temp warm(+)      = R+val*1.5, B-val*1.5
+//
+// 写真の元データは processImage で originalDataUrl に格納済み。
+// adjust フィールドはスライダー値の現在状態を保持し、モーダル再オープン時の復元に使う。
+
+const ADJUST_MAX_EDGE = 1024;  // 処理時も長辺1024px（processImageと一致）
+
+function drawToCanvas(img) {
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  return { canvas, ctx };
+}
+
+function computeChannelMeans(imageData) {
+  const d = imageData.data;
+  let r = 0, g = 0, b = 0;
+  const n = d.length / 4;
+  for (let i = 0; i < d.length; i += 4) {
+    r += d[i];
+    g += d[i + 1];
+    b += d[i + 2];
+  }
+  return { r: r / n, g: g / n, b: b / n };
+}
+
+function applyChannelScale(imageData, sR, sG, sB) {
+  const d = imageData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const vr = d[i]     * sR;
+    const vg = d[i + 1] * sG;
+    const vb = d[i + 2] * sB;
+    d[i]     = vr > 255 ? 255 : vr < 0 ? 0 : vr;
+    d[i + 1] = vg > 255 ? 255 : vg < 0 ? 0 : vg;
+    d[i + 2] = vb > 255 ? 255 : vb < 0 ? 0 : vb;
+  }
+}
+
+// グレーワールド補正: 3チャネル平均をRGB全体平均に寄せる
+function applyGrayWorld(imageData, amount) {
+  const m = computeChannelMeans(imageData);
+  const overall = (m.r + m.g + m.b) / 3;
+  // amount=1 で完全寄せ、0で変化なし
+  const targetR = m.r + (overall - m.r) * amount;
+  const targetG = m.g + (overall - m.g) * amount;
+  const targetB = m.b + (overall - m.b) * amount;
+  const sR = targetR / Math.max(1, m.r);
+  const sG = targetG / Math.max(1, m.g);
+  const sB = targetB / Math.max(1, m.b);
+  applyChannelScale(imageData, sR, sG, sB);
+}
+
+// スライダーによる手動調整
+function applyAdjustments(imageData, brightness, temp, contrast) {
+  const d = imageData.data;
+  const brightOffset = brightness * 2.55;
+  const contrastFactor = 1 + (contrast / 50);
+  const tempR = temp * 1.5;
+  const tempB = -temp * 1.5;
+  for (let i = 0; i < d.length; i += 4) {
+    let r = d[i];
+    let g = d[i + 1];
+    let b = d[i + 2];
+    // 明るさ
+    r += brightOffset;
+    g += brightOffset;
+    b += brightOffset;
+    // コントラスト (128中心)
+    r = (r - 128) * contrastFactor + 128;
+    g = (g - 128) * contrastFactor + 128;
+    b = (b - 128) * contrastFactor + 128;
+    // 色温度
+    r += tempR;
+    b += tempB;
+    d[i]     = r > 255 ? 255 : r < 0 ? 0 : r;
+    d[i + 1] = g > 255 ? 255 : g < 0 ? 0 : g;
+    d[i + 2] = b > 255 ? 255 : b < 0 ? 0 : b;
+  }
+}
+
+function canvasToPhotoObj(canvas, originalDataUrl, adjust) {
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  const base64 = dataUrl.split(',')[1];
+  return {
+    dataUrl,
+    mediaType: 'image/jpeg',
+    base64,
+    originalDataUrl: originalDataUrl || dataUrl,
+    adjust: adjust || { brightness: 0, temp: 0, contrast: 0 },
+  };
+}
+
+async function unifyPhotoBrightness() {
+  if (uploadedImages.length < 2) return;
+  if (!confirm('1枚目を基準に、すべての写真の明るさと色味を揃えます。よろしいですか？（元の写真には「元に戻す」で戻せます）')) return;
+
+  const btn = el('unify-brightness-btn');
+  const origLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '処理中…';
+
+  try {
+    // 1. 基準画像: 1枚目の originalDataUrl にグレーワールド(0.6)をかける
+    const refImg = await loadImage(uploadedImages[0].originalDataUrl || uploadedImages[0].dataUrl);
+    const { canvas: refCanvas, ctx: refCtx } = drawToCanvas(refImg);
+    const refData = refCtx.getImageData(0, 0, refCanvas.width, refCanvas.height);
+    applyGrayWorld(refData, 0.6);
+    refCtx.putImageData(refData, 0, 0);
+    const refMeans = computeChannelMeans(refData);
+
+    // 2. target = refMean * 0.4 + overallAvg * 0.6
+    const overallAvg = (refMeans.r + refMeans.g + refMeans.b) / 3;
+    const target = {
+      r: refMeans.r * 0.4 + overallAvg * 0.6,
+      g: refMeans.g * 0.4 + overallAvg * 0.6,
+      b: refMeans.b * 0.4 + overallAvg * 0.6,
+    };
+
+    // 3. 1枚目を refCanvas で更新
+    uploadedImages[0] = canvasToPhotoObj(
+      refCanvas,
+      uploadedImages[0].originalDataUrl || uploadedImages[0].dataUrl,
+      { brightness: 0, temp: 0, contrast: 0 }
+    );
+
+    // 4. 2枚目以降を target に揃える
+    for (let i = 1; i < uploadedImages.length; i++) {
+      const src = uploadedImages[i].originalDataUrl || uploadedImages[i].dataUrl;
+      const img = await loadImage(src);
+      const { canvas, ctx } = drawToCanvas(img);
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const means = computeChannelMeans(data);
+      const sR = target.r / Math.max(1, means.r);
+      const sG = target.g / Math.max(1, means.g);
+      const sB = target.b / Math.max(1, means.b);
+      applyChannelScale(data, sR, sG, sB);
+      ctx.putImageData(data, 0, 0);
+      uploadedImages[i] = canvasToPhotoObj(
+        canvas,
+        uploadedImages[i].originalDataUrl || uploadedImages[i].dataUrl,
+        { brightness: 0, temp: 0, contrast: 0 }
+      );
+    }
+
+    renderPreviews();
+    scheduleSave();
+    alert('写真の明るさを統一しました');
+  } catch (e) {
+    console.error(e);
+    alert('明るさ統一に失敗しました: ' + (e.message || e));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origLabel;
+  }
+}
+
+// ----- 手動調整モーダル -----
+const adjustState = {
+  currentIdx: null,  // 編集対象 uploadedImages インデックス
+  previewBase: null, // 編集元 Image オブジェクト（originalDataUrlをロードしたもの）
+};
+
+function openAdjustModal() {
+  if (uploadedImages.length < 1) return;
+  adjustState.currentIdx = null;
+  adjustState.previewBase = null;
+  el('adjust-modal').hidden = false;
+  document.body.style.overflow = 'hidden';
+  renderAdjustThumbs();
+  el('adjust-preview-wrap').hidden = true;
+  el('adjust-sliders').hidden = true;
+  el('adjust-actions').hidden = true;
+}
+
+function closeAdjustModal() {
+  el('adjust-modal').hidden = true;
+  document.body.style.overflow = '';
+}
+
+function renderAdjustThumbs() {
+  const grid = el('adjust-thumbs');
+  grid.innerHTML = '';
+  uploadedImages.forEach((img, idx) => {
+    const cell = document.createElement('div');
+    cell.className = 'compose-thumb adjust-thumb' + (adjustState.currentIdx === idx ? ' selected' : '');
+    cell.innerHTML = `<img src="${img.dataUrl}" alt=""><span class="thumb-badge">${idx + 1}</span>`;
+    cell.addEventListener('click', () => selectAdjustPhoto(idx));
+    grid.appendChild(cell);
+  });
+}
+
+async function selectAdjustPhoto(idx) {
+  adjustState.currentIdx = idx;
+  const photo = uploadedImages[idx];
+  const baseSrc = photo.originalDataUrl || photo.dataUrl;
+  try {
+    adjustState.previewBase = await loadImage(baseSrc);
+  } catch (e) {
+    alert('写真の読み込みに失敗しました');
+    return;
+  }
+  // スライダーを現在の adjust 値で復元
+  const a = photo.adjust || { brightness: 0, temp: 0, contrast: 0 };
+  el('adjust-brightness').value = a.brightness;
+  el('adjust-temp').value = a.temp;
+  el('adjust-contrast').value = a.contrast;
+  updateAdjustSliderLabels();
+
+  el('adjust-preview-wrap').hidden = false;
+  el('adjust-sliders').hidden = false;
+  el('adjust-actions').hidden = false;
+  renderAdjustThumbs();
+  renderAdjustPreview();
+}
+
+function updateAdjustSliderLabels() {
+  el('adjust-brightness-val').textContent = el('adjust-brightness').value;
+  el('adjust-temp-val').textContent = el('adjust-temp').value;
+  el('adjust-contrast-val').textContent = el('adjust-contrast').value;
+}
+
+let _adjustPreviewTimer = null;
+function onAdjustSliderInput() {
+  updateAdjustSliderLabels();
+  // 連続動作を軽くするためデバウンス
+  if (_adjustPreviewTimer) clearTimeout(_adjustPreviewTimer);
+  _adjustPreviewTimer = setTimeout(renderAdjustPreview, 60);
+}
+
+function renderAdjustPreview() {
+  if (!adjustState.previewBase) return;
+  const b = Number(el('adjust-brightness').value);
+  const t = Number(el('adjust-temp').value);
+  const c = Number(el('adjust-contrast').value);
+  const { canvas, ctx } = drawToCanvas(adjustState.previewBase);
+  if (b !== 0 || t !== 0 || c !== 0) {
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    applyAdjustments(data, b, t, c);
+    ctx.putImageData(data, 0, 0);
+  }
+  el('adjust-preview').src = canvas.toDataURL('image/jpeg', 0.82);
+}
+
+function resetAdjustSliders() {
+  el('adjust-brightness').value = 0;
+  el('adjust-temp').value = 0;
+  el('adjust-contrast').value = 0;
+  updateAdjustSliderLabels();
+  renderAdjustPreview();
+}
+
+async function applyCurrentAdjustment() {
+  const idx = adjustState.currentIdx;
+  if (idx == null || !adjustState.previewBase) return;
+  const b = Number(el('adjust-brightness').value);
+  const t = Number(el('adjust-temp').value);
+  const c = Number(el('adjust-contrast').value);
+  const { canvas, ctx } = drawToCanvas(adjustState.previewBase);
+  if (b !== 0 || t !== 0 || c !== 0) {
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    applyAdjustments(data, b, t, c);
+    ctx.putImageData(data, 0, 0);
+  }
+  const originalDataUrl = uploadedImages[idx].originalDataUrl || uploadedImages[idx].dataUrl;
+  uploadedImages[idx] = canvasToPhotoObj(canvas, originalDataUrl, { brightness: b, temp: t, contrast: c });
+  renderPreviews();
+  renderAdjustThumbs();
+  scheduleSave();
+  closeAdjustModal();
+}
+
+async function revertCurrentPhoto() {
+  const idx = adjustState.currentIdx;
+  if (idx == null) return;
+  if (!confirm('この写真を元の状態（撮った時のまま）に戻します。よろしいですか？')) return;
+  const photo = uploadedImages[idx];
+  const originalDataUrl = photo.originalDataUrl || photo.dataUrl;
+  // originalDataUrl をそのまま現在画像として再セット
+  const base64 = originalDataUrl.split(',')[1];
+  uploadedImages[idx] = {
+    dataUrl: originalDataUrl,
+    mediaType: 'image/jpeg',
+    base64,
+    originalDataUrl,
+    adjust: { brightness: 0, temp: 0, contrast: 0 },
+  };
+  // UIを再ロードして0状態に
+  try {
+    adjustState.previewBase = await loadImage(originalDataUrl);
+  } catch (e) { /* 無視 */ }
+  el('adjust-brightness').value = 0;
+  el('adjust-temp').value = 0;
+  el('adjust-contrast').value = 0;
+  updateAdjustSliderLabels();
+  renderAdjustPreview();
+  renderPreviews();
+  renderAdjustThumbs();
+  scheduleSave();
 }
 
 // ----- 起動 -----

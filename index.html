@@ -7,7 +7,7 @@
   <title>メルカリ説明文AI生成</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260424o">
+  <link rel="stylesheet" href="styles.css?v=20260424p">
 </head>
 <body>
   <div id="app">
@@ -46,6 +46,10 @@
         </label>
         <input type="file" id="photo-input" accept="image/*" multiple hidden>
         <div id="photo-preview" class="preview-grid"></div>
+        <div id="brightness-actions" class="brightness-actions" hidden>
+          <button id="unify-brightness-btn" class="btn brightness-btn">📐 明るさを統一</button>
+          <button id="adjust-open-btn" class="btn brightness-btn">🎛️ 調整</button>
+        </div>
         <button id="compose-open-btn" class="btn compose-open-btn" hidden>✂️ 画像合成</button>
       </div>
 
@@ -98,7 +102,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v0424o</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v0424p</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる">✕</button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -107,8 +111,57 @@
       </div>
     </section>
 
+    <!-- 明るさ調整モーダル -->
+    <section id="adjust-modal" class="modal" hidden>
+      <div class="modal-content compose">
+        <header class="modal-header">
+          <h2>🎛️ 明るさを調整 <span class="ver-tag">v0424p</span></h2>
+          <button id="adjust-close" class="icon-btn" title="閉じる">✕</button>
+        </header>
+        <p class="compose-step-label">写真を選んで、スライダーで好みの明るさに合わせてください</p>
+
+        <div id="adjust-thumbs" class="adjust-thumbs"></div>
+
+        <div id="adjust-preview-wrap" class="compose-preview-wrap" hidden>
+          <img id="adjust-preview" alt="">
+        </div>
+
+        <div id="adjust-sliders" class="adjust-sliders" hidden>
+          <label class="adjust-slider-label">
+            <span class="adjust-slider-head">
+              <span>明るさ</span>
+              <span id="adjust-brightness-val" class="adjust-slider-val">0</span>
+            </span>
+            <input type="range" id="adjust-brightness" min="-50" max="50" step="1" value="0">
+          </label>
+
+          <label class="adjust-slider-label">
+            <span class="adjust-slider-head">
+              <span>色温度（+暖色 / −寒色）</span>
+              <span id="adjust-temp-val" class="adjust-slider-val">0</span>
+            </span>
+            <input type="range" id="adjust-temp" min="-50" max="50" step="1" value="0">
+          </label>
+
+          <label class="adjust-slider-label">
+            <span class="adjust-slider-head">
+              <span>コントラスト</span>
+              <span id="adjust-contrast-val" class="adjust-slider-val">0</span>
+            </span>
+            <input type="range" id="adjust-contrast" min="-50" max="50" step="1" value="0">
+          </label>
+        </div>
+
+        <div id="adjust-actions" class="button-row" hidden>
+          <button id="adjust-apply-btn" class="btn primary">✔️ 適用</button>
+          <button id="adjust-reset-btn" class="btn">↺ スライダーを0に</button>
+          <button id="adjust-revert-btn" class="btn">🔁 元の写真に戻す</button>
+        </div>
+      </div>
+    </section>
+
   </div>
 
-  <script src="app.js?v=20260424o"></script>
+  <script src="app.js?v=20260424p"></script>
 </body>
 </html>
