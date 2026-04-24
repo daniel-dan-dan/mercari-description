@@ -1197,6 +1197,14 @@ function renderComposeStep() {
         shapeRow.querySelectorAll('.shape-btn').forEach((bb, ix) => {
           bb.classList.toggle('active', ['rect','circle'][ix] === k);
         });
+        // 丸に切替えた時点で既存rectを正方形化（短辺に合わせて中心保持）
+        if (k === 'circle' && composeState.cropRect && composeState.cropRect.w >= 1 && composeState.cropRect.h >= 1) {
+          const r = composeState.cropRect;
+          const side = Math.min(r.w, r.h);
+          const cx = r.x + r.w / 2;
+          const cy = r.y + r.h / 2;
+          composeState.cropRect = { x: cx - side / 2, y: cy - side / 2, w: side, h: side };
+        }
         if (composeState._drawSelection) composeState._drawSelection(composeState.cropRect);
       });
       shapeRow.appendChild(b);
@@ -1450,6 +1458,15 @@ function setupCropCanvas(canvas) {
     };
   };
 
+  // 丸の場合は常に正円に揃える（中心保持、短辺を一辺に）
+  const squarifyIfCircle = (r) => {
+    if (composeState.shape !== 'circle' || !r) return r;
+    const side = Math.min(r.w, r.h);
+    const cx = r.x + r.w / 2;
+    const cy = r.y + r.h / 2;
+    return clampRect({ x: cx - side / 2, y: cy - side / 2, w: side, h: side });
+  };
+
   const isInsideRect = (p, rect) => {
     if (!rect) return false;
     return p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h;
@@ -1457,10 +1474,12 @@ function setupCropCanvas(canvas) {
 
   const startPinch = (touches) => {
     if (!composeState.cropRect || composeState.cropRect.w < 1 || composeState.cropRect.h < 1) {
-      // 既存rectが無ければピンチ不可。単純に dragMode を終了
       dragMode = null;
       return;
     }
+    // 丸なら開始時点で正方形化
+    composeState.cropRect = squarifyIfCircle(composeState.cropRect);
+    drawSelection(composeState.cropRect);
     const dx = touches[1].clientX - touches[0].clientX;
     const dy = touches[1].clientY - touches[0].clientY;
     const c1 = toCanvasCoords(touches[0].clientX, touches[0].clientY);
@@ -1522,9 +1541,9 @@ function setupCropCanvas(canvas) {
       const newH = s.h * ratio;
       const newCx = sCx + (cx - pinchStart.cx);
       const newCy = sCy + (cy - pinchStart.cy);
-      composeState.cropRect = clampRect({
+      composeState.cropRect = squarifyIfCircle(clampRect({
         x: newCx - newW / 2, y: newCy - newH / 2, w: newW, h: newH,
-      });
+      }));
       drawSelection(composeState.cropRect);
     } else if (dragMode === 'move' && ev.touches.length === 1 && moveStart) {
       const p = toCanvasCoords(ev.touches[0].clientX, ev.touches[0].clientY);
@@ -1537,14 +1556,24 @@ function setupCropCanvas(canvas) {
       drawSelection(composeState.cropRect);
     } else if (dragMode === 'select' && ev.touches.length === 1) {
       const p = toCanvasCoords(ev.touches[0].clientX, ev.touches[0].clientY);
-      const x = Math.min(startX, p.x);
-      const y = Math.min(startY, p.y);
-      composeState.cropRect = {
-        x: Math.max(0, x),
-        y: Math.max(0, y),
-        w: Math.min(canvas.width - Math.max(0, x), Math.abs(p.x - startX)),
-        h: Math.min(canvas.height - Math.max(0, y), Math.abs(p.y - startY)),
-      };
+      if (composeState.shape === 'circle') {
+        // 丸: 最大辺に揃えた正方形。ドラッグ方向に伸ばす
+        const side = Math.max(Math.abs(p.x - startX), Math.abs(p.y - startY));
+        const xDir = p.x >= startX ? 1 : -1;
+        const yDir = p.y >= startY ? 1 : -1;
+        const x0 = xDir === 1 ? startX : startX - side;
+        const y0 = yDir === 1 ? startY : startY - side;
+        composeState.cropRect = clampRect({ x: x0, y: y0, w: side, h: side });
+      } else {
+        const x = Math.min(startX, p.x);
+        const y = Math.min(startY, p.y);
+        composeState.cropRect = {
+          x: Math.max(0, x),
+          y: Math.max(0, y),
+          w: Math.min(canvas.width - Math.max(0, x), Math.abs(p.x - startX)),
+          h: Math.min(canvas.height - Math.max(0, y), Math.abs(p.y - startY)),
+        };
+      }
       drawSelection(composeState.cropRect);
     }
   };
@@ -1585,12 +1614,23 @@ function setupCropCanvas(canvas) {
       drawSelection(composeState.cropRect);
     } else if (dragMode === 'select') {
       const p = toCanvasCoords(ev.clientX, ev.clientY);
-      const x = Math.min(startX, p.x), y = Math.min(startY, p.y);
-      composeState.cropRect = {
-        x: Math.max(0, x), y: Math.max(0, y),
-        w: Math.min(canvas.width - Math.max(0, x), Math.abs(p.x - startX)),
-        h: Math.min(canvas.height - Math.max(0, y), Math.abs(p.y - startY)),
-      };
+      if (composeState.shape === 'circle') {
+        const side = Math.max(Math.abs(p.x - startX), Math.abs(p.y - startY));
+        const xDir = p.x >= startX ? 1 : -1;
+        const yDir = p.y >= startY ? 1 : -1;
+        composeState.cropRect = clampRect({
+          x: xDir === 1 ? startX : startX - side,
+          y: yDir === 1 ? startY : startY - side,
+          w: side, h: side,
+        });
+      } else {
+        const x = Math.min(startX, p.x), y = Math.min(startY, p.y);
+        composeState.cropRect = {
+          x: Math.max(0, x), y: Math.max(0, y),
+          w: Math.min(canvas.width - Math.max(0, x), Math.abs(p.x - startX)),
+          h: Math.min(canvas.height - Math.max(0, y), Math.abs(p.y - startY)),
+        };
+      }
       drawSelection(composeState.cropRect);
     }
   });
