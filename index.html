@@ -46,6 +46,7 @@
         </label>
         <input type="file" id="photo-input" accept="image/*" multiple hidden>
         <div id="photo-preview" class="preview-grid"></div>
+        <button id="compose-open-btn" class="btn compose-open-btn" hidden>✂️ 画像合成</button>
       </div>
 
       <!-- Step 2: カテゴリと採寸 -->
@@ -90,6 +91,19 @@
         <button id="sell-btn" class="btn primary large" style="margin-top:8px">🛒 メルカリで出品する</button>
         <p class="note small">「メルカリで出品」タップ後、説明文が自動コピーされメルカリアプリの出品画面が開きます。アプリ内で貼り付けてください。</p>
         <p id="copy-status" class="status" hidden></p>
+      </div>
+    </section>
+
+    <!-- 画像合成モーダル -->
+    <section id="compose-modal" class="modal" hidden>
+      <div class="modal-content compose">
+        <header class="modal-header">
+          <h2 id="compose-title">✂️ 画像合成</h2>
+          <button id="compose-close" class="icon-btn" title="閉じる">✕</button>
+        </header>
+        <p id="compose-step-label" class="compose-step-label"></p>
+        <div id="compose-body"></div>
+        <div id="compose-actions" class="button-row"></div>
       </div>
     </section>
 

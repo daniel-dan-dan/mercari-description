@@ -56,6 +56,8 @@ async function init() {
   el('retry-btn').addEventListener('click', retryGeneration);
   el('title-text').addEventListener('input', scheduleSave);
   el('result-text').addEventListener('input', scheduleSave);
+  el('compose-open-btn').addEventListener('click', openImageCompose);
+  el('compose-close').addEventListener('click', closeImageCompose);
 
   // 前回のセッションを復元
   if (key) {
@@ -163,6 +165,8 @@ function renderPreviews() {
       scheduleSave();
     });
   });
+  const composeBtn = el('compose-open-btn');
+  if (composeBtn) composeBtn.hidden = uploadedImages.length < 2;
 }
 
 // ----- カテゴリ別採寸フォーム -----
@@ -1084,6 +1088,373 @@ function sizeReferenceBottoms() {
     <tr><td>XL</td><td>81〜84</td><td>79〜80</td><td>W34 / 83</td></tr>
     <tr><td>XXL</td><td>85〜88</td><td>81〜82</td><td>W36 / 87</td></tr>
   </table>`;
+}
+
+// ----- 画像合成（✂️ 画像合成） -----
+// 2ステップ:
+//   step 1: 「切り抜き元」サムネ選択 → キャンバス上で矩形ドラッグ → 次へ
+//   step 2: 「ベース」サムネ選択 → 位置(四隅)・サイズ(小中大) → 適用
+const composeState = {
+  step: 1,
+  sourceIdx: null,    // 切り抜き元の uploadedImages インデックス
+  baseIdx: null,      // ベース画像の uploadedImages インデックス
+  sourceImg: null,    // Image オブジェクト
+  baseImg: null,
+  cropRect: null,     // { x, y, w, h } source画像の自然座標
+  croppedCanvas: null,
+  corner: 'br',       // tl/tr/bl/br
+  sizeKey: 'medium',  // small/medium/large
+  replaceBase: false,
+};
+
+const SIZE_RATIO = { small: 0.22, medium: 0.30, large: 0.40 };
+const BORDER_RATIO = 0.018; // ベース画像長辺に対する白フチ太さ
+const MARGIN_RATIO = 0.035; // 角からのマージン
+
+function openImageCompose() {
+  if (uploadedImages.length < 2) {
+    alert('画像合成には2枚以上の写真が必要です');
+    return;
+  }
+  composeState.step = 1;
+  composeState.sourceIdx = null;
+  composeState.baseIdx = null;
+  composeState.sourceImg = null;
+  composeState.baseImg = null;
+  composeState.cropRect = null;
+  composeState.croppedCanvas = null;
+  composeState.corner = 'br';
+  composeState.sizeKey = 'medium';
+  composeState.replaceBase = false;
+  el('compose-modal').hidden = false;
+  document.body.style.overflow = 'hidden';
+  renderComposeStep();
+}
+
+function closeImageCompose() {
+  el('compose-modal').hidden = true;
+  document.body.style.overflow = '';
+}
+
+function renderComposeStep() {
+  const body = el('compose-body');
+  const actions = el('compose-actions');
+  const label = el('compose-step-label');
+  body.innerHTML = '';
+  actions.innerHTML = '';
+
+  if (composeState.step === 1) {
+    label.textContent = 'ステップ1: 切り抜く写真（タグなど）を選んでください';
+    body.appendChild(buildThumbGrid(null, (idx) => {
+      composeState.sourceIdx = idx;
+      loadImage(uploadedImages[idx].dataUrl).then(img => {
+        composeState.sourceImg = img;
+        composeState.step = 2;
+        renderComposeStep();
+      });
+    }));
+    return;
+  }
+
+  if (composeState.step === 2) {
+    label.textContent = 'ステップ2: 指で矩形を描いて切り抜く範囲を指定';
+    const wrap = document.createElement('div');
+    wrap.className = 'crop-container';
+    const canvas = document.createElement('canvas');
+    wrap.appendChild(canvas);
+    body.appendChild(wrap);
+    const hint = document.createElement('p');
+    hint.className = 'crop-hint';
+    hint.textContent = '画像上をドラッグ／指でなぞって矩形を指定してください';
+    body.appendChild(hint);
+    setupCropCanvas(canvas);
+
+    const backBtn = document.createElement('button');
+    backBtn.className = 'btn';
+    backBtn.textContent = '← 戻る';
+    backBtn.addEventListener('click', () => { composeState.step = 1; renderComposeStep(); });
+    actions.appendChild(backBtn);
+
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'btn primary';
+    nextBtn.textContent = '次へ →';
+    nextBtn.addEventListener('click', () => {
+      if (!composeState.cropRect || composeState.cropRect.w < 20 || composeState.cropRect.h < 20) {
+        alert('切り抜く範囲をドラッグで指定してください');
+        return;
+      }
+      composeState.croppedCanvas = extractCrop(composeState.sourceImg, composeState.cropRect);
+      composeState.step = 3;
+      renderComposeStep();
+    });
+    actions.appendChild(nextBtn);
+    return;
+  }
+
+  if (composeState.step === 3) {
+    label.textContent = 'ステップ3: 貼り付け先の写真を選んでください';
+    body.appendChild(buildThumbGrid(composeState.sourceIdx, (idx) => {
+      composeState.baseIdx = idx;
+      loadImage(uploadedImages[idx].dataUrl).then(img => {
+        composeState.baseImg = img;
+        composeState.step = 4;
+        renderComposeStep();
+      });
+    }));
+
+    const backBtn = document.createElement('button');
+    backBtn.className = 'btn';
+    backBtn.textContent = '← 戻る';
+    backBtn.addEventListener('click', () => { composeState.step = 2; renderComposeStep(); });
+    actions.appendChild(backBtn);
+    return;
+  }
+
+  if (composeState.step === 4) {
+    label.textContent = 'ステップ4: 位置とサイズを選んで適用';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'compose-preview-wrap';
+    const canvas = document.createElement('canvas');
+    canvas.id = 'compose-preview-canvas';
+    wrap.appendChild(canvas);
+    body.appendChild(wrap);
+
+    const posLabel = document.createElement('p');
+    posLabel.className = 'compose-section-label';
+    posLabel.textContent = '位置';
+    body.appendChild(posLabel);
+
+    const cornerGrid = document.createElement('div');
+    cornerGrid.className = 'corner-grid';
+    const corners = [
+      { k: 'tl', l: '◤ 左上' },
+      { k: 'tr', l: '◥ 右上' },
+      { k: 'bl', l: '◣ 左下' },
+      { k: 'br', l: '◢ 右下' },
+    ];
+    corners.forEach(c => {
+      const b = document.createElement('button');
+      b.className = 'corner-btn' + (composeState.corner === c.k ? ' active' : '');
+      b.textContent = c.l;
+      b.addEventListener('click', () => {
+        composeState.corner = c.k;
+        renderComposeStep();
+      });
+      cornerGrid.appendChild(b);
+    });
+    body.appendChild(cornerGrid);
+
+    const sizeLabel = document.createElement('p');
+    sizeLabel.className = 'compose-section-label';
+    sizeLabel.textContent = 'サイズ';
+    body.appendChild(sizeLabel);
+
+    const sizeRow = document.createElement('div');
+    sizeRow.className = 'size-row';
+    [['small','小'],['medium','中'],['large','大']].forEach(([k, l]) => {
+      const b = document.createElement('button');
+      b.className = 'size-btn' + (composeState.sizeKey === k ? ' active' : '');
+      b.textContent = l;
+      b.addEventListener('click', () => {
+        composeState.sizeKey = k;
+        renderComposeStep();
+      });
+      sizeRow.appendChild(b);
+    });
+    body.appendChild(sizeRow);
+
+    const toggle = document.createElement('label');
+    toggle.className = 'compose-toggle';
+    toggle.innerHTML = `
+      <input type="checkbox" id="replace-base-chk" ${composeState.replaceBase ? 'checked' : ''}>
+      ベース画像を差し替える（オフなら合成画像を追加）
+    `;
+    body.appendChild(toggle);
+    toggle.querySelector('input').addEventListener('change', (e) => {
+      composeState.replaceBase = e.target.checked;
+    });
+
+    // プレビュー描画
+    renderComposePreview(canvas);
+
+    const backBtn = document.createElement('button');
+    backBtn.className = 'btn';
+    backBtn.textContent = '← 戻る';
+    backBtn.addEventListener('click', () => { composeState.step = 3; renderComposeStep(); });
+    actions.appendChild(backBtn);
+
+    const applyBtn = document.createElement('button');
+    applyBtn.className = 'btn primary';
+    applyBtn.textContent = '✅ 適用';
+    applyBtn.addEventListener('click', applyCompose);
+    actions.appendChild(applyBtn);
+  }
+}
+
+function buildThumbGrid(excludeIdx, onPick) {
+  const grid = document.createElement('div');
+  grid.className = 'compose-thumbs';
+  uploadedImages.forEach((img, idx) => {
+    if (idx === excludeIdx) return;
+    const cell = document.createElement('div');
+    cell.className = 'compose-thumb';
+    cell.innerHTML = `<img src="${img.dataUrl}" alt=""><span class="thumb-badge">${idx + 1}</span>`;
+    cell.addEventListener('click', () => onPick(idx));
+    grid.appendChild(cell);
+  });
+  return grid;
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// 切り抜きキャンバス: ドラッグで矩形選択
+function setupCropCanvas(canvas) {
+  const img = composeState.sourceImg;
+  const ctx = canvas.getContext('2d');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+
+  const drawBase = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+  };
+  const drawSelection = (rect) => {
+    drawBase();
+    if (!rect) return;
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, canvas.width, rect.y);
+    ctx.fillRect(0, rect.y + rect.h, canvas.width, canvas.height - rect.y - rect.h);
+    ctx.fillRect(0, rect.y, rect.x, rect.h);
+    ctx.fillRect(rect.x + rect.w, rect.y, canvas.width - rect.x - rect.w, rect.h);
+    ctx.strokeStyle = '#ff4757';
+    ctx.lineWidth = Math.max(2, canvas.width / 240);
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+  };
+  drawBase();
+  if (composeState.cropRect) drawSelection(composeState.cropRect);
+
+  let dragging = false;
+  let startX = 0, startY = 0;
+
+  const toCanvasCoords = (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const sx = canvas.width / rect.width;
+    const sy = canvas.height / rect.height;
+    return { x: (ev.clientX - rect.left) * sx, y: (ev.clientY - rect.top) * sy };
+  };
+
+  canvas.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    canvas.setPointerCapture(ev.pointerId);
+    const p = toCanvasCoords(ev);
+    startX = p.x; startY = p.y;
+    dragging = true;
+    composeState.cropRect = { x: startX, y: startY, w: 0, h: 0 };
+    drawSelection(composeState.cropRect);
+  });
+  canvas.addEventListener('pointermove', (ev) => {
+    if (!dragging) return;
+    const p = toCanvasCoords(ev);
+    const x = Math.min(startX, p.x);
+    const y = Math.min(startY, p.y);
+    const w = Math.abs(p.x - startX);
+    const h = Math.abs(p.y - startY);
+    composeState.cropRect = {
+      x: Math.max(0, x),
+      y: Math.max(0, y),
+      w: Math.min(canvas.width - Math.max(0, x), w),
+      h: Math.min(canvas.height - Math.max(0, y), h),
+    };
+    drawSelection(composeState.cropRect);
+  });
+  const endDrag = () => { dragging = false; };
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+}
+
+function extractCrop(img, rect) {
+  const c = document.createElement('canvas');
+  c.width = Math.round(rect.w);
+  c.height = Math.round(rect.h);
+  c.getContext('2d').drawImage(img, rect.x, rect.y, rect.w, rect.h, 0, 0, c.width, c.height);
+  return c;
+}
+
+function renderComposePreview(canvas) {
+  const base = composeState.baseImg;
+  const crop = composeState.croppedCanvas;
+  canvas.width = base.naturalWidth;
+  canvas.height = base.naturalHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(base, 0, 0);
+
+  const baseLong = Math.max(base.naturalWidth, base.naturalHeight);
+  const overlayLong = baseLong * SIZE_RATIO[composeState.sizeKey];
+  const cropRatio = crop.height / crop.width;
+  let ow, oh;
+  if (crop.width >= crop.height) {
+    ow = overlayLong;
+    oh = ow * cropRatio;
+  } else {
+    oh = overlayLong;
+    ow = oh / cropRatio;
+  }
+
+  const margin = baseLong * MARGIN_RATIO;
+  const border = Math.max(4, baseLong * BORDER_RATIO);
+
+  let ox, oy;
+  switch (composeState.corner) {
+    case 'tl': ox = margin; oy = margin; break;
+    case 'tr': ox = canvas.width - ow - margin; oy = margin; break;
+    case 'bl': ox = margin; oy = canvas.height - oh - margin; break;
+    case 'br':
+    default:   ox = canvas.width - ow - margin; oy = canvas.height - oh - margin; break;
+  }
+
+  // ドロップシャドウ付き白フチ
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = border * 1.6;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = border * 0.4;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(ox - border, oy - border, ow + border * 2, oh + border * 2);
+  ctx.restore();
+
+  // 切り抜き画像を上に描画
+  ctx.drawImage(crop, ox, oy, ow, oh);
+}
+
+async function applyCompose() {
+  const canvas = el('compose-preview-canvas');
+  if (!canvas) return;
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  const base64 = dataUrl.split(',')[1];
+  const composed = { dataUrl, mediaType: 'image/jpeg', base64 };
+
+  if (composeState.replaceBase && composeState.baseIdx != null) {
+    uploadedImages[composeState.baseIdx] = composed;
+  } else {
+    if (uploadedImages.length >= MAX_PHOTOS) {
+      if (!confirm(`写真が最大枚数（${MAX_PHOTOS}枚）です。ベース画像を差し替えますか？`)) return;
+      uploadedImages[composeState.baseIdx] = composed;
+    } else {
+      uploadedImages.push(composed);
+    }
+  }
+  renderPreviews();
+  updateGenerateButton();
+  scheduleSave();
+  closeImageCompose();
 }
 
 // ----- 起動 -----
