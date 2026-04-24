@@ -201,24 +201,6 @@ textarea {
   line-height: 1;
   backdrop-filter: blur(4px);
 }
-.preview-item .save-photo {
-  position: absolute;
-  bottom: 4px;
-  right: 4px;
-  background: rgba(255, 255, 255, 0.92);
-  border: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  font-size: 15px;
-  cursor: pointer;
-  line-height: 1;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.preview-item .save-photo:active { transform: scale(0.92); }
 
 /* ========== ボタン ========== */
 .btn {

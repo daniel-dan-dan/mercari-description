@@ -154,7 +154,6 @@ function renderPreviews() {
     item.innerHTML = `
       <img src="${img.dataUrl}" alt="">
       <button class="remove" data-idx="${idx}" title="削除">×</button>
-      <button class="save-photo" data-idx="${idx}" title="写真アプリに保存">💾</button>
     `;
     grid.appendChild(item);
   });
@@ -166,20 +165,12 @@ function renderPreviews() {
       scheduleSave();
     });
   });
-  grid.querySelectorAll('.save-photo').forEach(b => {
-    b.addEventListener('click', () => savePhotoToDevice(Number(b.dataset.idx)));
-  });
   const composeBtn = el('compose-open-btn');
   if (composeBtn) composeBtn.hidden = uploadedImages.length < 2;
 }
 
-async function savePhotoToDevice(idx) {
-  const img = uploadedImages[idx];
-  if (!img) return;
-  const blob = await (await fetch(img.dataUrl)).blob();
-  const filename = `mercari-${Date.now()}-${idx + 1}.jpg`;
+async function saveBlobToDevice(blob, filename) {
   const file = new File([blob], filename, { type: 'image/jpeg' });
-
   // iOS Safari は navigator.share でシステム共有シート → 「画像を保存」で写真アプリへ
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
@@ -1487,6 +1478,10 @@ async function applyCompose() {
   updateGenerateButton();
   scheduleSave();
   closeImageCompose();
+
+  // カメラロールに自動保存（iOSは共有シート→「画像を保存」）
+  const blob = await (await fetch(dataUrl)).blob();
+  await saveBlobToDevice(blob, `mercari-compose-${Date.now()}.jpg`);
 }
 
 // ----- 起動 -----
