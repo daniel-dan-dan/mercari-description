@@ -1184,7 +1184,7 @@ function renderComposeStep() {
   }
 
   if (composeState.step === 2) {
-    label.textContent = 'ステップ2: 切り抜く範囲を指定（2本指でズーム可）';
+    label.textContent = 'ステップ2: 切り抜く範囲を指定';
 
     const shapeRow = document.createElement('div');
     shapeRow.className = 'shape-row';
@@ -1209,20 +1209,12 @@ function renderComposeStep() {
     wrap.appendChild(canvas);
     body.appendChild(wrap);
 
-    const hintRow = document.createElement('div');
-    hintRow.className = 'crop-hint-row';
     const hint = document.createElement('p');
     hint.className = 'crop-hint';
-    hint.textContent = '1本指でドラッグ＝範囲指定／2本指でピンチ＝拡大・移動';
-    const resetBtn = document.createElement('button');
-    resetBtn.className = 'btn crop-reset-btn';
-    resetBtn.textContent = '🔄 ズームリセット';
-    hintRow.appendChild(hint);
-    hintRow.appendChild(resetBtn);
-    body.appendChild(hintRow);
+    hint.textContent = '1本指でドラッグ＝範囲指定／2本指でピンチ＝範囲のサイズ変更';
+    body.appendChild(hint);
 
-    const cropApi = setupCropCanvas(canvas);
-    resetBtn.addEventListener('click', () => cropApi.resetView());
+    setupCropCanvas(canvas);
 
     const backBtn = document.createElement('button');
     backBtn.className = 'btn';
@@ -1370,20 +1362,12 @@ function loadImage(src) {
   });
 }
 
-// 切り抜きキャンバス: 1本指=範囲指定、2本指=ピンチズーム＋パン、形状=矩形/円
+// 切り抜きキャンバス: 1本指=範囲指定、2本指ピンチ=範囲のサイズ変更、形状=矩形/円
 function setupCropCanvas(canvas) {
   const img = composeState.sourceImg;
   const ctx = canvas.getContext('2d');
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;
-
-  // 表示変換（CSS transform）
-  let viewScale = 1, viewTx = 0, viewTy = 0;
-  const applyTransform = () => {
-    canvas.style.transformOrigin = '0 0';
-    canvas.style.transform = `translate(${viewTx}px, ${viewTy}px) scale(${viewScale})`;
-  };
-  applyTransform();
 
   const drawBase = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1435,29 +1419,28 @@ function setupCropCanvas(canvas) {
   let pinchStart = null;
 
   const toCanvasCoords = (clientX, clientY) => {
-    // getBoundingClientRect は変換後の表示サイズを返すので、そのまま比率計算可
     const rect = canvas.getBoundingClientRect();
     const sx = canvas.width / rect.width;
     const sy = canvas.height / rect.height;
     return { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy };
   };
 
-  const parentRect = () => canvas.parentElement.getBoundingClientRect();
+  const clampRect = (r) => {
+    const x = Math.max(0, Math.min(canvas.width - 1, r.x));
+    const y = Math.max(0, Math.min(canvas.height - 1, r.y));
+    const w = Math.max(1, Math.min(canvas.width - x, r.w));
+    const h = Math.max(1, Math.min(canvas.height - y, r.h));
+    return { x, y, w, h };
+  };
 
   const beginPinch = () => {
+    if (!composeState.cropRect) return;
     const arr = Array.from(pointers.values());
     const dx = arr[1].clientX - arr[0].clientX;
     const dy = arr[1].clientY - arr[0].clientY;
-    const pr = parentRect();
-    const cx = (arr[0].clientX + arr[1].clientX) / 2 - pr.left;
-    const cy = (arr[0].clientY + arr[1].clientY) / 2 - pr.top;
-    // 変換前のCSS座標系での「指の中心」位置（このアンカーをズーム中も維持）
-    const ax = (cx - viewTx) / viewScale;
-    const ay = (cy - viewTy) / viewScale;
     pinchStart = {
       dist: Math.hypot(dx, dy) || 1,
-      ax, ay,
-      startScale: viewScale,
+      rect: { ...composeState.cropRect },
     };
   };
 
@@ -1467,13 +1450,12 @@ function setupCropCanvas(canvas) {
     pointers.set(ev.pointerId, { clientX: ev.clientX, clientY: ev.clientY });
 
     if (pointers.size >= 2) {
-      // 進行中の選択が小さければ破棄
-      if (composeState.cropRect && (composeState.cropRect.w < 30 || composeState.cropRect.h < 30)) {
-        composeState.cropRect = null;
-        drawSelection(null);
+      if (composeState.cropRect && composeState.cropRect.w >= 1 && composeState.cropRect.h >= 1) {
+        dragMode = 'pinch';
+        beginPinch();
+      } else {
+        dragMode = null;
       }
-      dragMode = 'pinch';
-      beginPinch();
     } else {
       dragMode = 'select';
       const p = toCanvasCoords(ev.clientX, ev.clientY);
@@ -1491,16 +1473,20 @@ function setupCropCanvas(canvas) {
       const arr = Array.from(pointers.values()).slice(0, 2);
       const dx = arr[1].clientX - arr[0].clientX;
       const dy = arr[1].clientY - arr[0].clientY;
-      const pr = parentRect();
-      const cx = (arr[0].clientX + arr[1].clientX) / 2 - pr.left;
-      const cy = (arr[0].clientY + arr[1].clientY) / 2 - pr.top;
       const dist = Math.hypot(dx, dy) || 1;
-      const newScale = Math.max(0.5, Math.min(8, pinchStart.startScale * dist / pinchStart.dist));
-      // アンカー (ax, ay) を新しい指中心 (cx, cy) に維持
-      viewScale = newScale;
-      viewTx = cx - newScale * pinchStart.ax;
-      viewTy = cy - newScale * pinchStart.ay;
-      applyTransform();
+      const ratio = dist / pinchStart.dist;
+      const start = pinchStart.rect;
+      const cx = start.x + start.w / 2;
+      const cy = start.y + start.h / 2;
+      const newW = start.w * ratio;
+      const newH = start.h * ratio;
+      composeState.cropRect = clampRect({
+        x: cx - newW / 2,
+        y: cy - newH / 2,
+        w: newW,
+        h: newH,
+      });
+      drawSelection(composeState.cropRect);
     } else if (dragMode === 'select' && pointers.size === 1) {
       const p = toCanvasCoords(ev.clientX, ev.clientY);
       const x = Math.min(startX, p.x);
@@ -1521,7 +1507,7 @@ function setupCropCanvas(canvas) {
     pointers.delete(ev.pointerId);
     if (pointers.size < 2) pinchStart = null;
     if (pointers.size === 0) dragMode = null;
-    else if (pointers.size === 1) dragMode = null; // 単独残りは新規drag開始まで待機
+    else if (pointers.size === 1) dragMode = null;
   };
 
   canvas.addEventListener('pointerdown', onPointerDown);
@@ -1529,12 +1515,7 @@ function setupCropCanvas(canvas) {
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerUp);
 
-  return {
-    resetView() {
-      viewScale = 1; viewTx = 0; viewTy = 0;
-      applyTransform();
-    },
-  };
+  return {};
 }
 
 function extractCrop(img, rect, shape) {
