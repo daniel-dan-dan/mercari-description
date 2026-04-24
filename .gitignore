@@ -1,0 +1,10 @@
+.env
+.env.*
+*.log
+.DS_Store
+node_modules/
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+TODO.md

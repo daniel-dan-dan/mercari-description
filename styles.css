@@ -689,6 +689,41 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
   color: #6b5580;
   text-align: center;
   margin: 0;
+  flex: 1;
+}
+.crop-hint-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.crop-reset-btn {
+  padding: 6px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 形状セレクター */
+.shape-row {
+  display: flex;
+  gap: 8px;
+}
+.shape-btn {
+  flex: 1;
+  padding: 10px;
+  border: 2px solid #e9dff0;
+  background: white;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #3d2a5c;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.shape-btn.active {
+  background: #2d1e4a;
+  color: white;
+  border-color: #2d1e4a;
 }
 
 /* 配置UI */

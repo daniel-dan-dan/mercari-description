@@ -1127,7 +1127,9 @@ const composeState = {
   croppedCanvas: null,
   corner: 'br',       // tl/tr/bl/br
   sizeKey: 'medium',  // small/medium/large
+  shape: 'rect',      // 'rect' | 'circle'
   replaceBase: false,
+  _drawSelection: null, // 形状切替時の再描画フック
 };
 
 const SIZE_RATIO = { small: 0.22, medium: 0.30, large: 0.40 };
@@ -1148,7 +1150,9 @@ function openImageCompose() {
   composeState.croppedCanvas = null;
   composeState.corner = 'br';
   composeState.sizeKey = 'medium';
+  composeState.shape = 'rect';
   composeState.replaceBase = false;
+  composeState._drawSelection = null;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -1180,17 +1184,45 @@ function renderComposeStep() {
   }
 
   if (composeState.step === 2) {
-    label.textContent = 'ステップ2: 指で矩形を描いて切り抜く範囲を指定';
+    label.textContent = 'ステップ2: 切り抜く範囲を指定（2本指でズーム可）';
+
+    const shapeRow = document.createElement('div');
+    shapeRow.className = 'shape-row';
+    [['rect','⬜ 四角'],['circle','◯ 丸']].forEach(([k, l]) => {
+      const b = document.createElement('button');
+      b.className = 'shape-btn' + (composeState.shape === k ? ' active' : '');
+      b.textContent = l;
+      b.addEventListener('click', () => {
+        composeState.shape = k;
+        shapeRow.querySelectorAll('.shape-btn').forEach((bb, ix) => {
+          bb.classList.toggle('active', ['rect','circle'][ix] === k);
+        });
+        if (composeState._drawSelection) composeState._drawSelection(composeState.cropRect);
+      });
+      shapeRow.appendChild(b);
+    });
+    body.appendChild(shapeRow);
+
     const wrap = document.createElement('div');
     wrap.className = 'crop-container';
     const canvas = document.createElement('canvas');
     wrap.appendChild(canvas);
     body.appendChild(wrap);
+
+    const hintRow = document.createElement('div');
+    hintRow.className = 'crop-hint-row';
     const hint = document.createElement('p');
     hint.className = 'crop-hint';
-    hint.textContent = '画像上をドラッグ／指でなぞって矩形を指定してください';
-    body.appendChild(hint);
-    setupCropCanvas(canvas);
+    hint.textContent = '1本指でドラッグ＝範囲指定／2本指でピンチ＝拡大・移動';
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'btn crop-reset-btn';
+    resetBtn.textContent = '🔄 ズームリセット';
+    hintRow.appendChild(hint);
+    hintRow.appendChild(resetBtn);
+    body.appendChild(hintRow);
+
+    const cropApi = setupCropCanvas(canvas);
+    resetBtn.addEventListener('click', () => cropApi.resetView());
 
     const backBtn = document.createElement('button');
     backBtn.className = 'btn';
@@ -1206,7 +1238,7 @@ function renderComposeStep() {
         alert('切り抜く範囲をドラッグで指定してください');
         return;
       }
-      composeState.croppedCanvas = extractCrop(composeState.sourceImg, composeState.cropRect);
+      composeState.croppedCanvas = extractCrop(composeState.sourceImg, composeState.cropRect, composeState.shape);
       composeState.step = 3;
       renderComposeStep();
     });
@@ -1338,76 +1370,188 @@ function loadImage(src) {
   });
 }
 
-// 切り抜きキャンバス: ドラッグで矩形選択
+// 切り抜きキャンバス: 1本指=範囲指定、2本指=ピンチズーム＋パン、形状=矩形/円
 function setupCropCanvas(canvas) {
   const img = composeState.sourceImg;
   const ctx = canvas.getContext('2d');
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;
 
+  // 表示変換（CSS transform）
+  let viewScale = 1, viewTx = 0, viewTy = 0;
+  const applyTransform = () => {
+    canvas.style.transformOrigin = '0 0';
+    canvas.style.transform = `translate(${viewTx}px, ${viewTy}px) scale(${viewScale})`;
+  };
+  applyTransform();
+
   const drawBase = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0);
   };
+
   const drawSelection = (rect) => {
     drawBase();
-    if (!rect) return;
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(0, 0, canvas.width, rect.y);
-    ctx.fillRect(0, rect.y + rect.h, canvas.width, canvas.height - rect.y - rect.h);
-    ctx.fillRect(0, rect.y, rect.x, rect.h);
-    ctx.fillRect(rect.x + rect.w, rect.y, canvas.width - rect.x - rect.w, rect.h);
-    ctx.strokeStyle = '#ff4757';
-    ctx.lineWidth = Math.max(2, canvas.width / 240);
-    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    if (!rect || rect.w < 1 || rect.h < 1) return;
+    const lw = Math.max(2, canvas.width / 240);
+
+    if (composeState.shape === 'circle') {
+      const cx = rect.x + rect.w / 2;
+      const cy = rect.y + rect.h / 2;
+      const rx = rect.w / 2, ry = rect.h / 2;
+      // 楕円外を暗転（evenodd塗り）
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.beginPath();
+      ctx.rect(0, 0, canvas.width, canvas.height);
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2, true);
+      ctx.fill('evenodd');
+      ctx.restore();
+      // 楕円ストローク
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ff4757';
+      ctx.lineWidth = lw;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(0, 0, canvas.width, rect.y);
+      ctx.fillRect(0, rect.y + rect.h, canvas.width, canvas.height - rect.y - rect.h);
+      ctx.fillRect(0, rect.y, rect.x, rect.h);
+      ctx.fillRect(rect.x + rect.w, rect.y, canvas.width - rect.x - rect.w, rect.h);
+      ctx.strokeStyle = '#ff4757';
+      ctx.lineWidth = lw;
+      ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    }
   };
+  composeState._drawSelection = drawSelection;
   drawBase();
   if (composeState.cropRect) drawSelection(composeState.cropRect);
 
-  let dragging = false;
+  // ポインター追跡
+  const pointers = new Map(); // id → { clientX, clientY }
+  let dragMode = null;        // 'select' | 'pinch' | null
   let startX = 0, startY = 0;
+  let pinchStart = null;
 
-  const toCanvasCoords = (ev) => {
+  const toCanvasCoords = (clientX, clientY) => {
+    // getBoundingClientRect は変換後の表示サイズを返すので、そのまま比率計算可
     const rect = canvas.getBoundingClientRect();
     const sx = canvas.width / rect.width;
     const sy = canvas.height / rect.height;
-    return { x: (ev.clientX - rect.left) * sx, y: (ev.clientY - rect.top) * sy };
+    return { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy };
   };
 
-  canvas.addEventListener('pointerdown', (ev) => {
+  const parentRect = () => canvas.parentElement.getBoundingClientRect();
+
+  const beginPinch = () => {
+    const arr = Array.from(pointers.values());
+    const dx = arr[1].clientX - arr[0].clientX;
+    const dy = arr[1].clientY - arr[0].clientY;
+    const pr = parentRect();
+    const cx = (arr[0].clientX + arr[1].clientX) / 2 - pr.left;
+    const cy = (arr[0].clientY + arr[1].clientY) / 2 - pr.top;
+    // 変換前のCSS座標系での「指の中心」位置（このアンカーをズーム中も維持）
+    const ax = (cx - viewTx) / viewScale;
+    const ay = (cy - viewTy) / viewScale;
+    pinchStart = {
+      dist: Math.hypot(dx, dy) || 1,
+      ax, ay,
+      startScale: viewScale,
+    };
+  };
+
+  const onPointerDown = (ev) => {
     ev.preventDefault();
     canvas.setPointerCapture(ev.pointerId);
-    const p = toCanvasCoords(ev);
-    startX = p.x; startY = p.y;
-    dragging = true;
-    composeState.cropRect = { x: startX, y: startY, w: 0, h: 0 };
-    drawSelection(composeState.cropRect);
-  });
-  canvas.addEventListener('pointermove', (ev) => {
-    if (!dragging) return;
-    const p = toCanvasCoords(ev);
-    const x = Math.min(startX, p.x);
-    const y = Math.min(startY, p.y);
-    const w = Math.abs(p.x - startX);
-    const h = Math.abs(p.y - startY);
-    composeState.cropRect = {
-      x: Math.max(0, x),
-      y: Math.max(0, y),
-      w: Math.min(canvas.width - Math.max(0, x), w),
-      h: Math.min(canvas.height - Math.max(0, y), h),
-    };
-    drawSelection(composeState.cropRect);
-  });
-  const endDrag = () => { dragging = false; };
-  canvas.addEventListener('pointerup', endDrag);
-  canvas.addEventListener('pointercancel', endDrag);
+    pointers.set(ev.pointerId, { clientX: ev.clientX, clientY: ev.clientY });
+
+    if (pointers.size >= 2) {
+      // 進行中の選択が小さければ破棄
+      if (composeState.cropRect && (composeState.cropRect.w < 30 || composeState.cropRect.h < 30)) {
+        composeState.cropRect = null;
+        drawSelection(null);
+      }
+      dragMode = 'pinch';
+      beginPinch();
+    } else {
+      dragMode = 'select';
+      const p = toCanvasCoords(ev.clientX, ev.clientY);
+      startX = p.x; startY = p.y;
+      composeState.cropRect = { x: startX, y: startY, w: 0, h: 0 };
+      drawSelection(composeState.cropRect);
+    }
+  };
+
+  const onPointerMove = (ev) => {
+    if (!pointers.has(ev.pointerId)) return;
+    pointers.set(ev.pointerId, { clientX: ev.clientX, clientY: ev.clientY });
+
+    if (dragMode === 'pinch' && pointers.size >= 2 && pinchStart) {
+      const arr = Array.from(pointers.values()).slice(0, 2);
+      const dx = arr[1].clientX - arr[0].clientX;
+      const dy = arr[1].clientY - arr[0].clientY;
+      const pr = parentRect();
+      const cx = (arr[0].clientX + arr[1].clientX) / 2 - pr.left;
+      const cy = (arr[0].clientY + arr[1].clientY) / 2 - pr.top;
+      const dist = Math.hypot(dx, dy) || 1;
+      const newScale = Math.max(0.5, Math.min(8, pinchStart.startScale * dist / pinchStart.dist));
+      // アンカー (ax, ay) を新しい指中心 (cx, cy) に維持
+      viewScale = newScale;
+      viewTx = cx - newScale * pinchStart.ax;
+      viewTy = cy - newScale * pinchStart.ay;
+      applyTransform();
+    } else if (dragMode === 'select' && pointers.size === 1) {
+      const p = toCanvasCoords(ev.clientX, ev.clientY);
+      const x = Math.min(startX, p.x);
+      const y = Math.min(startY, p.y);
+      const w = Math.abs(p.x - startX);
+      const h = Math.abs(p.y - startY);
+      composeState.cropRect = {
+        x: Math.max(0, x),
+        y: Math.max(0, y),
+        w: Math.min(canvas.width - Math.max(0, x), w),
+        h: Math.min(canvas.height - Math.max(0, y), h),
+      };
+      drawSelection(composeState.cropRect);
+    }
+  };
+
+  const onPointerUp = (ev) => {
+    pointers.delete(ev.pointerId);
+    if (pointers.size < 2) pinchStart = null;
+    if (pointers.size === 0) dragMode = null;
+    else if (pointers.size === 1) dragMode = null; // 単独残りは新規drag開始まで待機
+  };
+
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerUp);
+
+  return {
+    resetView() {
+      viewScale = 1; viewTx = 0; viewTy = 0;
+      applyTransform();
+    },
+  };
 }
 
-function extractCrop(img, rect) {
+function extractCrop(img, rect, shape) {
   const c = document.createElement('canvas');
   c.width = Math.round(rect.w);
   c.height = Math.round(rect.h);
-  c.getContext('2d').drawImage(img, rect.x, rect.y, rect.w, rect.h, 0, 0, c.width, c.height);
+  const ctx = c.getContext('2d');
+  if (shape === 'circle') {
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(c.width / 2, c.height / 2, c.width / 2, c.height / 2, 0, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h, 0, 0, c.width, c.height);
+    ctx.restore();
+  } else {
+    ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h, 0, 0, c.width, c.height);
+  }
   return c;
 }
 
@@ -1443,18 +1587,36 @@ function renderComposePreview(canvas) {
     default:   ox = canvas.width - ow - margin; oy = canvas.height - oh - margin; break;
   }
 
-  // ドロップシャドウ付き白フチ
-  ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.35)';
-  ctx.shadowBlur = border * 1.6;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = border * 0.4;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(ox - border, oy - border, ow + border * 2, oh + border * 2);
-  ctx.restore();
-
-  // 切り抜き画像を上に描画
-  ctx.drawImage(crop, ox, oy, ow, oh);
+  if (composeState.shape === 'circle') {
+    const ccx = ox + ow / 2;
+    const ccy = oy + oh / 2;
+    const crx = ow / 2 + border;
+    const cry = oh / 2 + border;
+    // 楕円の白フチ + 影
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = border * 1.6;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = border * 0.4;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.ellipse(ccx, ccy, crx, cry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    // 切り抜き画像（既に円形クリップ済み）を上に描画
+    ctx.drawImage(crop, ox, oy, ow, oh);
+  } else {
+    // 矩形の白フチ + 影
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = border * 1.6;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = border * 0.4;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(ox - border, oy - border, ow + border * 2, oh + border * 2);
+    ctx.restore();
+    ctx.drawImage(crop, ox, oy, ow, oh);
+  }
 }
 
 async function applyCompose() {
