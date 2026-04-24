@@ -1209,12 +1209,20 @@ function renderComposeStep() {
     wrap.appendChild(canvas);
     body.appendChild(wrap);
 
+    const hintRow = document.createElement('div');
+    hintRow.className = 'crop-hint-row';
     const hint = document.createElement('p');
     hint.className = 'crop-hint';
-    hint.textContent = '1本指でドラッグ＝範囲指定／2本指でピンチ＝範囲のサイズ変更';
-    body.appendChild(hint);
+    hint.textContent = '範囲の外からドラッグ＝新規指定／範囲の中をドラッグ＝移動／2本指でピンチ＝サイズ変更';
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'btn crop-reset-btn';
+    resetBtn.textContent = '🔄 範囲をクリア';
+    hintRow.appendChild(hint);
+    hintRow.appendChild(resetBtn);
+    body.appendChild(hintRow);
 
-    setupCropCanvas(canvas);
+    const cropApi = setupCropCanvas(canvas);
+    resetBtn.addEventListener('click', () => cropApi.clearRect());
 
     const backBtn = document.createElement('button');
     backBtn.className = 'btn';
@@ -1413,10 +1421,10 @@ function setupCropCanvas(canvas) {
   drawBase();
   if (composeState.cropRect) drawSelection(composeState.cropRect);
 
-  let dragMode = null;        // 'select-pending' | 'select' | 'pinch' | null
+  let dragMode = null;        // 'select' | 'move' | 'pinch' | null
   let startX = 0, startY = 0;
+  let moveStart = null;       // { rectX, rectY, pointerX, pointerY }
   let pinchStart = null;
-  let pendingRectSnapshot = null;
 
   const toCanvasCoords = (clientX, clientY) => {
     const rect = canvas.getBoundingClientRect();
@@ -1433,37 +1441,66 @@ function setupCropCanvas(canvas) {
     return { x, y, w, h };
   };
 
-  const tryStartPinch = (touches) => {
-    // pendingRectSnapshot を復元してピンチ開始（既存rectがあればそれを使う）
-    if (pendingRectSnapshot && pendingRectSnapshot.w >= 1 && pendingRectSnapshot.h >= 1) {
-      composeState.cropRect = { ...pendingRectSnapshot };
-    }
+  const clampMove = (r) => {
+    const w = r.w, h = r.h;
+    return {
+      x: Math.max(0, Math.min(canvas.width - w, r.x)),
+      y: Math.max(0, Math.min(canvas.height - h, r.y)),
+      w, h,
+    };
+  };
+
+  const isInsideRect = (p, rect) => {
+    if (!rect) return false;
+    return p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h;
+  };
+
+  const startPinch = (touches) => {
     if (!composeState.cropRect || composeState.cropRect.w < 1 || composeState.cropRect.h < 1) {
+      // 既存rectが無ければピンチ不可。単純に dragMode を終了
       dragMode = null;
-      return false;
+      return;
     }
     const dx = touches[1].clientX - touches[0].clientX;
     const dy = touches[1].clientY - touches[0].clientY;
+    const c1 = toCanvasCoords(touches[0].clientX, touches[0].clientY);
+    const c2 = toCanvasCoords(touches[1].clientX, touches[1].clientY);
     pinchStart = {
       dist: Math.hypot(dx, dy) || 1,
+      cx: (c1.x + c2.x) / 2,
+      cy: (c1.y + c2.y) / 2,
       rect: { ...composeState.cropRect },
     };
     dragMode = 'pinch';
-    drawSelection(composeState.cropRect);
-    return true;
   };
 
-  // ===== TouchEvent ハンドラ（iOS Safari の多指で最も安定） =====
+  const startSingle = (touch) => {
+    const p = toCanvasCoords(touch.clientX, touch.clientY);
+    if (isInsideRect(p, composeState.cropRect)) {
+      // 既存範囲の内側 → 移動
+      moveStart = {
+        rectX: composeState.cropRect.x,
+        rectY: composeState.cropRect.y,
+        pointerX: p.x,
+        pointerY: p.y,
+      };
+      dragMode = 'move';
+    } else {
+      // 外側 → 新規範囲指定
+      startX = p.x; startY = p.y;
+      composeState.cropRect = { x: startX, y: startY, w: 0, h: 0 };
+      drawSelection(composeState.cropRect);
+      dragMode = 'select';
+    }
+  };
+
+  // ===== TouchEvent ハンドラ =====
   const onTouchStart = (ev) => {
     ev.preventDefault();
     if (ev.touches.length >= 2) {
-      tryStartPinch(ev.touches);
+      startPinch(ev.touches);
     } else if (ev.touches.length === 1) {
-      // スナップショット保存。動くまで cropRect は変更しない
-      pendingRectSnapshot = composeState.cropRect ? { ...composeState.cropRect } : null;
-      const p = toCanvasCoords(ev.touches[0].clientX, ev.touches[0].clientY);
-      startX = p.x; startY = p.y;
-      dragMode = 'select-pending';
+      startSingle(ev.touches[0]);
     }
   };
 
@@ -1473,21 +1510,32 @@ function setupCropCanvas(canvas) {
       const dx = ev.touches[1].clientX - ev.touches[0].clientX;
       const dy = ev.touches[1].clientY - ev.touches[0].clientY;
       const dist = Math.hypot(dx, dy) || 1;
+      const c1 = toCanvasCoords(ev.touches[0].clientX, ev.touches[0].clientY);
+      const c2 = toCanvasCoords(ev.touches[1].clientX, ev.touches[1].clientY);
+      const cx = (c1.x + c2.x) / 2;
+      const cy = (c1.y + c2.y) / 2;
       const ratio = dist / pinchStart.dist;
       const s = pinchStart.rect;
-      const cx = s.x + s.w / 2;
-      const cy = s.y + s.h / 2;
+      const sCx = s.x + s.w / 2;
+      const sCy = s.y + s.h / 2;
       const newW = s.w * ratio;
       const newH = s.h * ratio;
+      const newCx = sCx + (cx - pinchStart.cx);
+      const newCy = sCy + (cy - pinchStart.cy);
       composeState.cropRect = clampRect({
-        x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH,
+        x: newCx - newW / 2, y: newCy - newH / 2, w: newW, h: newH,
       });
       drawSelection(composeState.cropRect);
-    } else if ((dragMode === 'select-pending' || dragMode === 'select') && ev.touches.length === 1) {
-      if (dragMode === 'select-pending') {
-        dragMode = 'select';
-        composeState.cropRect = { x: startX, y: startY, w: 0, h: 0 };
-      }
+    } else if (dragMode === 'move' && ev.touches.length === 1 && moveStart) {
+      const p = toCanvasCoords(ev.touches[0].clientX, ev.touches[0].clientY);
+      composeState.cropRect = clampMove({
+        x: moveStart.rectX + (p.x - moveStart.pointerX),
+        y: moveStart.rectY + (p.y - moveStart.pointerY),
+        w: composeState.cropRect.w,
+        h: composeState.cropRect.h,
+      });
+      drawSelection(composeState.cropRect);
+    } else if (dragMode === 'select' && ev.touches.length === 1) {
       const p = toCanvasCoords(ev.touches[0].clientX, ev.touches[0].clientY);
       const x = Math.min(startX, p.x);
       const y = Math.min(startY, p.y);
@@ -1498,9 +1546,6 @@ function setupCropCanvas(canvas) {
         h: Math.min(canvas.height - Math.max(0, y), Math.abs(p.y - startY)),
       };
       drawSelection(composeState.cropRect);
-    } else if (dragMode === 'select-pending' && ev.touches.length >= 2) {
-      // ピンチ中に touchstart を取り逃した場合の救済
-      tryStartPinch(ev.touches);
     }
   };
 
@@ -1509,11 +1554,12 @@ function setupCropCanvas(canvas) {
     if (ev.touches.length === 0) {
       dragMode = null;
       pinchStart = null;
-      pendingRectSnapshot = null;
+      moveStart = null;
     } else if (ev.touches.length === 1 && dragMode === 'pinch') {
-      // ピンチから1本指へ: いったん終了（次の動きは無視）
+      // ピンチから1本指へ移行: そのまま単指の move or select に切替
       dragMode = null;
       pinchStart = null;
+      startSingle(ev.touches[0]);
     }
   };
 
@@ -1522,34 +1568,41 @@ function setupCropCanvas(canvas) {
   canvas.addEventListener('touchend', onTouchEnd, { passive: false });
   canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
 
-  // ===== MouseEvent フォールバック（PC用、ピンチ非対応） =====
-  let mouseDown = false;
+  // ===== MouseEvent フォールバック（PC用） =====
   canvas.addEventListener('mousedown', (ev) => {
-    if ('ontouchstart' in window) return; // タッチ端末では無視
-    mouseDown = true;
-    pendingRectSnapshot = composeState.cropRect ? { ...composeState.cropRect } : null;
-    const p = toCanvasCoords(ev.clientX, ev.clientY);
-    startX = p.x; startY = p.y;
-    dragMode = 'select';
-    composeState.cropRect = { x: startX, y: startY, w: 0, h: 0 };
-    drawSelection(composeState.cropRect);
+    if ('ontouchstart' in window) return;
+    startSingle(ev);
   });
   canvas.addEventListener('mousemove', (ev) => {
-    if (!mouseDown || dragMode !== 'select') return;
-    const p = toCanvasCoords(ev.clientX, ev.clientY);
-    const x = Math.min(startX, p.x);
-    const y = Math.min(startY, p.y);
-    composeState.cropRect = {
-      x: Math.max(0, x),
-      y: Math.max(0, y),
-      w: Math.min(canvas.width - Math.max(0, x), Math.abs(p.x - startX)),
-      h: Math.min(canvas.height - Math.max(0, y), Math.abs(p.y - startY)),
-    };
-    drawSelection(composeState.cropRect);
+    if ('ontouchstart' in window) return;
+    if (dragMode === 'move' && moveStart) {
+      const p = toCanvasCoords(ev.clientX, ev.clientY);
+      composeState.cropRect = clampMove({
+        x: moveStart.rectX + (p.x - moveStart.pointerX),
+        y: moveStart.rectY + (p.y - moveStart.pointerY),
+        w: composeState.cropRect.w, h: composeState.cropRect.h,
+      });
+      drawSelection(composeState.cropRect);
+    } else if (dragMode === 'select') {
+      const p = toCanvasCoords(ev.clientX, ev.clientY);
+      const x = Math.min(startX, p.x), y = Math.min(startY, p.y);
+      composeState.cropRect = {
+        x: Math.max(0, x), y: Math.max(0, y),
+        w: Math.min(canvas.width - Math.max(0, x), Math.abs(p.x - startX)),
+        h: Math.min(canvas.height - Math.max(0, y), Math.abs(p.y - startY)),
+      };
+      drawSelection(composeState.cropRect);
+    }
   });
-  window.addEventListener('mouseup', () => { mouseDown = false; dragMode = null; });
+  window.addEventListener('mouseup', () => { dragMode = null; moveStart = null; });
 
-  return {};
+  return {
+    clearRect() {
+      composeState.cropRect = null;
+      dragMode = null;
+      drawBase();
+    },
+  };
 }
 
 function extractCrop(img, rect, shape) {
