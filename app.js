@@ -1696,35 +1696,46 @@ function renderComposePreview(canvas) {
     default:   ox = canvas.width - ow - margin; oy = canvas.height - oh - margin; break;
   }
 
-  // ゴールドのグラデーション枠（細め + 影）
+  // 金属光沢のあるビビッドなゴールド枠（サムネでも目立つよう彩度強め＋細い暗縁）
   const gold = ctx.createLinearGradient(ox, oy, ox, oy + oh);
-  gold.addColorStop(0, '#f2d67a');
-  gold.addColorStop(0.5, '#d4af37');
-  gold.addColorStop(1, '#8a6f20');
+  gold.addColorStop(0.00, '#fff3a0');  // ハイライト
+  gold.addColorStop(0.35, '#ffcc1f');  // 鮮やかなゴールド
+  gold.addColorStop(0.65, '#e59e0a');  // 深めのゴールド
+  gold.addColorStop(1.00, '#8b5e00');  // ブロンズの影
+  const outline = border * 0.25;        // 暗い縁（輪郭強調）
 
   if (composeState.shape === 'circle') {
     const ccx = ox + ow / 2;
     const ccy = oy + oh / 2;
+    const crxOut = ow / 2 + border + outline;
+    const cryOut = oh / 2 + border + outline;
     const crx = ow / 2 + border;
     const cry = oh / 2 + border;
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.45)';
-    ctx.shadowBlur = border * 2.2;
-    ctx.shadowOffsetY = border * 0.8;
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = border * 2.8;
+    ctx.shadowOffsetY = border * 1.0;
+    ctx.fillStyle = '#4a2e00'; // 外側の暗い縁
+    ctx.beginPath();
+    ctx.ellipse(ccx, ccy, crxOut, cryOut, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
     ctx.fillStyle = gold;
     ctx.beginPath();
     ctx.ellipse(ccx, ccy, crx, cry, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.restore();
     ctx.drawImage(crop, ox, oy, ow, oh);
   } else {
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.45)';
-    ctx.shadowBlur = border * 2.2;
-    ctx.shadowOffsetY = border * 0.8;
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = border * 2.8;
+    ctx.shadowOffsetY = border * 1.0;
+    ctx.fillStyle = '#4a2e00';
+    ctx.fillRect(ox - border - outline, oy - border - outline,
+                 ow + (border + outline) * 2, oh + (border + outline) * 2);
+    ctx.restore();
     ctx.fillStyle = gold;
     ctx.fillRect(ox - border, oy - border, ow + border * 2, oh + border * 2);
-    ctx.restore();
     ctx.drawImage(crop, ox, oy, ow, oh);
   }
 }
