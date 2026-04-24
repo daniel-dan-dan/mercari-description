@@ -703,6 +703,15 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
   white-space: nowrap;
 }
 
+.ver-tag {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  color: #999;
+  font-weight: 400;
+  vertical-align: middle;
+}
+
 /* 形状セレクター */
 .shape-row {
   display: flex;

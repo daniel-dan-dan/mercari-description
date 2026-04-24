@@ -1363,6 +1363,7 @@ function loadImage(src) {
 }
 
 // 切り抜きキャンバス: 1本指=範囲指定、2本指ピンチ=範囲のサイズ変更、形状=矩形/円
+// iOS多指の安定性のため TouchEvent ベース、デスクトップは MouseEvent でフォールバック
 function setupCropCanvas(canvas) {
   const img = composeState.sourceImg;
   const ctx = canvas.getContext('2d');
@@ -1412,11 +1413,10 @@ function setupCropCanvas(canvas) {
   drawBase();
   if (composeState.cropRect) drawSelection(composeState.cropRect);
 
-  // ポインター追跡
-  const pointers = new Map(); // id → { clientX, clientY }
-  let dragMode = null;        // 'select' | 'pinch' | null
+  let dragMode = null;        // 'select-pending' | 'select' | 'pinch' | null
   let startX = 0, startY = 0;
   let pinchStart = null;
+  let pendingRectSnapshot = null;
 
   const toCanvasCoords = (clientX, clientY) => {
     const rect = canvas.getBoundingClientRect();
@@ -1433,113 +1433,121 @@ function setupCropCanvas(canvas) {
     return { x, y, w, h };
   };
 
-  const beginPinch = () => {
-    if (!composeState.cropRect) return;
-    const arr = Array.from(pointers.values());
-    const dx = arr[1].clientX - arr[0].clientX;
-    const dy = arr[1].clientY - arr[0].clientY;
+  const tryStartPinch = (touches) => {
+    // pendingRectSnapshot を復元してピンチ開始（既存rectがあればそれを使う）
+    if (pendingRectSnapshot && pendingRectSnapshot.w >= 1 && pendingRectSnapshot.h >= 1) {
+      composeState.cropRect = { ...pendingRectSnapshot };
+    }
+    if (!composeState.cropRect || composeState.cropRect.w < 1 || composeState.cropRect.h < 1) {
+      dragMode = null;
+      return false;
+    }
+    const dx = touches[1].clientX - touches[0].clientX;
+    const dy = touches[1].clientY - touches[0].clientY;
     pinchStart = {
       dist: Math.hypot(dx, dy) || 1,
       rect: { ...composeState.cropRect },
     };
+    dragMode = 'pinch';
+    drawSelection(composeState.cropRect);
+    return true;
   };
 
-  let pendingRectSnapshot = null;
-  const SELECT_MOVE_THRESHOLD = 14;   // CSSピクセル
-  const SELECT_TIME_THRESHOLD = 180;  // ミリ秒（これ未満は2本目を待つ）
-  let downClientX = 0, downClientY = 0;
-  let downTime = 0;
-
-  const onPointerDown = (ev) => {
+  // ===== TouchEvent ハンドラ（iOS Safari の多指で最も安定） =====
+  const onTouchStart = (ev) => {
     ev.preventDefault();
-    canvas.setPointerCapture(ev.pointerId);
-    pointers.set(ev.pointerId, { clientX: ev.clientX, clientY: ev.clientY });
-
-    if (pointers.size >= 2) {
-      // 2本目の指が来た: 必ずスナップショットを復元してピンチへ
-      if (pendingRectSnapshot && pendingRectSnapshot.w >= 1 && pendingRectSnapshot.h >= 1) {
-        composeState.cropRect = { ...pendingRectSnapshot };
-        drawSelection(composeState.cropRect);
-        dragMode = 'pinch';
-        beginPinch();
-      } else {
-        dragMode = null;
-      }
-    } else {
-      // 1本目: 即リセットしない。スナップショットを保持しながら2本目を待つ
-      dragMode = 'pending';
+    if (ev.touches.length >= 2) {
+      tryStartPinch(ev.touches);
+    } else if (ev.touches.length === 1) {
+      // スナップショット保存。動くまで cropRect は変更しない
       pendingRectSnapshot = composeState.cropRect ? { ...composeState.cropRect } : null;
-      const p = toCanvasCoords(ev.clientX, ev.clientY);
+      const p = toCanvasCoords(ev.touches[0].clientX, ev.touches[0].clientY);
       startX = p.x; startY = p.y;
-      downClientX = ev.clientX; downClientY = ev.clientY;
-      downTime = performance.now();
+      dragMode = 'select-pending';
     }
   };
 
-  const onPointerMove = (ev) => {
-    if (!pointers.has(ev.pointerId)) return;
-    pointers.set(ev.pointerId, { clientX: ev.clientX, clientY: ev.clientY });
-
-    if (dragMode === 'pending' && pointers.size === 1) {
-      const moved = Math.hypot(ev.clientX - downClientX, ev.clientY - downClientY);
-      const elapsed = performance.now() - downTime;
-      // 距離・時間どちらも閾値超えで初めて新規範囲指定として確定
-      // → 短時間の指のブレでは確定せず、2本目の指を待てる
-      if (moved < SELECT_MOVE_THRESHOLD || elapsed < SELECT_TIME_THRESHOLD) return;
-      dragMode = 'select';
-      composeState.cropRect = { x: startX, y: startY, w: 0, h: 0 };
-      drawSelection(composeState.cropRect);
-    }
-
-    if (dragMode === 'pinch' && pointers.size >= 2 && pinchStart) {
-      const arr = Array.from(pointers.values()).slice(0, 2);
-      const dx = arr[1].clientX - arr[0].clientX;
-      const dy = arr[1].clientY - arr[0].clientY;
+  const onTouchMove = (ev) => {
+    ev.preventDefault();
+    if (dragMode === 'pinch' && ev.touches.length >= 2 && pinchStart) {
+      const dx = ev.touches[1].clientX - ev.touches[0].clientX;
+      const dy = ev.touches[1].clientY - ev.touches[0].clientY;
       const dist = Math.hypot(dx, dy) || 1;
       const ratio = dist / pinchStart.dist;
-      const start = pinchStart.rect;
-      const cx = start.x + start.w / 2;
-      const cy = start.y + start.h / 2;
-      const newW = start.w * ratio;
-      const newH = start.h * ratio;
+      const s = pinchStart.rect;
+      const cx = s.x + s.w / 2;
+      const cy = s.y + s.h / 2;
+      const newW = s.w * ratio;
+      const newH = s.h * ratio;
       composeState.cropRect = clampRect({
-        x: cx - newW / 2,
-        y: cy - newH / 2,
-        w: newW,
-        h: newH,
+        x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH,
       });
       drawSelection(composeState.cropRect);
-    } else if (dragMode === 'select' && pointers.size === 1) {
-      const p = toCanvasCoords(ev.clientX, ev.clientY);
+    } else if ((dragMode === 'select-pending' || dragMode === 'select') && ev.touches.length === 1) {
+      if (dragMode === 'select-pending') {
+        dragMode = 'select';
+        composeState.cropRect = { x: startX, y: startY, w: 0, h: 0 };
+      }
+      const p = toCanvasCoords(ev.touches[0].clientX, ev.touches[0].clientY);
       const x = Math.min(startX, p.x);
       const y = Math.min(startY, p.y);
-      const w = Math.abs(p.x - startX);
-      const h = Math.abs(p.y - startY);
       composeState.cropRect = {
         x: Math.max(0, x),
         y: Math.max(0, y),
-        w: Math.min(canvas.width - Math.max(0, x), w),
-        h: Math.min(canvas.height - Math.max(0, y), h),
+        w: Math.min(canvas.width - Math.max(0, x), Math.abs(p.x - startX)),
+        h: Math.min(canvas.height - Math.max(0, y), Math.abs(p.y - startY)),
       };
       drawSelection(composeState.cropRect);
+    } else if (dragMode === 'select-pending' && ev.touches.length >= 2) {
+      // ピンチ中に touchstart を取り逃した場合の救済
+      tryStartPinch(ev.touches);
     }
   };
 
-  const onPointerUp = (ev) => {
-    pointers.delete(ev.pointerId);
-    if (pointers.size < 2) pinchStart = null;
-    if (pointers.size === 0) {
+  const onTouchEnd = (ev) => {
+    ev.preventDefault();
+    if (ev.touches.length === 0) {
       dragMode = null;
+      pinchStart = null;
       pendingRectSnapshot = null;
-    } else if (pointers.size === 1) {
+    } else if (ev.touches.length === 1 && dragMode === 'pinch') {
+      // ピンチから1本指へ: いったん終了（次の動きは無視）
       dragMode = null;
+      pinchStart = null;
     }
   };
 
-  canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('pointermove', onPointerMove);
-  canvas.addEventListener('pointerup', onPointerUp);
-  canvas.addEventListener('pointercancel', onPointerUp);
+  canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+  canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+  canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+  // ===== MouseEvent フォールバック（PC用、ピンチ非対応） =====
+  let mouseDown = false;
+  canvas.addEventListener('mousedown', (ev) => {
+    if ('ontouchstart' in window) return; // タッチ端末では無視
+    mouseDown = true;
+    pendingRectSnapshot = composeState.cropRect ? { ...composeState.cropRect } : null;
+    const p = toCanvasCoords(ev.clientX, ev.clientY);
+    startX = p.x; startY = p.y;
+    dragMode = 'select';
+    composeState.cropRect = { x: startX, y: startY, w: 0, h: 0 };
+    drawSelection(composeState.cropRect);
+  });
+  canvas.addEventListener('mousemove', (ev) => {
+    if (!mouseDown || dragMode !== 'select') return;
+    const p = toCanvasCoords(ev.clientX, ev.clientY);
+    const x = Math.min(startX, p.x);
+    const y = Math.min(startY, p.y);
+    composeState.cropRect = {
+      x: Math.max(0, x),
+      y: Math.max(0, y),
+      w: Math.min(canvas.width - Math.max(0, x), Math.abs(p.x - startX)),
+      h: Math.min(canvas.height - Math.max(0, y), Math.abs(p.y - startY)),
+    };
+    drawSelection(composeState.cropRect);
+  });
+  window.addEventListener('mouseup', () => { mouseDown = false; dragMode = null; });
 
   return {};
 }
