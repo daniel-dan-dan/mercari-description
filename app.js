@@ -1445,8 +1445,10 @@ function setupCropCanvas(canvas) {
   };
 
   let pendingRectSnapshot = null;
-  const SELECT_THRESHOLD = 6; // CSSピクセル: これ以上動いたら新規範囲指定とみなす
+  const SELECT_MOVE_THRESHOLD = 14;   // CSSピクセル
+  const SELECT_TIME_THRESHOLD = 180;  // ミリ秒（これ未満は2本目を待つ）
   let downClientX = 0, downClientY = 0;
+  let downTime = 0;
 
   const onPointerDown = (ev) => {
     ev.preventDefault();
@@ -1454,24 +1456,23 @@ function setupCropCanvas(canvas) {
     pointers.set(ev.pointerId, { clientX: ev.clientX, clientY: ev.clientY });
 
     if (pointers.size >= 2) {
-      // 2本目の指が来た。1本目で消しかけていた範囲を復元してピンチモードへ
-      if (pendingRectSnapshot) {
-        composeState.cropRect = pendingRectSnapshot;
+      // 2本目の指が来た: 必ずスナップショットを復元してピンチへ
+      if (pendingRectSnapshot && pendingRectSnapshot.w >= 1 && pendingRectSnapshot.h >= 1) {
+        composeState.cropRect = { ...pendingRectSnapshot };
         drawSelection(composeState.cropRect);
-      }
-      if (composeState.cropRect && composeState.cropRect.w >= 1 && composeState.cropRect.h >= 1) {
         dragMode = 'pinch';
         beginPinch();
       } else {
         dragMode = null;
       }
     } else {
-      // 1本目: 即リセットせず保留。動いたら新規範囲指定、すぐ2本目が来たら復元
+      // 1本目: 即リセットしない。スナップショットを保持しながら2本目を待つ
       dragMode = 'pending';
       pendingRectSnapshot = composeState.cropRect ? { ...composeState.cropRect } : null;
       const p = toCanvasCoords(ev.clientX, ev.clientY);
       startX = p.x; startY = p.y;
       downClientX = ev.clientX; downClientY = ev.clientY;
+      downTime = performance.now();
     }
   };
 
@@ -1481,10 +1482,11 @@ function setupCropCanvas(canvas) {
 
     if (dragMode === 'pending' && pointers.size === 1) {
       const moved = Math.hypot(ev.clientX - downClientX, ev.clientY - downClientY);
-      if (moved < SELECT_THRESHOLD) return;
-      // 閾値超え: 新規範囲指定として確定
+      const elapsed = performance.now() - downTime;
+      // 距離・時間どちらも閾値超えで初めて新規範囲指定として確定
+      // → 短時間の指のブレでは確定せず、2本目の指を待てる
+      if (moved < SELECT_MOVE_THRESHOLD || elapsed < SELECT_TIME_THRESHOLD) return;
       dragMode = 'select';
-      pendingRectSnapshot = null;
       composeState.cropRect = { x: startX, y: startY, w: 0, h: 0 };
       drawSelection(composeState.cropRect);
     }
