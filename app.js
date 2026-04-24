@@ -1133,7 +1133,7 @@ const composeState = {
 };
 
 const SIZE_RATIO = { small: 0.22, medium: 0.30, large: 0.40 };
-const BORDER_RATIO = 0.018; // ベース画像長辺に対する白フチ太さ
+const BORDER_RATIO = 0.009; // ベース画像長辺に対する枠太さ
 const MARGIN_RATIO = 0.035; // 角からのマージン
 
 function openImageCompose() {
@@ -1696,32 +1696,33 @@ function renderComposePreview(canvas) {
     default:   ox = canvas.width - ow - margin; oy = canvas.height - oh - margin; break;
   }
 
+  // ゴールドのグラデーション枠（細め + 影）
+  const gold = ctx.createLinearGradient(ox, oy, ox, oy + oh);
+  gold.addColorStop(0, '#f2d67a');
+  gold.addColorStop(0.5, '#d4af37');
+  gold.addColorStop(1, '#8a6f20');
+
   if (composeState.shape === 'circle') {
     const ccx = ox + ow / 2;
     const ccy = oy + oh / 2;
     const crx = ow / 2 + border;
     const cry = oh / 2 + border;
-    // 楕円の白フチ + 影
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.35)';
-    ctx.shadowBlur = border * 1.6;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = border * 0.4;
-    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = border * 2.2;
+    ctx.shadowOffsetY = border * 0.8;
+    ctx.fillStyle = gold;
     ctx.beginPath();
     ctx.ellipse(ccx, ccy, crx, cry, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
-    // 切り抜き画像（既に円形クリップ済み）を上に描画
     ctx.drawImage(crop, ox, oy, ow, oh);
   } else {
-    // 矩形の白フチ + 影
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.35)';
-    ctx.shadowBlur = border * 1.6;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = border * 0.4;
-    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = border * 2.2;
+    ctx.shadowOffsetY = border * 0.8;
+    ctx.fillStyle = gold;
     ctx.fillRect(ox - border, oy - border, ow + border * 2, oh + border * 2);
     ctx.restore();
     ctx.drawImage(crop, ox, oy, ow, oh);
