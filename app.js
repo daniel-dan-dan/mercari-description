@@ -1444,12 +1444,21 @@ function setupCropCanvas(canvas) {
     };
   };
 
+  let pendingRectSnapshot = null;
+  const SELECT_THRESHOLD = 6; // CSSピクセル: これ以上動いたら新規範囲指定とみなす
+  let downClientX = 0, downClientY = 0;
+
   const onPointerDown = (ev) => {
     ev.preventDefault();
     canvas.setPointerCapture(ev.pointerId);
     pointers.set(ev.pointerId, { clientX: ev.clientX, clientY: ev.clientY });
 
     if (pointers.size >= 2) {
+      // 2本目の指が来た。1本目で消しかけていた範囲を復元してピンチモードへ
+      if (pendingRectSnapshot) {
+        composeState.cropRect = pendingRectSnapshot;
+        drawSelection(composeState.cropRect);
+      }
       if (composeState.cropRect && composeState.cropRect.w >= 1 && composeState.cropRect.h >= 1) {
         dragMode = 'pinch';
         beginPinch();
@@ -1457,17 +1466,28 @@ function setupCropCanvas(canvas) {
         dragMode = null;
       }
     } else {
-      dragMode = 'select';
+      // 1本目: 即リセットせず保留。動いたら新規範囲指定、すぐ2本目が来たら復元
+      dragMode = 'pending';
+      pendingRectSnapshot = composeState.cropRect ? { ...composeState.cropRect } : null;
       const p = toCanvasCoords(ev.clientX, ev.clientY);
       startX = p.x; startY = p.y;
-      composeState.cropRect = { x: startX, y: startY, w: 0, h: 0 };
-      drawSelection(composeState.cropRect);
+      downClientX = ev.clientX; downClientY = ev.clientY;
     }
   };
 
   const onPointerMove = (ev) => {
     if (!pointers.has(ev.pointerId)) return;
     pointers.set(ev.pointerId, { clientX: ev.clientX, clientY: ev.clientY });
+
+    if (dragMode === 'pending' && pointers.size === 1) {
+      const moved = Math.hypot(ev.clientX - downClientX, ev.clientY - downClientY);
+      if (moved < SELECT_THRESHOLD) return;
+      // 閾値超え: 新規範囲指定として確定
+      dragMode = 'select';
+      pendingRectSnapshot = null;
+      composeState.cropRect = { x: startX, y: startY, w: 0, h: 0 };
+      drawSelection(composeState.cropRect);
+    }
 
     if (dragMode === 'pinch' && pointers.size >= 2 && pinchStart) {
       const arr = Array.from(pointers.values()).slice(0, 2);
@@ -1506,8 +1526,12 @@ function setupCropCanvas(canvas) {
   const onPointerUp = (ev) => {
     pointers.delete(ev.pointerId);
     if (pointers.size < 2) pinchStart = null;
-    if (pointers.size === 0) dragMode = null;
-    else if (pointers.size === 1) dragMode = null;
+    if (pointers.size === 0) {
+      dragMode = null;
+      pendingRectSnapshot = null;
+    } else if (pointers.size === 1) {
+      dragMode = null;
+    }
   };
 
   canvas.addEventListener('pointerdown', onPointerDown);
