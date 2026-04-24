@@ -1221,7 +1221,7 @@ function renderComposeStep() {
     hintRow.className = 'crop-hint-row';
     const hint = document.createElement('p');
     hint.className = 'crop-hint';
-    hint.textContent = 'ドラッグ＝新規指定／範囲の中をドラッグ＝移動／2本指でピンチ＝サイズ変更／範囲外タップは無視';
+    hint.textContent = '新規: ドラッグ／移動: 1本指スワイプ／サイズ変更: 2本指ピンチ';
     const resetBtn = document.createElement('button');
     resetBtn.className = 'btn crop-reset-btn';
     resetBtn.textContent = '🔄 範囲をクリア';
@@ -1497,19 +1497,14 @@ function setupCropCanvas(canvas) {
     const p = toCanvasCoords(touch.clientX, touch.clientY);
     const hasExistingRect = composeState.cropRect && composeState.cropRect.w >= 1 && composeState.cropRect.h >= 1;
     if (hasExistingRect) {
-      if (isInsideRect(p, composeState.cropRect)) {
-        // 既存範囲の内側 → 移動
-        moveStart = {
-          rectX: composeState.cropRect.x,
-          rectY: composeState.cropRect.y,
-          pointerX: p.x,
-          pointerY: p.y,
-        };
-        dragMode = 'move';
-      } else {
-        // 既存範囲の外側タップは無視（消したい時は「範囲をクリア」）
-        dragMode = null;
-      }
+      // 既存範囲がある場合は内外問わず1本指スワイプで移動
+      moveStart = {
+        rectX: composeState.cropRect.x,
+        rectY: composeState.cropRect.y,
+        pointerX: p.x,
+        pointerY: p.y,
+      };
+      dragMode = 'move';
     } else {
       // 範囲未指定 → 新規範囲指定
       startX = p.x; startY = p.y;
