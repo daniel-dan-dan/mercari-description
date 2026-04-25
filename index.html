@@ -7,7 +7,7 @@
   <title>メルカリ説明文AI生成</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260425c">
+  <link rel="stylesheet" href="styles.css?v=20260425d">
 </head>
 <body>
   <div id="app">
@@ -92,7 +92,7 @@
           <button id="copy-btn" class="btn primary">📋 説明文をコピー</button>
           <button id="retry-btn" class="btn">🔄 やり直す</button>
         </div>
-        <button id="sell-btn" class="btn primary large" style="margin-top:8px">🛒 メルカリで出品する</button>
+        <a id="sell-btn" class="btn primary large" style="margin-top:8px;text-align:center;text-decoration:none;display:block" href="https://jp.mercari.com/sell/create" target="_blank" rel="noopener">🛒 メルカリで出品する</a>
         <p class="note small">①「出品する」を押すと <b>商品名</b> がコピーされメルカリが開きます → タイトル欄に貼り付け。<br>② このページに戻り、変身したボタン（「説明文をコピー」）を押す → メルカリの説明欄に貼り付け。</p>
         <p id="copy-status" class="status" hidden></p>
       </div>
@@ -102,7 +102,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v0425c</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v0425d</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる">✕</button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -115,7 +115,7 @@
     <section id="adjust-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2>🎛️ 明るさを調整 <span class="ver-tag">v0425c</span></h2>
+          <h2>🎛️ 明るさを調整 <span class="ver-tag">v0425d</span></h2>
           <button id="adjust-close" class="icon-btn" title="閉じる">✕</button>
         </header>
         <p class="compose-step-label">写真を選んで、スライダーで好みの明るさに合わせてください</p>
@@ -162,6 +162,6 @@
 
   </div>
 
-  <script src="app.js?v=20260425c"></script>
+  <script src="app.js?v=20260425d"></script>
 </body>
 </html>

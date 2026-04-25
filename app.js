@@ -583,18 +583,24 @@ async function copyToClipboard(text) {
     await navigator.clipboard.writeText(text);
     return true;
   } catch (err) {
-    // フォールバック（iOS Safari対策）
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.left = '-9999px';
-    document.body.appendChild(ta);
-    ta.select();
-    let ok = false;
-    try { ok = document.execCommand('copy'); } catch {}
-    document.body.removeChild(ta);
-    return ok;
+    return copyToClipboardSync(text);
   }
+}
+
+// 同期版（user gesture を保ったまま即座にコピー → そのまま <a> のデフォルト遷移を継続させる用途）
+function copyToClipboardSync(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  ta.setAttribute('readonly', '');
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch {}
+  document.body.removeChild(ta);
+  return ok;
 }
 
 async function copyResult() {
@@ -613,71 +619,57 @@ async function copyTitle() {
 }
 
 // ----- メルカリで出品する（2段階フロー） -----
-// Stage 1: 商品名をコピー → mercari://sell?title=&description= でアプリ起動
-// Stage 2: 説明文をコピー（ユーザーが戻ってきたら押す）
+// Stage 1: <a> のデフォルト遷移（https://jp.mercari.com/sell/create）でUniversal Link発火 → アプリの出品画面が開く
+//          並行して商品名を同期コピー
+// Stage 2: 遷移はキャンセルし、説明文だけ同期コピー（ユーザーがアプリスイッチで戻る）
+//
+// iOS / Android どちらも AASA / assetlinks.json でUniversal Link / App Linksを設定済み。
+// <a href> をユーザーが直接タップすることが、Universal Link発火の必要条件。
 let mercariSellStage = 1;
 
-async function openMercariSell() {
+function openMercariSell(e) {
   const desc = el('result-text').value;
   const title = el('title-text').value;
-  if (!desc) { alert('説明文が空です'); return; }
 
   if (mercariSellStage === 1) {
-    if (!title) { alert('商品名が空です'); return; }
-    // ① 商品名をクリップボードへ
-    const ok = await copyToClipboard(title);
+    if (!title) {
+      if (e) e.preventDefault();
+      alert('商品名が空です');
+      return;
+    }
+    if (!desc) {
+      if (e) e.preventDefault();
+      alert('説明文が空です');
+      return;
+    }
+    // 商品名を同期コピー（user gesture コンテキストを保つ）
+    const ok = copyToClipboardSync(title);
     showStatus('copy-status',
       ok
-        ? '✅ 商品名をコピー。メルカリのタイトル欄に貼り付け→戻ってきたら下のボタンを押してください'
+        ? '✅ 商品名をコピー。タイトル欄に貼り付け→戻ってきたら下のボタンを押してください'
         : '⚠️ 商品名コピーに失敗。メルカリは開きます',
       ok ? 'success' : 'error');
 
-    // ② ボタンをStage2へ変身（アプリ起動前に確定させる）
+    // ボタンをStage2へ変身（次にPWAに戻ってきたとき用）
     mercariSellStage = 2;
     el('sell-btn').textContent = '📋 戻ってきたら押す → 説明文をコピー';
     el('sell-btn').classList.add('stage2');
 
-    // ③ アプリ起動
-    launchMercariApp(title, desc);
+    // <a> のデフォルトナビゲーションは止めない → iOSがUniversal Linkを発火 → アプリの出品画面が開く
   } else {
-    // Stage 2: 説明文コピー
-    const ok = await copyToClipboard(desc);
+    // Stage 2: 遷移キャンセル、説明文コピーのみ
+    if (e) e.preventDefault();
+    if (!desc) { alert('説明文が空です'); return; }
+    const ok = copyToClipboardSync(desc);
     showStatus('copy-status',
       ok
-        ? '✅ 説明文をコピー。メルカリの説明欄に貼り付けてください'
+        ? '✅ 説明文をコピー。アプリスイッチでメルカリに戻り、説明欄に貼り付け'
         : '❌ 説明文のコピーに失敗しました',
       ok ? 'success' : 'error');
-
-    // メルカリアプリを再度開く（説明欄に貼り付けやすくする）
-    setTimeout(() => { launchMercariApp('', '', { bareOnly: true }); }, 200);
 
     // 次の出品に備えて戻す
     resetMercariSellStage();
   }
-}
-
-// ----- メルカリアプリ起動ヘルパー -----
-// iOSでは Universal Link（https://jp.mercari.com/sell）を navigate するのが、出品画面に直接ジャンプする唯一の方法。
-// mercari://sell は外部からの呼び出しではトップ画面に飛ばされる（Mercariの仕様）。
-function launchMercariApp(title, desc, opts = {}) {
-  const isAndroid = /Android/i.test(navigator.userAgent);
-  const webLink = 'https://jp.mercari.com/sell';
-
-  if (isAndroid) {
-    // Android: Intent URL で web の /sell を Mercari アプリで開かせる
-    // App Linksを設定していれば出品画面、未設定ならSafariでweb版へ
-    const intent =
-      `intent://jp.mercari.com/sell#Intent;scheme=https;` +
-      `package=com.kouzoh.mercari;` +
-      `S.browser_fallback_url=${encodeURIComponent(webLink)};end`;
-    window.location.href = intent;
-    return;
-  }
-
-  // iOS: Universal Link を発火させる
-  // - Mercariアプリがインストールされていれば → 出品画面に直接ジャンプ
-  // - 未インストール、またはAASA未対応 → Safari/PWAでweb版が開く（PWAから抜けるが、IndexedDBで状態は保存されている）
-  window.location.href = webLink;
 }
 
 function resetMercariSellStage() {
