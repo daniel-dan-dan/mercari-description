@@ -632,35 +632,13 @@ async function openMercariSell() {
         : '⚠️ 商品名コピーに失敗。メルカリは開きます',
       ok ? 'success' : 'error');
 
-    // ② Deep Link（パラメータ付き）でメルカリ起動を試行
-    // mercari://sell?title=&description= は非公式パラメータのため、効かなくてもベタリンクで起動
-    const params = new URLSearchParams({ title, description: desc });
-    const deepLinkWithParams = `mercari://sell?${params.toString()}`;
-    const deepLinkBare = 'mercari://sell';
-    const webLink = 'https://jp.mercari.com/sell';
-
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = deepLinkWithParams;
-    document.body.appendChild(iframe);
-    setTimeout(() => {
-      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-      if (!document.hidden) {
-        const iframe2 = document.createElement('iframe');
-        iframe2.style.display = 'none';
-        iframe2.src = deepLinkBare;
-        document.body.appendChild(iframe2);
-        setTimeout(() => {
-          if (iframe2.parentNode) iframe2.parentNode.removeChild(iframe2);
-          if (!document.hidden) window.location.href = webLink;
-        }, 400);
-      }
-    }, 600);
-
-    // ③ ボタンをStage2へ変身
+    // ② ボタンをStage2へ変身（アプリ起動前に確定させる）
     mercariSellStage = 2;
     el('sell-btn').textContent = '📋 戻ってきたら押す → 説明文をコピー';
     el('sell-btn').classList.add('stage2');
+
+    // ③ アプリ起動
+    launchMercariApp(title, desc);
   } else {
     // Stage 2: 説明文コピー
     const ok = await copyToClipboard(desc);
@@ -670,17 +648,66 @@ async function openMercariSell() {
         : '❌ 説明文のコピーに失敗しました',
       ok ? 'success' : 'error');
 
-    // 必要ならメルカリへ再帰
-    setTimeout(() => {
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = 'mercari://sell';
-      document.body.appendChild(iframe);
-      setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 600);
-    }, 200);
+    // メルカリアプリを再度開く（説明欄に貼り付けやすくする）
+    setTimeout(() => { launchMercariApp('', '', { bareOnly: true }); }, 200);
 
     // 次の出品に備えて戻す
     resetMercariSellStage();
+  }
+}
+
+// ----- メルカリアプリ起動ヘルパー -----
+// iframe方式は最近のiOSで効かない。window.location.href 直叩き＋visibility監視でフォールバック判定。
+function launchMercariApp(title, desc, opts = {}) {
+  const { bareOnly = false } = opts;
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  const webLink = 'https://jp.mercari.com/sell';
+
+  const params = (!bareOnly && (title || desc))
+    ? '?' + new URLSearchParams({ title: title || '', description: desc || '' }).toString()
+    : '';
+
+  if (isAndroid) {
+    // Android: Intent URL（fallback URL付き、未インストール時はChromeがWebへ自動遷移）
+    const intent =
+      `intent://sell${params}#Intent;scheme=mercari;` +
+      `package=com.kouzoh.mercari;` +
+      `S.browser_fallback_url=${encodeURIComponent(webLink)};end`;
+    window.location.href = intent;
+    return;
+  }
+
+  // iOS / その他: visibility監視で「アプリ起動の成功」を判定
+  let leftPage = false;
+  const onVis = () => { if (document.hidden) leftPage = true; };
+  document.addEventListener('visibilitychange', onVis);
+  window.addEventListener('pagehide', onVis);
+  window.addEventListener('blur', onVis);
+
+  // ① パラメータ付きで試行（パラメータが効かないアプリバージョンでも、素のmercari://sellなら確実に起動する）
+  const primary = `mercari://sell${params}`;
+  window.location.href = primary;
+
+  // ② 1.5秒待ってアプリへ遷移していなければ素のスキームへ → さらに1秒でWebへ
+  setTimeout(() => {
+    if (leftPage || document.hidden) { cleanup(); return; }
+    if (params) {
+      window.location.href = 'mercari://sell';
+      setTimeout(() => {
+        if (leftPage || document.hidden) { cleanup(); return; }
+        window.location.href = webLink;
+        cleanup();
+      }, 1000);
+    } else {
+      window.location.href = webLink;
+      cleanup();
+    }
+  }, 1500);
+
+  function cleanup() {
+    document.removeEventListener('visibilitychange', onVis);
+    window.removeEventListener('pagehide', onVis);
+    window.removeEventListener('blur', onVis);
   }
 }
 
