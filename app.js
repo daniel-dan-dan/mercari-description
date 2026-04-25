@@ -657,58 +657,27 @@ async function openMercariSell() {
 }
 
 // ----- メルカリアプリ起動ヘルパー -----
-// iframe方式は最近のiOSで効かない。window.location.href 直叩き＋visibility監視でフォールバック判定。
+// iOSでは Universal Link（https://jp.mercari.com/sell）を navigate するのが、出品画面に直接ジャンプする唯一の方法。
+// mercari://sell は外部からの呼び出しではトップ画面に飛ばされる（Mercariの仕様）。
 function launchMercariApp(title, desc, opts = {}) {
-  const { bareOnly = false } = opts;
   const isAndroid = /Android/i.test(navigator.userAgent);
   const webLink = 'https://jp.mercari.com/sell';
 
-  const params = (!bareOnly && (title || desc))
-    ? '?' + new URLSearchParams({ title: title || '', description: desc || '' }).toString()
-    : '';
-
   if (isAndroid) {
-    // Android: Intent URL（fallback URL付き、未インストール時はChromeがWebへ自動遷移）
+    // Android: Intent URL で web の /sell を Mercari アプリで開かせる
+    // App Linksを設定していれば出品画面、未設定ならSafariでweb版へ
     const intent =
-      `intent://sell${params}#Intent;scheme=mercari;` +
+      `intent://jp.mercari.com/sell#Intent;scheme=https;` +
       `package=com.kouzoh.mercari;` +
       `S.browser_fallback_url=${encodeURIComponent(webLink)};end`;
     window.location.href = intent;
     return;
   }
 
-  // iOS / その他: visibility監視で「アプリ起動の成功」を判定
-  let leftPage = false;
-  const onVis = () => { if (document.hidden) leftPage = true; };
-  document.addEventListener('visibilitychange', onVis);
-  window.addEventListener('pagehide', onVis);
-  window.addEventListener('blur', onVis);
-
-  // ① パラメータ付きで試行（パラメータが効かないアプリバージョンでも、素のmercari://sellなら確実に起動する）
-  const primary = `mercari://sell${params}`;
-  window.location.href = primary;
-
-  // ② 1.5秒待ってアプリへ遷移していなければ素のスキームへ → さらに1秒でWebへ
-  setTimeout(() => {
-    if (leftPage || document.hidden) { cleanup(); return; }
-    if (params) {
-      window.location.href = 'mercari://sell';
-      setTimeout(() => {
-        if (leftPage || document.hidden) { cleanup(); return; }
-        window.location.href = webLink;
-        cleanup();
-      }, 1000);
-    } else {
-      window.location.href = webLink;
-      cleanup();
-    }
-  }, 1500);
-
-  function cleanup() {
-    document.removeEventListener('visibilitychange', onVis);
-    window.removeEventListener('pagehide', onVis);
-    window.removeEventListener('blur', onVis);
-  }
+  // iOS: Universal Link を発火させる
+  // - Mercariアプリがインストールされていれば → 出品画面に直接ジャンプ
+  // - 未インストール、またはAASA未対応 → Safari/PWAでweb版が開く（PWAから抜けるが、IndexedDBで状態は保存されている）
+  window.location.href = webLink;
 }
 
 function resetMercariSellStage() {
