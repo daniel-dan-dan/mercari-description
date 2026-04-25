@@ -565,6 +565,7 @@ async function generateDescription() {
     renderFinalSize(aiData);
     el('result-section').hidden = false;
     hideStatus('status');
+    resetMercariSellStage();
     // 結果までスクロール
     el('result-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
@@ -611,30 +612,85 @@ async function copyTitle() {
   setTimeout(() => hideStatus('copy-status'), 2000);
 }
 
-// ----- メルカリで出品する -----
+// ----- メルカリで出品する（2段階フロー） -----
+// Stage 1: 商品名をコピー → mercari://sell?title=&description= でアプリ起動
+// Stage 2: 説明文をコピー（ユーザーが戻ってきたら押す）
+let mercariSellStage = 1;
+
 async function openMercariSell() {
   const desc = el('result-text').value;
+  const title = el('title-text').value;
   if (!desc) { alert('説明文が空です'); return; }
-  // まず説明文をクリップボードにコピー
-  const ok = await copyToClipboard(desc);
-  showStatus('copy-status',
-    ok ? '✅ 説明文をコピーしました。メルカリアプリで貼り付けてください' : '⚠️ コピーに失敗しましたが、メルカリを開きます',
-    ok ? 'success' : 'error');
-  // メルカリの出品画面を開く
-  // ディープリンク: mercari://sell（iOS/Android共通、インストール済みならアプリ起動）
-  // フォールバック: https://jp.mercari.com/sell（未インストールならWebで開く）
-  const deepLink = 'mercari://sell';
-  const webLink = 'https://jp.mercari.com/sell';
-  // iOS Safariではmercari://を直接叩くと失敗時にエラーが出るため、hidden iframe経由で試行
-  const iframe = document.createElement('iframe');
-  iframe.style.display = 'none';
-  iframe.src = deepLink;
-  document.body.appendChild(iframe);
-  // 500ms後、まだページにいればWebへ遷移
-  setTimeout(() => {
-    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-    window.location.href = webLink;
-  }, 600);
+
+  if (mercariSellStage === 1) {
+    if (!title) { alert('商品名が空です'); return; }
+    // ① 商品名をクリップボードへ
+    const ok = await copyToClipboard(title);
+    showStatus('copy-status',
+      ok
+        ? '✅ 商品名をコピー。メルカリのタイトル欄に貼り付け→戻ってきたら下のボタンを押してください'
+        : '⚠️ 商品名コピーに失敗。メルカリは開きます',
+      ok ? 'success' : 'error');
+
+    // ② Deep Link（パラメータ付き）でメルカリ起動を試行
+    // mercari://sell?title=&description= は非公式パラメータのため、効かなくてもベタリンクで起動
+    const params = new URLSearchParams({ title, description: desc });
+    const deepLinkWithParams = `mercari://sell?${params.toString()}`;
+    const deepLinkBare = 'mercari://sell';
+    const webLink = 'https://jp.mercari.com/sell';
+
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = deepLinkWithParams;
+    document.body.appendChild(iframe);
+    setTimeout(() => {
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+      if (!document.hidden) {
+        const iframe2 = document.createElement('iframe');
+        iframe2.style.display = 'none';
+        iframe2.src = deepLinkBare;
+        document.body.appendChild(iframe2);
+        setTimeout(() => {
+          if (iframe2.parentNode) iframe2.parentNode.removeChild(iframe2);
+          if (!document.hidden) window.location.href = webLink;
+        }, 400);
+      }
+    }, 600);
+
+    // ③ ボタンをStage2へ変身
+    mercariSellStage = 2;
+    el('sell-btn').textContent = '📋 戻ってきたら押す → 説明文をコピー';
+    el('sell-btn').classList.add('stage2');
+  } else {
+    // Stage 2: 説明文コピー
+    const ok = await copyToClipboard(desc);
+    showStatus('copy-status',
+      ok
+        ? '✅ 説明文をコピー。メルカリの説明欄に貼り付けてください'
+        : '❌ 説明文のコピーに失敗しました',
+      ok ? 'success' : 'error');
+
+    // 必要ならメルカリへ再帰
+    setTimeout(() => {
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = 'mercari://sell';
+      document.body.appendChild(iframe);
+      setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 600);
+    }, 200);
+
+    // 次の出品に備えて戻す
+    resetMercariSellStage();
+  }
+}
+
+function resetMercariSellStage() {
+  mercariSellStage = 1;
+  const btn = el('sell-btn');
+  if (btn) {
+    btn.textContent = '🛒 メルカリで出品する';
+    btn.classList.remove('stage2');
+  }
 }
 
 // ----- 再生成 -----
@@ -761,6 +817,7 @@ async function resetAll() {
   const fsb = el('final-size-badge'); if (fsb) fsb.hidden = true;
   hideStatus('status');
   hideStatus('copy-status');
+  resetMercariSellStage();
   try { await clearSessionDb(); } catch (e) { console.warn(e); }
   updateGenerateButton();
   updateSizeSuggestion();

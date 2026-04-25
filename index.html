@@ -7,7 +7,7 @@
   <title>メルカリ説明文AI生成</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260424p">
+  <link rel="stylesheet" href="styles.css?v=20260425a">
 </head>
 <body>
   <div id="app">
@@ -93,7 +93,7 @@
           <button id="retry-btn" class="btn">🔄 やり直す</button>
         </div>
         <button id="sell-btn" class="btn primary large" style="margin-top:8px">🛒 メルカリで出品する</button>
-        <p class="note small">「メルカリで出品」タップ後、説明文が自動コピーされメルカリアプリの出品画面が開きます。アプリ内で貼り付けてください。</p>
+        <p class="note small">①「出品する」を押すと <b>商品名</b> がコピーされメルカリが開きます → タイトル欄に貼り付け。<br>② このページに戻り、変身したボタン（「説明文をコピー」）を押す → メルカリの説明欄に貼り付け。</p>
         <p id="copy-status" class="status" hidden></p>
       </div>
     </section>
@@ -102,7 +102,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v0424p</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v0425a</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる">✕</button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -115,7 +115,7 @@
     <section id="adjust-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2>🎛️ 明るさを調整 <span class="ver-tag">v0424p</span></h2>
+          <h2>🎛️ 明るさを調整 <span class="ver-tag">v0425a</span></h2>
           <button id="adjust-close" class="icon-btn" title="閉じる">✕</button>
         </header>
         <p class="compose-step-label">写真を選んで、スライダーで好みの明るさに合わせてください</p>
@@ -162,6 +162,6 @@
 
   </div>
 
-  <script src="app.js?v=20260424p"></script>
+  <script src="app.js?v=20260425a"></script>
 </body>
 </html>

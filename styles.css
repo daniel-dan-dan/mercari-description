@@ -245,6 +245,20 @@ textarea {
   letter-spacing: 0.02em;
 }
 
+/* メルカリ出品ボタン Stage2（説明文コピー待ち） */
+#sell-btn.stage2 {
+  background: linear-gradient(135deg, #1abc9c 0%, #2ecc71 50%, #27ae60 100%);
+  background-size: 180% 180%;
+  animation: pulse-stage2 2s ease-in-out infinite;
+}
+#sell-btn.stage2:hover {
+  background-position: 100% 50%;
+}
+@keyframes pulse-stage2 {
+  0%, 100% { box-shadow: 0 6px 18px -6px rgba(46, 204, 113, 0.4); }
+  50%      { box-shadow: 0 10px 28px -6px rgba(46, 204, 113, 0.7); }
+}
+
 .icon-btn {
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(124, 92, 252, 0.15);
