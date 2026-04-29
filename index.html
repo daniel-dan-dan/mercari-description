@@ -46,10 +46,6 @@
         </label>
         <input type="file" id="photo-input" accept="image/*" multiple hidden>
         <div id="photo-preview" class="preview-grid"></div>
-        <div id="brightness-actions" class="brightness-actions" hidden>
-          <button id="unify-brightness-btn" class="btn brightness-btn">📐 明るさを統一</button>
-          <button id="adjust-open-btn" class="btn brightness-btn">🎛️ 調整</button>
-        </div>
         <button id="compose-open-btn" class="btn compose-open-btn" hidden>✂️ 画像合成</button>
       </div>
 
@@ -59,10 +55,10 @@
         <label for="category">カテゴリ</label>
         <select id="category">
           <option value="">選択してください</option>
-          <option value="suit">スーツ（ジャケット＋パンツ＋ベスト）</option>
-          <option value="outer">アウター（コート・ブルゾン等）</option>
-          <option value="tops">トップス（シャツ・ニット等）</option>
-          <option value="bottoms">ボトムス（パンツ単体）</option>
+          <option value="suit">スーツ</option>
+          <option value="outer">アウター</option>
+          <option value="tops">トップス</option>
+          <option value="bottoms">ボトムス</option>
         </select>
         <div id="measurement-fields"></div>
         <div id="size-suggestion" class="size-suggestion" hidden></div>
@@ -108,55 +104,6 @@
         <p id="compose-step-label" class="compose-step-label"></p>
         <div id="compose-body"></div>
         <div id="compose-actions" class="button-row"></div>
-      </div>
-    </section>
-
-    <!-- 明るさ調整モーダル -->
-    <section id="adjust-modal" class="modal" hidden>
-      <div class="modal-content compose">
-        <header class="modal-header">
-          <h2>🎛️ 明るさを調整 <span class="ver-tag">v0425d</span></h2>
-          <button id="adjust-close" class="icon-btn" title="閉じる">✕</button>
-        </header>
-        <p class="compose-step-label">写真を選んで、スライダーで好みの明るさに合わせてください</p>
-
-        <div id="adjust-thumbs" class="adjust-thumbs"></div>
-
-        <div id="adjust-preview-wrap" class="compose-preview-wrap" hidden>
-          <img id="adjust-preview" alt="">
-        </div>
-
-        <div id="adjust-sliders" class="adjust-sliders" hidden>
-          <label class="adjust-slider-label">
-            <span class="adjust-slider-head">
-              <span>明るさ</span>
-              <span id="adjust-brightness-val" class="adjust-slider-val">0</span>
-            </span>
-            <input type="range" id="adjust-brightness" min="-50" max="50" step="1" value="0">
-          </label>
-
-          <label class="adjust-slider-label">
-            <span class="adjust-slider-head">
-              <span>色温度（+暖色 / −寒色）</span>
-              <span id="adjust-temp-val" class="adjust-slider-val">0</span>
-            </span>
-            <input type="range" id="adjust-temp" min="-50" max="50" step="1" value="0">
-          </label>
-
-          <label class="adjust-slider-label">
-            <span class="adjust-slider-head">
-              <span>コントラスト</span>
-              <span id="adjust-contrast-val" class="adjust-slider-val">0</span>
-            </span>
-            <input type="range" id="adjust-contrast" min="-50" max="50" step="1" value="0">
-          </label>
-        </div>
-
-        <div id="adjust-actions" class="button-row" hidden>
-          <button id="adjust-apply-btn" class="btn primary">✔️ 適用</button>
-          <button id="adjust-reset-btn" class="btn">↺ スライダーを0に</button>
-          <button id="adjust-revert-btn" class="btn">🔁 元の写真に戻す</button>
-        </div>
       </div>
     </section>
 
