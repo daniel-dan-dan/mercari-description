@@ -233,6 +233,13 @@ const MEASUREMENT_SCHEMA = {
       { key: 'hem', label: '裾幅' },
     ]},
   ],
+  other: [
+    { section: '採寸', fields: [
+      { key: 'other_height', label: '縦' },
+      { key: 'other_width',  label: '横' },
+      { key: 'other_depth',  label: '高さ' },
+    ]},
+  ],
 };
 
 function renderMeasurements() {
@@ -374,6 +381,13 @@ function formatMeasurements(m) {
       line('股下', v.inseam),
       line('股上', v.rise),
       line('裾幅', v.hem),
+    ].join('\n');
+  }
+  if (cat === 'other') {
+    return [
+      line('縦', v.other_height),
+      line('横', v.other_width),
+      line('高さ', v.other_depth),
     ].join('\n');
   }
   return '';
@@ -980,6 +994,7 @@ function clampScore(s)    { return Math.max(0, Math.min(6, s)); }
 function computeMeasurementSize() {
   const cat = el('category').value;
   if (!cat) return null;
+  if (cat === 'other') return null;  // その他はサイズ推定対象外
   const prefix = cat === 'suit' ? 'j_' : '';
   const isBottom = cat === 'bottoms';
   const read = (k) => {

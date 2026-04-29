@@ -443,6 +443,9 @@ textarea {
 
 /* ========== 最終サイズバッジ（生成結果画面） ========== */
 .final-size-badge {
+  display: none;
+}
+.final-size-badge:not([hidden]) {
   margin: 4px 0 16px;
   padding: 14px 16px;
   background: linear-gradient(135deg, #fff4f7 0%, #f4efff 100%);
