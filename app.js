@@ -555,7 +555,8 @@ async function generateDescription() {
     // 商品名（タイトル）をセット
     const brand = aiData.brand || '';
     const item = aiData.item || '';
-    const title = [brand, item].filter(Boolean).join(' ').trim();
+    const titleCore = [brand, item].filter(Boolean).join(' ').trim();
+    const title = titleCore ? '✨美品✨ ' + titleCore : '';
     el('title-text').value = title;
     renderFinalSize(aiData);
     el('result-section').hidden = false;
