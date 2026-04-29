@@ -57,6 +57,8 @@ async function init() {
   el('title-text').addEventListener('input', scheduleSave);
   el('result-text').addEventListener('input', scheduleSave);
   el('compose-open-btn').addEventListener('click', openImageCompose);
+  el('grid2-btn').addEventListener('click', () => openGridCompose(2));
+  el('grid4-btn').addEventListener('click', () => openGridCompose(4));
   el('compose-close').addEventListener('click', closeImageCompose);
 
   // 前回のセッションを復元
@@ -169,8 +171,8 @@ function renderPreviews() {
       scheduleSave();
     });
   });
-  const composeBtn = el('compose-open-btn');
-  if (composeBtn) composeBtn.hidden = uploadedImages.length < 2;
+  const composeBtnRow = el('compose-btn-row');
+  if (composeBtnRow) composeBtnRow.hidden = uploadedImages.length < 2;
 }
 
 async function saveBlobToDevice(blob, filename) {
@@ -1214,6 +1216,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v0429d</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -1222,6 +1225,8 @@ function openImageCompose() {
 function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
+  // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v0429d</span>`;
 }
 
 function renderComposeStep() {
@@ -1826,6 +1831,220 @@ async function applyCompose() {
   // カメラロールに自動保存（iOSは共有シート→「画像を保存」）
   const blob = await (await fetch(dataUrl)).blob();
   await saveBlobToDevice(blob, `mercari-compose-${Date.now()}.jpg`);
+}
+
+// ----- グリッド合成（2枚: 2160×1080 / 4枚: 2160×2160） -----
+//   ・各セル 1080×1080px、object-fit:cover 相当の中央クロップ
+//   ・合成後は uploadedImages に追加し、既存プレビューに表示
+const GRID_CELL = 1080;  // 各セルのピクセルサイズ
+
+const gridComposeState = {
+  mode: 2,          // 2 or 4
+  selected: [],     // 選択済み uploadedImages インデックス（順番通り）
+};
+
+function openGridCompose(mode) {
+  if (uploadedImages.length < mode) {
+    alert(`${mode}枚合成には写真が${mode}枚以上必要です`);
+    return;
+  }
+  gridComposeState.mode = mode;
+  gridComposeState.selected = [];
+  // モーダルを合成モード用タイトルにして開く
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v0429d</span>`;
+  el('compose-modal').hidden = false;
+  document.body.style.overflow = 'hidden';
+  renderGridSelectStep();
+}
+
+function renderGridSelectStep() {
+  const mode = gridComposeState.mode;
+  const sel = gridComposeState.selected;
+  const body = el('compose-body');
+  const actions = el('compose-actions');
+  const label = el('compose-step-label');
+  body.innerHTML = '';
+  actions.innerHTML = '';
+
+  label.textContent = `使う写真を${mode}枚タップして選んでください（${sel.length}/${mode}枚選択中）`;
+
+  const grid = document.createElement('div');
+  grid.className = 'grid-compose-select';
+  uploadedImages.forEach((img, idx) => {
+    const cell = document.createElement('div');
+    cell.className = 'grid-compose-thumb';
+    const orderIdx = sel.indexOf(idx);
+    const isSelected = orderIdx >= 0;
+    if (isSelected) cell.classList.add('selected');
+
+    cell.innerHTML = `<img src="${img.dataUrl}" alt=""><span class="gc-badge">${idx + 1}</span>`;
+    if (isSelected) {
+      const orderEl = document.createElement('div');
+      orderEl.className = 'gc-order';
+      orderEl.textContent = orderIdx + 1;
+      cell.appendChild(orderEl);
+    }
+    cell.addEventListener('click', () => {
+      const existIdx = gridComposeState.selected.indexOf(idx);
+      if (existIdx >= 0) {
+        // 選択解除
+        gridComposeState.selected.splice(existIdx, 1);
+      } else {
+        if (gridComposeState.selected.length >= mode) {
+          // すでに最大枚数 → 先頭を外して末尾追加
+          gridComposeState.selected.shift();
+        }
+        gridComposeState.selected.push(idx);
+      }
+      renderGridSelectStep();
+    });
+    grid.appendChild(cell);
+  });
+  body.appendChild(grid);
+
+  const hint = document.createElement('p');
+  hint.className = 'crop-hint';
+  hint.style.marginTop = '8px';
+  hint.textContent = mode === 2
+    ? '左から順に配置されます（1枚目→左、2枚目→右）'
+    : '左上→右上→左下→右下の順に配置されます';
+  body.appendChild(hint);
+
+  // 閉じる
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn';
+  cancelBtn.textContent = '← キャンセル';
+  cancelBtn.addEventListener('click', () => {
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v0429d</span>`;
+    closeImageCompose();
+  });
+  actions.appendChild(cancelBtn);
+
+  // プレビューへ
+  const nextBtn = document.createElement('button');
+  nextBtn.className = 'btn primary';
+  nextBtn.textContent = `プレビュー →`;
+  nextBtn.disabled = sel.length < mode;
+  nextBtn.addEventListener('click', () => {
+    if (gridComposeState.selected.length < mode) return;
+    renderGridPreviewStep();
+  });
+  actions.appendChild(nextBtn);
+}
+
+function renderGridPreviewStep() {
+  const mode = gridComposeState.mode;
+  const body = el('compose-body');
+  const actions = el('compose-actions');
+  const label = el('compose-step-label');
+  body.innerHTML = '';
+  actions.innerHTML = '';
+
+  label.textContent = '合成プレビュー。問題なければ「追加」を押してください。';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'grid-preview-wrap';
+  const canvas = document.createElement('canvas');
+  wrap.appendChild(canvas);
+  body.appendChild(wrap);
+
+  // Canvas に合成描画
+  renderGridCanvas(canvas, mode, gridComposeState.selected).then(() => {});
+
+  // 戻る
+  const backBtn = document.createElement('button');
+  backBtn.className = 'btn';
+  backBtn.textContent = '← 戻る';
+  backBtn.addEventListener('click', () => renderGridSelectStep());
+  actions.appendChild(backBtn);
+
+  // 適用
+  const applyBtn = document.createElement('button');
+  applyBtn.className = 'btn primary';
+  applyBtn.textContent = '追加してAI生成に使う';
+  applyBtn.addEventListener('click', async () => {
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
+    const base64 = dataUrl.split(',')[1];
+    const composed = {
+      dataUrl, mediaType: 'image/jpeg', base64,
+      originalDataUrl: dataUrl,
+      adjust: { brightness: 0, temp: 0, contrast: 0 },
+    };
+    if (uploadedImages.length >= MAX_PHOTOS) {
+      alert(`写真が最大枚数（${MAX_PHOTOS}枚）のため追加できません。不要な写真を削除してから再試行してください。`);
+      return;
+    }
+    uploadedImages.push(composed);
+    renderPreviews();
+    updateGenerateButton();
+    scheduleSave();
+    // カメラロールに保存
+    const blob = await (await fetch(dataUrl)).blob();
+    await saveBlobToDevice(blob, `mercari-grid${mode}-${Date.now()}.jpg`);
+    // タイトルを元に戻してモーダル閉じ
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v0429d</span>`;
+    closeImageCompose();
+  });
+  actions.appendChild(applyBtn);
+}
+
+// 各セルに画像を中央クロップして描画（object-fit: cover 相当）
+function drawCellCover(ctx, img, dx, dy, dw, dh) {
+  const sw = img.naturalWidth;
+  const sh = img.naturalHeight;
+  const dAspect = dw / dh;
+  const sAspect = sw / sh;
+  let sx, sy, sWidth, sHeight;
+  if (sAspect > dAspect) {
+    // 画像の方が横長 → 横をトリム
+    sHeight = sh;
+    sWidth = sh * dAspect;
+    sx = (sw - sWidth) / 2;
+    sy = 0;
+  } else {
+    // 画像の方が縦長 → 縦をトリム
+    sWidth = sw;
+    sHeight = sw / dAspect;
+    sx = 0;
+    sy = (sh - sHeight) / 2;
+  }
+  ctx.drawImage(img, sx, sy, sWidth, sHeight, dx, dy, dw, dh);
+}
+
+async function renderGridCanvas(canvas, mode, selectedIndices) {
+  const cell = GRID_CELL;
+  if (mode === 2) {
+    canvas.width = cell * 2;  // 2160
+    canvas.height = cell;     // 1080
+  } else {
+    canvas.width = cell * 2;  // 2160
+    canvas.height = cell * 2; // 2160
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // 配置座標リスト
+  let cells;
+  if (mode === 2) {
+    cells = [
+      { dx: 0,    dy: 0, dw: cell, dh: cell },
+      { dx: cell, dy: 0, dw: cell, dh: cell },
+    ];
+  } else {
+    cells = [
+      { dx: 0,    dy: 0,    dw: cell, dh: cell },
+      { dx: cell, dy: 0,    dw: cell, dh: cell },
+      { dx: 0,    dy: cell, dw: cell, dh: cell },
+      { dx: cell, dy: cell, dw: cell, dh: cell },
+    ];
+  }
+
+  for (let i = 0; i < mode; i++) {
+    const imgData = uploadedImages[selectedIndices[i]];
+    const img = await loadImage(imgData.dataUrl);
+    drawCellCover(ctx, img, cells[i].dx, cells[i].dy, cells[i].dw, cells[i].dh);
+  }
 }
 
 // ----- 起動 -----

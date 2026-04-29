@@ -584,16 +584,91 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
 #setup-screen h1::before { content: "🔑"; }
 
 /* ========== 画像合成モーダル ========== */
-.compose-open-btn {
-  display: block;
-  width: 100%;
+/* 合成ボタン行 */
+.compose-btn-row {
+  display: flex;
+  gap: 8px;
   margin-top: 10px;
+}
+.compose-btn-row[hidden] { display: none; }
+.compose-open-btn {
+  flex: 1;
+  display: block;
   background: linear-gradient(135deg, #fff5f7 0%, #fff0fa 100%);
   border: 1.5px dashed #c857ff;
   color: #7b2ca6;
   font-weight: 700;
+  padding: 10px 8px;
+  font-size: 13px;
+  text-align: center;
 }
 .compose-open-btn:hover { background: #fff5ff; }
+
+/* グリッド合成: 写真選択グリッド */
+.grid-compose-select {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.grid-compose-thumb {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2.5px solid transparent;
+  transition: border-color 0.12s, transform 0.12s;
+  background: #f5f0fa;
+}
+.grid-compose-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.grid-compose-thumb:hover { transform: translateY(-1px); }
+.grid-compose-thumb.selected {
+  border-color: #ff4757;
+  box-shadow: 0 4px 14px -4px rgba(255, 71, 87, 0.5);
+}
+.grid-compose-thumb .gc-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  background: rgba(40, 10, 70, 0.7);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.grid-compose-thumb .gc-order {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 900;
+  color: white;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  background: rgba(255, 71, 87, 0.55);
+  border-radius: 8px;
+}
+
+/* グリッド合成: プレビューキャンバス */
+.grid-preview-wrap {
+  background: #1a1a1a;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+}
+.grid-preview-wrap canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
 
 .modal {
   position: fixed;

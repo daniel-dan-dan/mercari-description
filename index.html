@@ -7,7 +7,7 @@
   <title>メルカリ説明文AI生成</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260429c">
+  <link rel="stylesheet" href="styles.css?v=20260429d">
 </head>
 <body>
   <div id="app">
@@ -46,7 +46,11 @@
         </label>
         <input type="file" id="photo-input" accept="image/*" multiple hidden>
         <div id="photo-preview" class="preview-grid"></div>
-        <button id="compose-open-btn" class="btn compose-open-btn" hidden>✂️ 画像合成</button>
+        <div id="compose-btn-row" class="compose-btn-row" hidden>
+          <button id="compose-open-btn" class="btn compose-open-btn">✂️ 切り抜き合成</button>
+          <button id="grid2-btn" class="btn compose-open-btn">2枚合成</button>
+          <button id="grid4-btn" class="btn compose-open-btn">4枚合成</button>
+        </div>
       </div>
 
       <!-- Step 2: カテゴリと採寸 -->
@@ -98,7 +102,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v0425d</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v0429d</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる">✕</button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
