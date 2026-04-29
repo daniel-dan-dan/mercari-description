@@ -235,6 +235,14 @@ const MEASUREMENT_SCHEMA = {
       { key: 'hem', label: '裾幅' },
     ]},
   ],
+  bag: [
+    { section: '採寸', fields: [
+      { key: 'bag_height', label: '縦' },
+      { key: 'bag_width',  label: '横' },
+      { key: 'bag_depth',  label: 'マチ' },
+      { key: 'bag_handle', label: '持ち手' },
+    ]},
+  ],
   other: [
     { section: '採寸', fields: [
       { key: 'other_height', label: '縦' },
@@ -383,6 +391,14 @@ function formatMeasurements(m) {
       line('股下', v.inseam),
       line('股上', v.rise),
       line('裾幅', v.hem),
+    ].join('\n');
+  }
+  if (cat === 'bag') {
+    return [
+      line('縦', v.bag_height),
+      line('横', v.bag_width),
+      line('マチ', v.bag_depth),
+      line('持ち手', v.bag_handle),
     ].join('\n');
   }
   if (cat === 'other') {
@@ -997,7 +1013,7 @@ function clampScore(s)    { return Math.max(0, Math.min(6, s)); }
 function computeMeasurementSize() {
   const cat = el('category').value;
   if (!cat) return null;
-  if (cat === 'other') return null;  // その他はサイズ推定対象外
+  if (cat === 'other' || cat === 'bag') return null;  // その他・バッグはサイズ推定対象外
   const prefix = cat === 'suit' ? 'j_' : '';
   const isBottom = cat === 'bottoms';
   const read = (k) => {
