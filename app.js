@@ -1833,8 +1833,8 @@ async function applyCompose() {
   await saveBlobToDevice(blob, `mercari-compose-${Date.now()}.jpg`);
 }
 
-// ----- グリッド合成（2枚: 2160×1080 / 4枚: 2160×2160） -----
-//   ・各セル 1080×1080px、object-fit:cover 相当の中央クロップ
+// ----- グリッド合成（2枚: 2160×2160 / 4枚: 2160×2160） -----
+//   ・2枚: 各セル 1080×2160px（縦長）、4枚: 各セル 1080×1080px（正方形）、object-fit:cover 相当の中央クロップ
 //   ・合成後は uploadedImages に追加し、既存プレビューに表示
 const GRID_CELL = 1080;  // 各セルのピクセルサイズ
 
@@ -2015,7 +2015,7 @@ async function renderGridCanvas(canvas, mode, selectedIndices) {
   const cell = GRID_CELL;
   if (mode === 2) {
     canvas.width = cell * 2;  // 2160
-    canvas.height = cell;     // 1080
+    canvas.height = cell * 2; // 2160（正方形、4枚合成と同じ）
   } else {
     canvas.width = cell * 2;  // 2160
     canvas.height = cell * 2; // 2160
@@ -2028,8 +2028,8 @@ async function renderGridCanvas(canvas, mode, selectedIndices) {
   let cells;
   if (mode === 2) {
     cells = [
-      { dx: 0,    dy: 0, dw: cell, dh: cell },
-      { dx: cell, dy: 0, dw: cell, dh: cell },
+      { dx: 0,    dy: 0, dw: cell, dh: cell * 2 },  // 左半分: 1080×2160px
+      { dx: cell, dy: 0, dw: cell, dh: cell * 2 },  // 右半分: 1080×2160px
     ];
   } else {
     cells = [
