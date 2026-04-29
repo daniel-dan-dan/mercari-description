@@ -330,7 +330,7 @@ textarea {
 
 /* ========== 連続音声入力バー ========== */
 .multi-voice-bar {
-  margin: 0 0 14px;
+  margin: 20px 0 14px;
   padding: 12px;
   background: linear-gradient(135deg, #fff4f7 0%, #f4efff 100%);
   border: 1px solid rgba(168, 85, 247, 0.18);
