@@ -217,14 +217,6 @@ const MEASUREMENT_SCHEMA = {
       { key: 'v_length', label: '着丈' },
     ]},
   ],
-  outer: [
-    { section: '採寸', fields: [
-      { key: 'shoulder', label: '肩幅' },
-      { key: 'chest', label: '身幅' },
-      { key: 'sleeve', label: '袖丈' },
-      { key: 'length', label: '着丈' },
-    ]},
-  ],
   tops: [
     { section: '採寸', fields: [
       { key: 'shoulder', label: '肩幅' },
@@ -282,7 +274,7 @@ function renderMeasurements() {
   });
 
   // ラグランスリーブトグル（アウター・トップス）
-  if (cat === 'outer' || cat === 'tops') {
+  if (cat === 'tops') {
     const raglanDiv = document.createElement('div');
     raglanDiv.className = 'measurement-section';
     raglanDiv.innerHTML = `
@@ -366,7 +358,7 @@ function formatMeasurements(m) {
       line('着丈', v.v_length),
     ].join('\n');
   }
-  if (cat === 'outer' || cat === 'tops') {
+  if (cat === 'tops') {
     const lines = [
       line('肩幅', v.shoulder),
       line('身幅', v.chest),
