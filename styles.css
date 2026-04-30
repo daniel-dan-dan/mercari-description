@@ -26,22 +26,13 @@ header {
 }
 
 h1 {
-  font-size: 22px;
+  font-size: 16px;
   margin: 0;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  background: linear-gradient(135deg, #ff4757 0%, #ff6b7e 40%, #a855f7 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  color: #3d2960;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-}
-h1::before {
-  content: "🛍️";
-  -webkit-text-fill-color: initial;
-  font-size: 20px;
 }
 
 /* ========== カード ========== */
@@ -152,7 +143,9 @@ textarea {
 
 /* ========== 写真アップロードボタン ========== */
 .file-label {
-  display: inline-flex;
+  display: flex;
+  width: fit-content;
+  margin: 0 auto;
   align-items: center;
   gap: 8px;
   padding: 14px 22px;
