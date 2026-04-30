@@ -423,13 +423,16 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 アップロードされた古着の写真を分析し、以下の情報をJSON形式で返してください。
 
 抽出する情報:
-1. brand — ブランド名（タグから読み取る。読み取れなければ "---"）
+1. brand — ブランド名のカタカナ表記（タグから読み取る。読み取れなければ "---"）
    - 必ず**カタカナ表記**で出力すること（メルカリの検索でカタカナがよく使われるため）
    - 例: BURBERRY → バーバリー / Paul Smith → ポールスミス / POLO RALPH LAUREN → ポロラルフローレン
    - 例: UNIQLO → ユニクロ / ZARA → ザラ / BEAMS → ビームス
    - 例: Burberry London → バーバリーロンドン / BLACK LABEL CRESTBRIDGE → ブラックレーベルクレストブリッジ
    - ライン名も含む場合はカタカナで連結（例: バーバリーブラックレーベル）
    - 日本語ブランド名（無印良品、ユナイテッドアローズ等）はそのまま日本語で
+1a. brand_en — ブランド名の英語（アルファベット）表記（タグに記載の原文をそのまま出力。読み取れなければ "---"）
+   - 例: BURBERRY / Paul Smith / POLO RALPH LAUREN / UNIQLO / BEAMS
+   - 日本語ブランドでアルファベット表記がない場合は "---"
 2. item — アイテム名（テーラードジャケット、トレンチコート、チノパンなど）
 3. tag_size — タグ表記のサイズ（S/M/L/XL/46/48等。読み取れなければ "---"）
 4. color — カラー。カタカナ＋漢字のペアで（例: "ネイビー 紺色"）
@@ -453,7 +456,7 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 - appealの文章は丁寧だが簡潔に
 - 必ず以下のJSON形式のみで返す。前後に説明やバッククォートを付けない
 
-{"brand":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"..."}`;
+{"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"..."}`;
 
 async function callClaude(images) {
   const key = localStorage.getItem(STORAGE_KEY);
@@ -501,6 +504,7 @@ async function callClaude(images) {
 // ----- テンプレート組み立て -----
 function buildDescription(aiData, measurementText) {
   const brand = aiData.brand || '---';
+  const brandEn = (aiData.brand_en && aiData.brand_en !== '---') ? aiData.brand_en : '';
   const item = aiData.item || '---';
   const tagSize = aiData.tag_size || '---';
   const color = aiData.color || '---';
@@ -522,7 +526,7 @@ function buildDescription(aiData, measurementText) {
 
 ${appeal}
 
-【商品名】${brand} ${item}
+【商品名】${brand}${brandEn ? ' / ' + brandEn : ''} ${item}
 
 【サイズ】${tagSize}（平置き採寸）
 ${measurementText}
