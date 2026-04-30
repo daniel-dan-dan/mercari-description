@@ -1431,7 +1431,7 @@ function renderComposeStep() {
 
     const applyBtn = document.createElement('button');
     applyBtn.className = 'btn primary';
-    applyBtn.textContent = '✅ 適用';
+    applyBtn.textContent = 'スマホに保存';
     applyBtn.addEventListener('click', applyCompose);
     actions.appendChild(applyBtn);
   }
@@ -1826,27 +1826,11 @@ async function applyCompose() {
   const canvas = el('compose-preview-canvas');
   if (!canvas) return;
   const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-  const base64 = dataUrl.split(',')[1];
-  const composed = { dataUrl, mediaType: 'image/jpeg', base64 };
 
-  if (composeState.replaceBase && composeState.baseIdx != null) {
-    uploadedImages[composeState.baseIdx] = composed;
-  } else {
-    if (uploadedImages.length >= MAX_PHOTOS) {
-      if (!confirm(`写真が最大枚数（${MAX_PHOTOS}枚）です。ベース画像を差し替えますか？`)) return;
-      uploadedImages[composeState.baseIdx] = composed;
-    } else {
-      uploadedImages.push(composed);
-    }
-  }
-  renderPreviews();
-  updateGenerateButton();
-  scheduleSave();
-  closeImageCompose();
-
-  // カメラロールに自動保存（iOSは共有シート→「画像を保存」）
+  // スマホに保存のみ（アプリ内写真選択には追加しない）
   const blob = await (await fetch(dataUrl)).blob();
   await saveBlobToDevice(blob, `mercari-compose-${Date.now()}.jpg`);
+  closeImageCompose();
 }
 
 // ----- グリッド合成（2枚: 2160×2160 / 4枚: 2160×2160） -----
@@ -1977,27 +1961,12 @@ function renderGridPreviewStep() {
   // 適用
   const applyBtn = document.createElement('button');
   applyBtn.className = 'btn primary';
-  applyBtn.textContent = '追加してAI生成に使う';
+  applyBtn.textContent = 'スマホに保存';
   applyBtn.addEventListener('click', async () => {
     const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
-    const base64 = dataUrl.split(',')[1];
-    const composed = {
-      dataUrl, mediaType: 'image/jpeg', base64,
-      originalDataUrl: dataUrl,
-      adjust: { brightness: 0, temp: 0, contrast: 0 },
-    };
-    if (uploadedImages.length >= MAX_PHOTOS) {
-      alert(`写真が最大枚数（${MAX_PHOTOS}枚）のため追加できません。不要な写真を削除してから再試行してください。`);
-      return;
-    }
-    uploadedImages.push(composed);
-    renderPreviews();
-    updateGenerateButton();
-    scheduleSave();
-    // カメラロールに保存
+    // スマホに保存のみ（アプリ内写真選択には追加しない）
     const blob = await (await fetch(dataUrl)).blob();
     await saveBlobToDevice(blob, `mercari-grid${mode}-${Date.now()}.jpg`);
-    // タイトルを元に戻してモーダル閉じ
     el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v0429d</span>`;
     closeImageCompose();
   });
