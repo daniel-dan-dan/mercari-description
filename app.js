@@ -532,7 +532,7 @@ function buildDescription(aiData, measurementText) {
 
 ${appeal}
 
-【商品名】${brand}${brandEn ? ' / ' + brandEn : ''} ${item}
+【商品名】${brand}${brandEn ? ' ' + brandEn : ''} ${item}
 
 【サイズ】${tagSize}（平置き採寸）
 ${measurementText}
