@@ -11,6 +11,9 @@ const MAX_PHOTOS = 20;               // アップロード可能な写真枚数
 const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
 const DB_STORE = 'session';
+const CATEGORY_JP = { suit: 'スーツ', tops: 'アウター/トップス', bottoms: 'ボトムス', bag: 'バッグ', other: 'その他' };
+
+let lastAiData = null;
 
 // ----- 画面制御 -----
 const el = (id) => document.getElementById(id);
@@ -60,6 +63,14 @@ async function init() {
   el('grid2-btn').addEventListener('click', () => openGridCompose(2));
   el('grid4-btn').addEventListener('click', () => openGridCompose(4));
   el('compose-close').addEventListener('click', closeImageCompose);
+  el('draft-btn').addEventListener('click', saveDraft);
+
+  // GAS URL読み込み
+  const savedGasUrl = localStorage.getItem('gasUrl');
+  if (savedGasUrl) {
+    const gasUrlInput = el('gas-url-input');
+    if (gasUrlInput) gasUrlInput.value = savedGasUrl;
+  }
 
   // 前回のセッションを復元
   if (key) {
@@ -80,6 +91,10 @@ function saveApiKey() {
     if (!confirm('APIキーの形式が標準的でないようです。このまま保存しますか？')) return;
   }
   localStorage.setItem(STORAGE_KEY, key);
+  const gasUrlInput = el('gas-url-input');
+  if (gasUrlInput && gasUrlInput.value.trim()) {
+    localStorage.setItem('gasUrl', gasUrlInput.value.trim());
+  }
   showScreen('main-screen');
 }
 
@@ -586,6 +601,14 @@ async function generateDescription() {
     const titleCore = [brand, item].filter(Boolean).join(' ').trim();
     const title = titleCore ? '✨美品✨ ' + titleCore : '';
     el('title-text').value = title;
+    // 下書き機能用にAIデータを保存
+    lastAiData = {
+      title: title,
+      description: description,
+      category: measurements.category,
+      measurements: measurements,
+      images: uploadedImages,
+    };
     renderFinalSize(aiData);
     el('result-section').hidden = false;
     hideStatus('status');
@@ -2039,6 +2062,79 @@ async function renderGridCanvas(canvas, mode, selectedIndices) {
     const imgData = uploadedImages[selectedIndices[i]];
     const img = await loadImage(imgData.dataUrl);
     drawCellCover(ctx, img, cells[i].dx, cells[i].dy, cells[i].dw, cells[i].dh);
+  }
+}
+
+// ----- 下書き保存（Cloudflare tunnel経由でMac自動入力） -----
+async function saveDraft() {
+  const gasUrl = localStorage.getItem('gasUrl');
+  if (!gasUrl) {
+    alert('設定画面でGAS URLを入力してください');
+    return;
+  }
+  if (!lastAiData) {
+    alert('先に説明文を生成してください');
+    return;
+  }
+  const price = el('price-input').value;
+  if (!price) {
+    alert('販売価格を入力してください');
+    return;
+  }
+
+  const draftStatus = el('draft-status');
+  const draftBtn = el('draft-btn');
+  draftBtn.disabled = true;
+  draftStatus.hidden = false;
+  draftStatus.textContent = 'Macのトンネルに接続中...';
+
+  try {
+    // GASからトンネルURL取得
+    const gasResp = await fetch(`${gasUrl}?action=getTunnelUrl`);
+    const gasData = await gasResp.json();
+    const tunnelUrl = gasData.data && gasData.data.url;
+    if (!tunnelUrl) throw new Error('Macの下書きサービスが起動していません。Macでstart.pyを確認してください。');
+
+    // 死活確認
+    draftStatus.textContent = 'Macに接続確認中...';
+    const pingResp = await fetch(`${tunnelUrl}/ping`, { signal: AbortSignal.timeout(8000) });
+    if (!pingResp.ok) throw new Error('Macへの接続に失敗しました');
+
+    // 下書きリクエスト送信
+    draftStatus.textContent = '下書き情報を送信中...';
+    const payload = {
+      title: lastAiData.title || el('title-text').value,
+      description: lastAiData.description || el('result-text').value,
+      price: price,
+      category: CATEGORY_JP[lastAiData.category] || lastAiData.category,
+    };
+    const draftResp = await fetch(`${tunnelUrl}/draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const draftData = await draftResp.json();
+    const jobId = draftData.job_id;
+
+    // ポーリング
+    draftStatus.textContent = 'Macが下書きを入力中... (しばらくお待ちください)';
+    while (true) {
+      await new Promise(r => setTimeout(r, 10000));
+      const statusResp = await fetch(`${tunnelUrl}/status/${jobId}`);
+      const statusData = await statusResp.json();
+      draftStatus.textContent = statusData.message || '処理中...';
+      if (statusData.status === 'done') {
+        draftStatus.textContent = '✅ 下書き保存が完了しました！メルカリアプリで確認してください。';
+        break;
+      }
+      if (statusData.status === 'error') {
+        throw new Error(statusData.message);
+      }
+    }
+  } catch (e) {
+    draftStatus.textContent = `❌ エラー: ${e.message}`;
+  } finally {
+    draftBtn.disabled = false;
   }
 }
 
