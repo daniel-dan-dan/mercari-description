@@ -5,6 +5,16 @@
  * ============================================================ */
 
 const STORAGE_KEY = 'mercari_desc_api_key';
+const DRAFT_SERVER = 'http://localhost:5001';
+const CATEGORY_JP = {
+  suit: 'スーツ/フォーマル/ドレス',
+  tops: 'アウター/トップス',
+  bottoms: 'ボトムス',
+  bag: 'バッグ',
+  other: 'その他',
+};
+
+let lastAiData = null; // 最後にAIが返した解析結果（下書き保存で使用）
 const MODEL = 'claude-opus-4-7';  // 最新のOpus 4.7（画像解析・説明文品質を最大化）
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ
 const MAX_PHOTOS = 20;               // アップロード可能な写真枚数
@@ -53,6 +63,7 @@ async function init() {
   el('copy-btn').addEventListener('click', copyResult);
   el('copy-title-btn').addEventListener('click', copyTitle);
   el('sell-btn').addEventListener('click', openMercariSell);
+  el('draft-btn').addEventListener('click', saveDraft);
   el('retry-btn').addEventListener('click', retryGeneration);
   el('title-text').addEventListener('input', scheduleSave);
   el('result-text').addEventListener('input', scheduleSave);
@@ -577,6 +588,7 @@ async function generateDescription() {
       el('generate-btn').disabled = false;
       return;
     }
+    lastAiData = aiData; // 下書き保存で状態・ブランド情報を参照するために保持
     const measurementText = formatMeasurements(measurements);
     const description = buildDescription(aiData, measurementText);
     el('result-text').value = description;
@@ -640,6 +652,46 @@ async function copyTitle() {
   const ok = await copyToClipboard(text);
   showStatus('copy-status', ok ? '✅ 商品名をコピーしました' : '❌ コピーに失敗しました', ok ? 'success' : 'error');
   setTimeout(() => hideStatus('copy-status'), 2000);
+}
+
+// ----- Mac サーバーに下書き保存を依頼 -----
+async function saveDraft() {
+  const title = el('title-text').value.trim();
+  const description = el('result-text').value.trim();
+  const price = parseInt(el('draft-price').value, 10);
+
+  if (!title) { alert('商品名が空です'); return; }
+  if (!description) { alert('説明文が空です'); return; }
+  if (!price || price < 300) { alert('販売価格を300円以上で入力してください'); return; }
+  if (!uploadedImages.length) { alert('写真が選択されていません'); return; }
+
+  const btn = el('draft-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Mac で操作中...';
+  showStatus('draft-status', 'Macのブラウザでメルカリを自動操作しています（1〜3分かかります）', 'loading');
+
+  const category = CATEGORY_JP[el('category').value] || el('category').value;
+  const condition = lastAiData?.condition || '';
+  const images = uploadedImages.map(img => img.dataUrl);
+
+  try {
+    const res = await fetch(`${DRAFT_SERVER}/draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description, price, category, condition, images }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showStatus('draft-status', '✅ 下書き保存しました！メルカリを確認してください', 'success');
+    } else {
+      showStatus('draft-status', '❌ ' + (data.message || '失敗しました'), 'error');
+    }
+  } catch {
+    showStatus('draft-status', '❌ サーバーに接続できません。Mac で setup.sh を起動し、Chrome で http://localhost:5001 を開いているか確認してください', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💻 下書き保存（Mac）';
+  }
 }
 
 // ----- メルカリで出品する（2段階フロー） -----
