@@ -2144,12 +2144,13 @@ async function saveDraft() {
       description: lastAiData.description || el('result-text').value,
       price: price,
       category: CATEGORY_JP[lastAiData.category] || lastAiData.category,
+      photos: uploadedImages.map(img => ({ base64: img.base64, mediaType: img.mediaType })),
     };
     const draftResp = await fetchWithTimeout(`${tunnelUrl}/draft`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }, 15000);
+    }, 30000);  // 写真あり→30秒に延長
     const draftData = await draftResp.json();
     const jobId = draftData.job_id;
 
