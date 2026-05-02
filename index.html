@@ -7,7 +7,7 @@
   <title>メルカリ説明文AI生成</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260502b">
+  <link rel="stylesheet" href="styles.css?v=20260502c">
 </head>
 <body>
   <div id="app">
@@ -95,6 +95,35 @@
           <button id="copy-btn" class="btn primary">📋 説明文をコピー</button>
           <button id="retry-btn" class="btn">🔄 やり直す</button>
         </div>
+        <!-- メルカリ自動入力設定 -->
+        <div id="mercari-settings" hidden>
+          <h3 style="margin:16px 0 4px;font-size:15px;color:#3d2a5c">メルカリ設定（AIが自動判定）</h3>
+          <p class="note small" style="margin-top:0">変更が必要な場合は修正してください</p>
+
+          <label for="m-cat-l1">カテゴリー</label>
+          <select id="m-cat-l1"><option value="">大カテゴリーを選択</option></select>
+          <select id="m-cat-l2" disabled style="margin-top:6px"><option value="">中カテゴリーを選択</option></select>
+          <select id="m-cat-l3" disabled style="margin-top:6px"><option value="">小カテゴリーを選択（任意）</option></select>
+
+          <label for="m-condition">商品の状態</label>
+          <select id="m-condition">
+            <option value="新品、未使用">新品、未使用</option>
+            <option value="未使用に近い">未使用に近い</option>
+            <option value="目立った傷や汚れなし" selected>目立った傷や汚れなし</option>
+            <option value="やや傷や汚れあり">やや傷や汚れあり</option>
+            <option value="傷や汚れあり">傷や汚れあり</option>
+            <option value="全体的に状態が悪い">全体的に状態が悪い</option>
+          </select>
+
+          <label for="m-shipping">配送方法</label>
+          <select id="m-shipping">
+            <option value="らくらくメルカリ便" selected>らくらくメルカリ便</option>
+            <option value="ゆうゆうメルカリ便">ゆうゆうメルカリ便</option>
+            <option value="梱包・発送たのメル便">梱包・発送たのメル便</option>
+            <option value="普通郵便（定形、定形外）">普通郵便（定形、定形外）</option>
+          </select>
+        </div>
+
         <div class="draft-section">
           <label for="price-input">販売価格（円）</label>
           <div class="price-row">
@@ -125,6 +154,6 @@
 
   </div>
 
-  <script src="app.js?v=20260502b"></script>
+  <script src="app.js?v=20260502c"></script>
 </body>
 </html>
