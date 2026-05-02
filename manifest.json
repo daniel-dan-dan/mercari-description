@@ -1,6 +1,6 @@
 {
-  "name": "メルカリ説明文AI生成",
-  "short_name": "説明文AI",
+  "name": "メルカリAI出品",
+  "short_name": "メルカリAI出品",
   "description": "古着の写真から、メルカリ出品用の説明文を自動生成するAIツール",
   "start_url": "./",
   "display": "standalone",
