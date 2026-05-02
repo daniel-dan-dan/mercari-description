@@ -256,9 +256,16 @@ function setupDragSort(grid) {
       if (navigator.vibrate) navigator.vibrate(30);
       const rect = item.getBoundingClientRect();
       ghost = item.cloneNode(true);
+      ghost.classList.remove('dragging'); // ゴーストに dragging スタイルを継承させない
+      // ゴーストは body 直下なので .preview-grid img の CSS が効かない → 明示指定
+      const gi = ghost.querySelector('img');
+      if (gi) Object.assign(gi.style, {
+        width: '100%', height: rect.height + 'px', objectFit: 'cover', display: 'block',
+      });
       Object.assign(ghost.style, {
         position: 'fixed', pointerEvents: 'none', opacity: '0.85',
-        zIndex: '9999', width: rect.width + 'px', height: rect.height + 'px',
+        zIndex: '9999', overflow: 'hidden',
+        width: rect.width + 'px', height: rect.height + 'px',
         left: rect.left + 'px', top: rect.top + 'px',
         transform: 'scale(1.08)', borderRadius: '12px',
         boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
@@ -305,7 +312,8 @@ function setupDragSort(grid) {
         const t = e.changedTouches[0];
         ghost.style.display = 'none';
         const below = document.elementFromPoint(t.clientX, t.clientY);
-        ghost.style.display = '';
+        // ゴーストは常にここで削除（renderPreviews後に残留しないよう先に消す）
+        if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
         const over = below && below.closest('.preview-item');
         if (over && over !== item) {
           const dropIdx = Number(over.dataset.idx);
@@ -313,11 +321,9 @@ function setupDragSort(grid) {
             const moved = uploadedImages.splice(dragIdx, 1)[0];
             uploadedImages.splice(dropIdx, 0, moved);
             renderPreviews(); scheduleSave();
-            // renderPreviews が grid を再生成するのでここで cleanup してから終了
             cleanup(); return;
           }
         }
-        document.body.removeChild(ghost);
       }
       isDragging = false; dragIdx = null; ghost = null;
       grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
