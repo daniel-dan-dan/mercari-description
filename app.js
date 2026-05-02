@@ -2111,13 +2111,30 @@ async function saveDraft() {
     }
     if (!tunnelUrl) throw new Error('Macの下書きサービスが起動していません。Macでstart.pyを確認してください。');
 
-    // 死活確認
+    // 死活確認（失敗時は3秒待って新URLで1回自動リトライ）
     draftStatus.textContent = 'Macに接続確認中...';
-    try {
-      const pingResp = await fetchWithTimeout(`${tunnelUrl}/ping`, {}, 10000);
-      if (!pingResp.ok) throw new Error(`ping失敗 ${pingResp.status}`);
-    } catch (e) {
-      throw new Error(`Macへの接続失敗: ${e.message}`);
+    const pingOk = async (url) => {
+      const r = await fetchWithTimeout(`${url}/ping`, {}, 10000);
+      return r.ok;
+    };
+    let pingPassed = false;
+    try { pingPassed = await pingOk(tunnelUrl); } catch (_) {}
+    if (!pingPassed) {
+      draftStatus.textContent = 'トンネル再接続中... (3秒後に再試行)';
+      await new Promise(r => setTimeout(r, 3000));
+      // GASから最新URLを再取得
+      try {
+        const r2 = await fetchWithTimeout(
+          gasUrl,
+          { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'getTunnelUrl' }) },
+          15000
+        );
+        const d2 = await r2.json();
+        tunnelUrl = (d2.data && d2.data.url) || tunnelUrl;
+      } catch (_) {}
+      draftStatus.textContent = '再接続確認中...';
+      try { pingPassed = await pingOk(tunnelUrl); } catch (_) {}
+      if (!pingPassed) throw new Error('Macのトンネルに接続できません。もう一度タップしてください。');
     }
 
     // 下書きリクエスト送信
