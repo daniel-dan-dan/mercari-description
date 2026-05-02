@@ -664,7 +664,7 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 
 {"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"...","mercari_condition":"目立った傷や汚れなし"}`;
 
-async function callClaude(images) {
+async function callClaude(images, onChunk) {
   const key = localStorage.getItem(STORAGE_KEY);
   if (!key) throw new Error('APIキーが設定されていません');
 
@@ -688,6 +688,7 @@ async function callClaude(images) {
       model: MODEL,
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
+      stream: !!onChunk,
       messages: [{ role: 'user', content }],
     }),
   });
@@ -702,9 +703,37 @@ async function callClaude(images) {
     throw new Error(errMsg);
   }
 
-  const data = await res.json();
-  const text = data.content?.[0]?.text || '';
-  return text;
+  if (!onChunk) {
+    const data = await res.json();
+    return data.content?.[0]?.text || '';
+  }
+
+  // SSEストリーミング: Anthropicはdata:行でテキストデルタを送ってくる
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop(); // 未完了行はバッファに残す
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') continue;
+      try {
+        const event = JSON.parse(data);
+        if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+          fullText += event.delta.text;
+          onChunk(fullText);
+        }
+      } catch {}
+    }
+  }
+  return fullText;
 }
 
 // ----- テンプレート組み立て -----
@@ -761,25 +790,38 @@ async function generateDescription() {
   if (!uploadedImages.length) { alert('写真を選んでください'); return; }
 
   el('generate-btn').disabled = true;
-  showStatus('status', 'AIに画像を分析させています... (10〜20秒ほどかかります)', 'loading');
-  el('result-section').hidden = true;
+
+  // 結果セクションをすぐに表示してストリーミング状態に
+  const textarea = el('result-text');
+  textarea.value = '';
+  textarea.classList.add('streaming');
+  el('title-text').value = '';
+  el('mercari-settings').hidden = true;
+  const fsb = el('final-size-badge'); if (fsb) fsb.hidden = true;
+  el('result-section').hidden = false;
+  showStatus('status', 'AIが画像を分析中...', 'loading');
+  setTimeout(() => el('result-section').scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 
   try {
-    const rawText = await callClaude(uploadedImages);
+    const rawText = await callClaude(uploadedImages, (chunk) => {
+      textarea.value = chunk;
+      textarea.scrollTop = textarea.scrollHeight;
+    });
+
+    textarea.classList.remove('streaming');
+
     let aiData;
     try {
       aiData = JSON.parse(rawText.trim());
     } catch (e) {
       // JSONパース失敗 → そのまま表示
-      el('result-text').value = rawText;
-      el('result-section').hidden = false;
       showStatus('status', '⚠️ AIの応答がJSON形式でなかったため、そのまま表示しました', 'error');
       el('generate-btn').disabled = false;
       return;
     }
     const measurementText = formatMeasurements(measurements);
     const description = buildDescription(aiData, measurementText);
-    el('result-text').value = description;
+    textarea.value = description;
     // 商品名（タイトル）をセット
     const brand = aiData.brand || '';
     const item = aiData.item || '';
@@ -798,12 +840,10 @@ async function generateDescription() {
     // メルカリ設定をAIデータで自動入力
     el('mercari-settings').hidden = false;
     if (aiData.mercari_condition) el('m-condition').value = aiData.mercari_condition;
-    el('result-section').hidden = false;
     updateDraftChecklist();
     hideStatus('status');
-    // 結果までスクロール
-    el('result-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
+    textarea.classList.remove('streaming');
     console.error(err);
     showStatus('status', '❌ 生成失敗: ' + err.message, 'error');
   } finally {

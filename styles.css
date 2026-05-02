@@ -143,6 +143,17 @@ textarea {
   font-size: 14px;
   line-height: 1.65;
 }
+textarea.streaming {
+  color: #9a7a82;
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+  border-color: #8b1a2e;
+  animation: stream-pulse 1.2s ease-in-out infinite;
+}
+@keyframes stream-pulse {
+  0%, 100% { border-color: rgba(139,26,46,0.35); box-shadow: 0 0 0 3px rgba(139,26,46,0.06); }
+  50%       { border-color: rgba(139,26,46,0.8);  box-shadow: 0 0 0 4px rgba(139,26,46,0.12); }
+}
 
 /* ========== 写真アップロードボタン ========== */
 .file-label {
