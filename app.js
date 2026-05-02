@@ -182,9 +182,12 @@ function renderPreviews() {
   uploadedImages.forEach((img, idx) => {
     const item = document.createElement('div');
     item.className = 'preview-item';
+    item.draggable = true;
+    item.dataset.idx = idx;
     item.innerHTML = `
       <img src="${img.dataUrl}" alt="">
       <button class="remove" data-idx="${idx}" title="削除">×</button>
+      <span class="preview-num">${idx + 1}</span>
     `;
     grid.appendChild(item);
   });
@@ -196,8 +199,119 @@ function renderPreviews() {
       scheduleSave();
     });
   });
+  if (uploadedImages.length >= 2) setupDragSort(grid);
   const composeBtnRow = el('compose-btn-row');
   if (composeBtnRow) composeBtnRow.hidden = uploadedImages.length < 2;
+}
+
+function setupDragSort(grid) {
+  let dragIdx = null;
+
+  // --- デスクトップ: HTML5 drag API ---
+  grid.addEventListener('dragstart', (e) => {
+    const item = e.target.closest('.preview-item');
+    if (!item) return;
+    dragIdx = Number(item.dataset.idx);
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => item.classList.add('dragging'), 0);
+  });
+  grid.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const item = e.target.closest('.preview-item');
+    grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('drag-over'));
+    if (item) item.classList.add('drag-over');
+  });
+  grid.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const item = e.target.closest('.preview-item');
+    if (!item || dragIdx === null) return;
+    const dropIdx = Number(item.dataset.idx);
+    if (dragIdx !== dropIdx) {
+      const moved = uploadedImages.splice(dragIdx, 1)[0];
+      uploadedImages.splice(dropIdx, 0, moved);
+      renderPreviews(); scheduleSave();
+    }
+    dragIdx = null;
+  });
+  grid.addEventListener('dragend', () => {
+    dragIdx = null;
+    grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
+  });
+
+  // --- iOS タッチ: 長押し250msでドラッグ開始 ---
+  grid.addEventListener('touchstart', (e) => {
+    const item = e.target.closest('.preview-item');
+    if (!item || e.target.closest('.remove')) return;
+
+    let isDragging = false;
+    let ghost = null;
+    const startTouch = e.touches[0];
+    let startX = startTouch.clientX, startY = startTouch.clientY;
+    let hasMoved = false;
+
+    const holdTimer = setTimeout(() => {
+      if (hasMoved) return;
+      isDragging = true;
+      dragIdx = Number(item.dataset.idx);
+      item.classList.add('dragging');
+      if (navigator.vibrate) navigator.vibrate(30);
+
+      const rect = item.getBoundingClientRect();
+      ghost = item.cloneNode(true);
+      Object.assign(ghost.style, {
+        position: 'fixed', pointerEvents: 'none', opacity: '0.85',
+        zIndex: '9999', width: rect.width + 'px', height: rect.height + 'px',
+        left: rect.left + 'px', top: rect.top + 'px',
+        transform: 'scale(1.08)', borderRadius: '12px',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.28)', transition: 'none',
+      });
+      document.body.appendChild(ghost);
+    }, 250);
+
+    const onMove = (e) => {
+      const t = e.touches[0];
+      if (Math.abs(t.clientX - startX) > 8 || Math.abs(t.clientY - startY) > 8) hasMoved = true;
+      if (!isDragging || !ghost) return;
+      e.preventDefault();
+      ghost.style.left = (t.clientX - ghost.offsetWidth / 2) + 'px';
+      ghost.style.top  = (t.clientY - ghost.offsetHeight / 2) + 'px';
+      ghost.style.visibility = 'hidden';
+      const below = document.elementFromPoint(t.clientX, t.clientY);
+      ghost.style.visibility = '';
+      const over = below && below.closest('.preview-item');
+      grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('drag-over'));
+      if (over && over !== item) over.classList.add('drag-over');
+    };
+
+    const onEnd = (e) => {
+      clearTimeout(holdTimer);
+      if (isDragging && ghost) {
+        const t = e.changedTouches[0];
+        ghost.style.visibility = 'hidden';
+        const below = document.elementFromPoint(t.clientX, t.clientY);
+        ghost.style.visibility = '';
+        const over = below && below.closest('.preview-item');
+        if (over && over !== item) {
+          const dropIdx = Number(over.dataset.idx);
+          if (dragIdx !== null && dragIdx !== dropIdx) {
+            const moved = uploadedImages.splice(dragIdx, 1)[0];
+            uploadedImages.splice(dropIdx, 0, moved);
+            renderPreviews(); scheduleSave();
+          }
+        }
+        document.body.removeChild(ghost);
+      }
+      isDragging = false; dragIdx = null; ghost = null;
+      grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onEnd);
+    };
+
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onEnd);
+    document.addEventListener('touchcancel', onEnd);
+  }, { passive: true });
 }
 
 async function saveBlobToDevice(blob, filename) {
@@ -1485,9 +1599,20 @@ function renderComposeStep() {
     backBtn.addEventListener('click', () => { composeState.step = 3; renderComposeStep(); });
     actions.appendChild(backBtn);
 
+    const saveDevBtn = document.createElement('button');
+    saveDevBtn.className = 'btn';
+    saveDevBtn.textContent = '📥 保存のみ';
+    saveDevBtn.addEventListener('click', async () => {
+      const cv = el('compose-preview-canvas');
+      if (!cv) return;
+      const blob = await (await fetch(cv.toDataURL('image/jpeg', 0.9))).blob();
+      await saveBlobToDevice(blob, `mercari-compose-${Date.now()}.jpg`);
+    });
+    actions.appendChild(saveDevBtn);
+
     const applyBtn = document.createElement('button');
     applyBtn.className = 'btn primary';
-    applyBtn.textContent = 'スマホに保存';
+    applyBtn.textContent = '➕ アプリに追加';
     applyBtn.addEventListener('click', applyCompose);
     actions.appendChild(applyBtn);
   }
@@ -1878,15 +2003,37 @@ function renderComposePreview(canvas) {
   }
 }
 
+async function addComposedImageToApp(dataUrl) {
+  if (uploadedImages.length >= MAX_PHOTOS) {
+    alert(`写真は最大${MAX_PHOTOS}枚までです`); return false;
+  }
+  const img = await loadImage(dataUrl);
+  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').drawImage(img, 0, 0, w, h);
+  const smallDataUrl = c.toDataURL('image/jpeg', 0.85);
+
+  const scaleHQ = Math.min(1, MAX_MERCARI_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+  const wHQ = Math.round(img.naturalWidth * scaleHQ), hHQ = Math.round(img.naturalHeight * scaleHQ);
+  const cHQ = document.createElement('canvas'); cHQ.width = wHQ; cHQ.height = hHQ;
+  cHQ.getContext('2d').drawImage(img, 0, 0, wHQ, hHQ);
+  const base64HQ = cHQ.toDataURL('image/jpeg', 0.92).split(',')[1];
+
+  uploadedImages.push({
+    dataUrl: smallDataUrl, mediaType: 'image/jpeg',
+    base64: smallDataUrl.split(',')[1], base64HQ,
+    originalDataUrl: smallDataUrl, adjust: { brightness: 0, temp: 0, contrast: 0 },
+  });
+  renderPreviews(); updateGenerateButton(); scheduleSave();
+  return true;
+}
+
 async function applyCompose() {
   const canvas = el('compose-preview-canvas');
   if (!canvas) return;
   const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-
-  // スマホに保存のみ（アプリ内写真選択には追加しない）
-  const blob = await (await fetch(dataUrl)).blob();
-  await saveBlobToDevice(blob, `mercari-compose-${Date.now()}.jpg`);
-  closeImageCompose();
+  if (await addComposedImageToApp(dataUrl)) closeImageCompose();
 }
 
 // ----- グリッド合成（2枚: 2160×2160 / 4枚: 2160×2160） -----
@@ -2014,17 +2161,24 @@ function renderGridPreviewStep() {
   backBtn.addEventListener('click', () => renderGridSelectStep());
   actions.appendChild(backBtn);
 
-  // 適用
+  const saveDevBtn2 = document.createElement('button');
+  saveDevBtn2.className = 'btn';
+  saveDevBtn2.textContent = '📥 保存のみ';
+  saveDevBtn2.addEventListener('click', async () => {
+    const blob = await (await fetch(canvas.toDataURL('image/jpeg', 0.90))).blob();
+    await saveBlobToDevice(blob, `mercari-grid${mode}-${Date.now()}.jpg`);
+  });
+  actions.appendChild(saveDevBtn2);
+
   const applyBtn = document.createElement('button');
   applyBtn.className = 'btn primary';
-  applyBtn.textContent = 'スマホに保存';
+  applyBtn.textContent = '➕ アプリに追加';
   applyBtn.addEventListener('click', async () => {
     const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
-    // スマホに保存のみ（アプリ内写真選択には追加しない）
-    const blob = await (await fetch(dataUrl)).blob();
-    await saveBlobToDevice(blob, `mercari-grid${mode}-${Date.now()}.jpg`);
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v0429d</span>`;
-    closeImageCompose();
+    if (await addComposedImageToApp(dataUrl)) {
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v0429d</span>`;
+      closeImageCompose();
+    }
   });
   actions.appendChild(applyBtn);
 }
