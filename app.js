@@ -65,6 +65,32 @@ async function init() {
   el('grid4-btn').addEventListener('click', () => openGridCompose(4));
   el('compose-close').addEventListener('click', closeImageCompose);
   el('draft-btn').addEventListener('click', saveDraft);
+  el('price-input').addEventListener('input', updateDraftChecklist);
+
+  // ドロップゾーン: クリックでfile picker
+  const dropzone = el('photo-dropzone');
+  if (dropzone) {
+    dropzone.addEventListener('click', () => el('photo-input').click());
+    dropzone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropzone.classList.add('drag-active');
+    });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-active'));
+    dropzone.addEventListener('drop', async e => {
+      e.preventDefault();
+      dropzone.classList.remove('drag-active');
+      const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+      if (!files.length) return;
+      const remaining = MAX_PHOTOS - uploadedImages.length;
+      if (remaining <= 0) { alert(`写真は最大${MAX_PHOTOS}枚までです`); return; }
+      const toAdd = files.slice(0, remaining);
+      showStatus('status', '画像を処理中...', 'loading');
+      for (const file of toAdd) {
+        try { uploadedImages.push(await processImage(file)); } catch (err) { console.error(err); }
+      }
+      renderPreviews(); updateGenerateButton(); hideStatus('status'); scheduleSave();
+    });
+  }
 
   // 写真並び替え（一度だけ登録）
   setupDragSort(el('photo-preview'));
@@ -203,6 +229,10 @@ function renderPreviews() {
   });
   const composeBtnRow = el('compose-btn-row');
   if (composeBtnRow) composeBtnRow.hidden = uploadedImages.length < 2;
+  const dropzone = el('photo-dropzone');
+  const addMore = el('photo-add-more');
+  if (dropzone) dropzone.hidden = uploadedImages.length > 0;
+  if (addMore) addMore.hidden = uploadedImages.length === 0;
 }
 
 function setupDragSort(grid) {
@@ -769,6 +799,7 @@ async function generateDescription() {
     el('mercari-settings').hidden = false;
     if (aiData.mercari_condition) el('m-condition').value = aiData.mercari_condition;
     el('result-section').hidden = false;
+    updateDraftChecklist();
     hideStatus('status');
     // 結果までスクロール
     el('result-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -957,6 +988,7 @@ async function resetAll() {
   hideStatus('copy-status');
   try { await clearSessionDb(); } catch (e) { console.warn(e); }
   updateGenerateButton();
+  updateDraftChecklist();
   updateSizeSuggestion();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -2205,6 +2237,27 @@ async function renderGridCanvas(canvas, mode, selectedIndices) {
     const img = await loadImage(imgData.dataUrl);
     drawCellCover(ctx, img, cells[i].dx, cells[i].dy, cells[i].dw, cells[i].dh);
   }
+}
+
+// ----- 下書きチェックリスト -----
+function updateDraftChecklist() {
+  const checklist = el('draft-checklist');
+  if (!checklist) return;
+  const resultVisible = el('result-section') && !el('result-section').hidden;
+  if (!resultVisible) { checklist.hidden = true; return; }
+  const hasDesc = !!lastAiData;
+  const hasPrice = !!el('price-input').value.trim();
+  const items = [
+    { ok: hasDesc, label: hasDesc ? '説明文が生成されています' : '先に説明文を生成してください' },
+    { ok: hasPrice, label: hasPrice ? '価格が入力されています' : '販売価格を入力してください' },
+  ];
+  checklist.hidden = false;
+  checklist.innerHTML = items.map(item =>
+    `<div class="draft-check-item ${item.ok ? 'ok' : 'ng'}">
+      <span>${item.ok ? '✅' : '○'}</span>
+      <span>${item.label}</span>
+    </div>`
+  ).join('');
 }
 
 // ----- 下書き保存（Cloudflare tunnel経由でMac自動入力） -----

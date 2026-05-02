@@ -7,7 +7,7 @@
   <title>メルカリ説明文AI生成</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260502j">
+  <link rel="stylesheet" href="styles.css?v=20260502k">
 </head>
 <body>
   <div id="app">
@@ -43,8 +43,15 @@
       <div class="step">
         <h2>① 写真をアップロード</h2>
         <p class="note">全体写真・タグ写真・ディテール写真を複数枚選べます（最大20枚、最低: 全体1枚 + タグ1枚）</p>
-        <label class="file-label" for="photo-input">
-          📷 写真を選ぶ / 撮影する
+        <!-- ドロップゾーン（写真ゼロ時） -->
+        <div id="photo-dropzone" class="photo-dropzone">
+          <div class="dropzone-icon">📷</div>
+          <p class="dropzone-text">タップして写真を選ぶ / 撮影する</p>
+          <p class="dropzone-sub">最大20枚 · 全体・タグ・ディテール</p>
+        </div>
+        <!-- 写真あり時の追加ボタン -->
+        <label id="photo-add-more" class="photo-add-more" for="photo-input" hidden>
+          ＋ 写真を追加
         </label>
         <input type="file" id="photo-input" accept="image/*" multiple hidden>
         <div id="photo-preview" class="preview-grid"></div>
@@ -119,6 +126,7 @@
             <span class="yen-label">円</span>
           </div>
           <button id="draft-btn" class="btn primary large" style="margin-top:8px">💾 下書き保存（Mac自動入力）</button>
+          <div id="draft-checklist" class="draft-checklist" hidden></div>
           <p id="draft-status" class="status" hidden></p>
         </div>
         <p id="copy-status" class="status" hidden></p>
@@ -140,6 +148,6 @@
 
   </div>
 
-  <script src="app.js?v=20260502j"></script>
+  <script src="app.js?v=20260502k"></script>
 </body>
 </html>
