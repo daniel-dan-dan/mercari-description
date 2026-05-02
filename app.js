@@ -10,56 +10,6 @@ const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（Claude 
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
 const MAX_PHOTOS = 20;               // アップロード可能な写真枚数
 
-const MERCARI_CATEGORIES = {
-  'レディース': {
-    'トップス': ['Tシャツ/カットソー（半袖/袖なし）','Tシャツ/カットソー（七分/長袖）','ニット/セーター','スウェット','ベスト/タンクトップ','シャツ/ブラウス（半袖/袖なし）','シャツ/ブラウス（七分/長袖）','ポロシャツ','チューブトップ/ストラップトップ','その他'],
-    'ジャケット/アウター': ['テーラードジャケット','ノーカラージャケット','Gジャン/デニムジャケット','スタジャン/スカジャン','ライダース/レザージャケット','ミリタリージャケット','MA-1/ブルゾン','トレンチコート','ステンカラーコート','チェスターコート','ダウンジャケット/ダウンコート','ファーコート/毛皮コート','ポンチョ/マント','カーディガン','ボレロ','その他'],
-    'パンツ': ['デニム/ジーンズ','スラックス/チノパン','ショートパンツ','スウェット/ジョガーパンツ','ガウチョ/ワイドパンツ','レギンス/スパッツ','その他'],
-    'スカート': ['ミニスカート','ひざ丈スカート','ロング/マキシスカート','その他'],
-    'ワンピース': ['ミニワンピース','ひざ丈ワンピース','ロングワンピース','その他'],
-    'バッグ': ['トートバッグ','ショルダーバッグ','ハンドバッグ','リュック/バックパック','ボディバッグ/ウエストポーチ','クラッチバッグ','その他'],
-    '靴': ['スニーカー','パンプス','ブーツ','サンダル','ローファー/革靴','その他'],
-    '帽子': ['キャップ','ニット帽','ハット','ベレー帽','その他'],
-    'アクセサリー': ['ネックレス','ピアス/イヤリング','ブレスレット/バングル','指輪','その他'],
-    '腕時計': [],
-    'ファッション小物': ['スカーフ/ストール','ベルト','手袋','サングラス','マフラー','その他'],
-    'スーツ/フォーマル/ドレス': ['スーツセットアップ','ドレス/パーティードレス','礼服/喪服','その他'],
-    '浴衣/着物': ['浴衣','着物','帯','その他'],
-    'レディース全般': [],
-  },
-  'メンズ': {
-    'トップス': ['Tシャツ/カットソー（半袖/袖なし）','Tシャツ/カットソー（七分/長袖）','ニット/セーター','スウェット','ベスト/タンクトップ','シャツ（半袖）','シャツ（七分/長袖）','ポロシャツ','アロハシャツ','その他'],
-    'ジャケット/アウター': ['テーラードジャケット','Gジャン/デニムジャケット','スタジャン/スカジャン','ライダース/レザージャケット','ミリタリージャケット','MA-1/ブルゾン','トレンチコート','ステンカラーコート','チェスターコート','ダウンジャケット/ダウンコート','ファーコート/毛皮コート','カーディガン','その他'],
-    'パンツ': ['デニム/ジーンズ','スラックス/チノパン','ショートパンツ','スウェット/ジョガーパンツ','ワークパンツ/カーゴパンツ','その他'],
-    'バッグ': ['トートバッグ','ショルダーバッグ','リュック/バックパック','ボディバッグ/ウエストポーチ','その他'],
-    '靴': ['スニーカー','革靴/ビジネスシューズ','ブーツ','サンダル','ローファー','その他'],
-    '帽子': ['キャップ','ニット帽','ハット','ベレー帽','その他'],
-    'アクセサリー': ['ネックレス','ブレスレット/バングル','指輪','ピアス','その他'],
-    '腕時計': [],
-    'ファッション小物': ['スカーフ/ストール','ベルト','手袋','サングラス','マフラー','その他'],
-    'スーツ/セットアップ': ['スーツセットアップ','礼服/喪服','その他'],
-    '浴衣/甚平/着物': ['浴衣','甚平','着物','その他'],
-    'メンズ全般': [],
-  },
-  'ベビー・キッズ': {
-    'キッズ服（男の子）': [],
-    'キッズ服（女の子）': [],
-    'ベビー服（男の子）': [],
-    'ベビー服（女の子）': [],
-    'おもちゃ/ゲーム/乗り物': [],
-    'その他': [],
-  },
-  'バッグ・小物・ブランド雑貨': {
-    'バッグ': ['トートバッグ','ショルダーバッグ','ハンドバッグ','リュック/バックパック','その他'],
-    '財布/小物': [],
-    'その他': [],
-  },
-  'インテリア・住まい・小物': { 'その他': [] },
-  '本・音楽・ゲーム': { '本': [], 'CD/DVD/ブルーレイ': [], 'ゲーム': [], 'その他': [] },
-  'コスメ・香水・美容': { 'スキンケア/基礎化粧品': [], 'メイクアップ': [], '香水': [], 'その他': [] },
-  'スポーツ・レジャー': { 'その他': [] },
-  'その他': { 'その他': [] },
-};
 const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
 const DB_STORE = 'session';
@@ -94,9 +44,6 @@ async function init() {
   } else {
     showScreen('main-screen');
   }
-
-  // メルカリカテゴリーセレクト初期化
-  initMercariSelects();
 
   // イベントバインド
   el('save-key').addEventListener('click', saveApiKey);
@@ -489,59 +436,6 @@ function formatMeasurements(m) {
   return '';
 }
 
-// ----- メルカリ カテゴリーセレクト初期化 -----
-function initMercariSelects() {
-  const l1 = el('m-cat-l1');
-  const l2 = el('m-cat-l2');
-  const l3 = el('m-cat-l3');
-
-  Object.keys(MERCARI_CATEGORIES).forEach(cat => {
-    const opt = document.createElement('option');
-    opt.value = cat; opt.textContent = cat;
-    l1.appendChild(opt);
-  });
-
-  l1.addEventListener('change', () => {
-    const v = l1.value;
-    l2.innerHTML = '<option value="">中カテゴリーを選択</option>';
-    l3.innerHTML = '<option value="">小カテゴリーを選択（任意）</option>';
-    l2.disabled = !v; l3.disabled = true;
-    if (!v) return;
-    Object.keys(MERCARI_CATEGORIES[v] || {}).forEach(cat => {
-      const opt = document.createElement('option');
-      opt.value = cat; opt.textContent = cat;
-      l2.appendChild(opt);
-    });
-  });
-
-  l2.addEventListener('change', () => {
-    const v1 = l1.value, v2 = l2.value;
-    l3.innerHTML = '<option value="">小カテゴリーを選択（任意）</option>';
-    if (!v1 || !v2) { l3.disabled = true; return; }
-    const l3cats = ((MERCARI_CATEGORIES[v1] || {})[v2]) || [];
-    l3.disabled = l3cats.length === 0;
-    l3cats.forEach(cat => {
-      const opt = document.createElement('option');
-      opt.value = cat; opt.textContent = cat;
-      l3.appendChild(opt);
-    });
-  });
-}
-
-function setMercariCategory(categoryArray) {
-  if (!categoryArray || !categoryArray.length) return;
-  const l1 = el('m-cat-l1');
-  const l2 = el('m-cat-l2');
-  const l3 = el('m-cat-l3');
-  l1.value = categoryArray[0] || '';
-  l1.dispatchEvent(new Event('change'));
-  if (categoryArray[1]) {
-    l2.value = categoryArray[1];
-    l2.dispatchEvent(new Event('change'));
-  }
-  if (categoryArray[2]) l3.value = categoryArray[2];
-}
-
 // ----- 生成ボタンの活性状態 -----
 function updateGenerateButton() {
   const hasPhotos = uploadedImages.length > 0;
@@ -577,8 +471,7 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 5. material — 素材（タグから読み取る。表地/裏地がある場合は分ける。読み取れなければ "---"）
 6. condition — 状態。ダメージがなければ "目立った傷や汚れのない美品です。詳細は写真をご確認ください"。ダメージがあれば具体的に記載
 7. appeal — 商品の特徴・訴求ポイント2〜3文。以下を自然に含める:
-8. mercari_category — メルカリのカテゴリーパス（配列形式、1〜3要素）。写真とアイテム情報から判断。例: ["レディース","トップス","ニット/セーター"] / ["メンズ","ジャケット/アウター","テーラードジャケット"]
-9. mercari_condition — 商品の状態（メルカリUI用）。以下の6択から1つ選ぶ: "新品、未使用" / "未使用に近い" / "目立った傷や汚れなし" / "やや傷や汚れあり" / "傷や汚れあり" / "全体的に状態が悪い"
+8. mercari_condition — 商品の状態（メルカリUI用）。以下の6択から1つ選ぶ: "新品、未使用" / "未使用に近い" / "目立った傷や汚れなし" / "やや傷や汚れあり" / "傷や汚れあり" / "全体的に状態が悪い"
    - デザインや素材の特徴
    - 季節感（春夏向き、秋冬向き、3シーズンなど）
    - 使えるシーン（ビジネス、カジュアル、セレモニーなど）
@@ -595,7 +488,7 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 - appealの文章は丁寧だが簡潔に
 - 必ず以下のJSON形式のみで返す。前後に説明やバッククォートを付けない
 
-{"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"...","mercari_category":["レディース","トップス","ニット/セーター"],"mercari_condition":"目立った傷や汚れなし"}`;
+{"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"...","mercari_condition":"目立った傷や汚れなし"}`;
 
 async function callClaude(images) {
   const key = localStorage.getItem(STORAGE_KEY);
@@ -730,7 +623,6 @@ async function generateDescription() {
     renderFinalSize(aiData);
     // メルカリ設定をAIデータで自動入力
     el('mercari-settings').hidden = false;
-    setMercariCategory(aiData.mercari_category || []);
     if (aiData.mercari_condition) el('m-condition').value = aiData.mercari_condition;
     el('result-section').hidden = false;
     hideStatus('status');
@@ -918,11 +810,7 @@ function collectState() {
     result: el('result-text').value,
     resultVisible: !el('result-section').hidden,
     mercariSettingsVisible: !el('mercari-settings').hidden,
-    mercariCatL1: el('m-cat-l1').value,
-    mercariCatL2: el('m-cat-l2').value,
-    mercariCatL3: el('m-cat-l3').value,
     mercariCondition: el('m-condition').value,
-    mercariShipping: el('m-shipping').value,
   };
 }
 
@@ -967,11 +855,7 @@ function restoreState(s) {
   // メルカリ設定の復元
   if (s.mercariSettingsVisible) {
     el('mercari-settings').hidden = false;
-    if (s.mercariCatL1) {
-      setMercariCategory([s.mercariCatL1, s.mercariCatL2, s.mercariCatL3].filter(Boolean));
-    }
     if (s.mercariCondition) el('m-condition').value = s.mercariCondition;
-    if (s.mercariShipping) el('m-shipping').value = s.mercariShipping;
   }
   updateGenerateButton();
 }
@@ -987,10 +871,7 @@ async function resetAll() {
   el('result-text').value = '';
   el('result-section').hidden = true;
   el('mercari-settings').hidden = true;
-  el('m-cat-l1').value = '';
-  el('m-cat-l1').dispatchEvent(new Event('change'));
   el('m-condition').value = '目立った傷や汚れなし';
-  el('m-shipping').value = 'らくらくメルカリ便';
   const fsb = el('final-size-badge'); if (fsb) fsb.hidden = true;
   hideStatus('status');
   hideStatus('copy-status');
@@ -2287,9 +2168,8 @@ async function saveDraft() {
       price: price,
       category: CATEGORY_JP[lastAiData.category] || lastAiData.category,
       photos: uploadedImages.map(img => ({ base64: img.base64HQ || img.base64, mediaType: img.mediaType })),
-      mercari_category: [el('m-cat-l1').value, el('m-cat-l2').value, el('m-cat-l3').value].filter(Boolean),
       mercari_condition: el('m-condition').value,
-      mercari_shipping: el('m-shipping').value,
+      mercari_shipping: 'らくらくメルカリ便',
     };
     const draftResp = await fetchWithTimeout(`${tunnelUrl}/draft`, {
       method: 'POST',
