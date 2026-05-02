@@ -2086,19 +2086,39 @@ async function saveDraft() {
   const draftBtn = el('draft-btn');
   draftBtn.disabled = true;
   draftStatus.hidden = false;
-  draftStatus.textContent = 'Macのトンネルに接続中...';
+  draftStatus.textContent = 'GASからURL取得中...';
+
+  // AbortControllerでタイムアウト実装（AbortSignal.timeoutの代替）
+  function fetchWithTimeout(url, opts, ms) {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), ms);
+    return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(tid));
+  }
 
   try {
-    // GASからトンネルURL取得
-    const gasResp = await fetch(`${gasUrl}?action=getTunnelUrl`);
-    const gasData = await gasResp.json();
-    const tunnelUrl = gasData.data && gasData.data.url;
+    // GASからトンネルURL取得（POSTでtext/plain → CORSプリフライト不要）
+    let tunnelUrl = '';
+    try {
+      const gasResp = await fetchWithTimeout(
+        gasUrl,
+        { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'getTunnelUrl' }) },
+        15000
+      );
+      const gasData = await gasResp.json();
+      tunnelUrl = (gasData.data && gasData.data.url) || '';
+    } catch (e) {
+      throw new Error(`GAS接続タイムアウト(15秒): ${e.message}`);
+    }
     if (!tunnelUrl) throw new Error('Macの下書きサービスが起動していません。Macでstart.pyを確認してください。');
 
     // 死活確認
     draftStatus.textContent = 'Macに接続確認中...';
-    const pingResp = await fetch(`${tunnelUrl}/ping`, { signal: AbortSignal.timeout(8000) });
-    if (!pingResp.ok) throw new Error('Macへの接続に失敗しました');
+    try {
+      const pingResp = await fetchWithTimeout(`${tunnelUrl}/ping`, {}, 10000);
+      if (!pingResp.ok) throw new Error(`ping失敗 ${pingResp.status}`);
+    } catch (e) {
+      throw new Error(`Macへの接続失敗: ${e.message}`);
+    }
 
     // 下書きリクエスト送信
     draftStatus.textContent = '下書き情報を送信中...';
@@ -2108,11 +2128,11 @@ async function saveDraft() {
       price: price,
       category: CATEGORY_JP[lastAiData.category] || lastAiData.category,
     };
-    const draftResp = await fetch(`${tunnelUrl}/draft`, {
+    const draftResp = await fetchWithTimeout(`${tunnelUrl}/draft`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    });
+    }, 15000);
     const draftData = await draftResp.json();
     const jobId = draftData.job_id;
 
@@ -2120,7 +2140,7 @@ async function saveDraft() {
     draftStatus.textContent = 'Macが下書きを入力中... (しばらくお待ちください)';
     while (true) {
       await new Promise(r => setTimeout(r, 10000));
-      const statusResp = await fetch(`${tunnelUrl}/status/${jobId}`);
+      const statusResp = await fetchWithTimeout(`${tunnelUrl}/status/${jobId}`, {}, 10000);
       const statusData = await statusResp.json();
       draftStatus.textContent = statusData.message || '処理中...';
       if (statusData.status === 'done') {
