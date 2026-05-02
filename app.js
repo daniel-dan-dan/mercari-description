@@ -238,24 +238,22 @@ function setupDragSort(grid) {
     grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
   });
 
-  // --- iOS タッチ: 長押し250msでドラッグ開始 ---
+  // --- iOS タッチ ---
+  // 長押し300msでドラッグ開始。スクロール意図（15px超移動）は即キャンセル。
   grid.addEventListener('touchstart', (e) => {
     const item = e.target.closest('.preview-item');
     if (!item || e.target.closest('.remove')) return;
 
     let isDragging = false;
     let ghost = null;
-    const startTouch = e.touches[0];
-    let startX = startTouch.clientX, startY = startTouch.clientY;
-    let hasMoved = false;
+    const t0 = e.touches[0];
+    const startX = t0.clientX, startY = t0.clientY;
 
-    const holdTimer = setTimeout(() => {
-      if (hasMoved) return;
+    const startDrag = () => {
       isDragging = true;
       dragIdx = Number(item.dataset.idx);
       item.classList.add('dragging');
       if (navigator.vibrate) navigator.vibrate(30);
-
       const rect = item.getBoundingClientRect();
       ghost = item.cloneNode(true);
       Object.assign(ghost.style, {
@@ -263,21 +261,39 @@ function setupDragSort(grid) {
         zIndex: '9999', width: rect.width + 'px', height: rect.height + 'px',
         left: rect.left + 'px', top: rect.top + 'px',
         transform: 'scale(1.08)', borderRadius: '12px',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.28)', transition: 'none',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
       });
       document.body.appendChild(ghost);
-    }, 250);
+    };
+
+    const holdTimer = setTimeout(startDrag, 300);
+
+    const cleanup = () => {
+      document.removeEventListener('touchmove', onMove, { passive: false });
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onCancel);
+    };
 
     const onMove = (e) => {
       const t = e.touches[0];
-      if (Math.abs(t.clientX - startX) > 8 || Math.abs(t.clientY - startY) > 8) hasMoved = true;
-      if (!isDragging || !ghost) return;
-      e.preventDefault();
+      const dx = Math.abs(t.clientX - startX);
+      const dy = Math.abs(t.clientY - startY);
+
+      // ドラッグ開始前に大きく動いた → スクロール意図なのでキャンセル
+      if (!isDragging) {
+        if (dx > 15 || dy > 15) { clearTimeout(holdTimer); cleanup(); }
+        return;
+      }
+
+      e.preventDefault(); // ドラッグ中はスクロール抑止
+
       ghost.style.left = (t.clientX - ghost.offsetWidth / 2) + 'px';
       ghost.style.top  = (t.clientY - ghost.offsetHeight / 2) + 'px';
-      ghost.style.visibility = 'hidden';
+
+      // ghost の裏にある要素を取得（display:none で一時的に除外）
+      ghost.style.display = 'none';
       const below = document.elementFromPoint(t.clientX, t.clientY);
-      ghost.style.visibility = '';
+      ghost.style.display = '';
       const over = below && below.closest('.preview-item');
       grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('drag-over'));
       if (over && over !== item) over.classList.add('drag-over');
@@ -287,9 +303,9 @@ function setupDragSort(grid) {
       clearTimeout(holdTimer);
       if (isDragging && ghost) {
         const t = e.changedTouches[0];
-        ghost.style.visibility = 'hidden';
+        ghost.style.display = 'none';
         const below = document.elementFromPoint(t.clientX, t.clientY);
-        ghost.style.visibility = '';
+        ghost.style.display = '';
         const over = below && below.closest('.preview-item');
         if (over && over !== item) {
           const dropIdx = Number(over.dataset.idx);
@@ -297,20 +313,28 @@ function setupDragSort(grid) {
             const moved = uploadedImages.splice(dragIdx, 1)[0];
             uploadedImages.splice(dropIdx, 0, moved);
             renderPreviews(); scheduleSave();
+            // renderPreviews が grid を再生成するのでここで cleanup してから終了
+            cleanup(); return;
           }
         }
         document.body.removeChild(ghost);
       }
       isDragging = false; dragIdx = null; ghost = null;
       grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
-      document.removeEventListener('touchmove', onMove);
-      document.removeEventListener('touchend', onEnd);
-      document.removeEventListener('touchcancel', onEnd);
+      cleanup();
+    };
+
+    const onCancel = () => {
+      clearTimeout(holdTimer);
+      if (ghost && ghost.parentNode) document.body.removeChild(ghost);
+      isDragging = false; dragIdx = null; ghost = null;
+      grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
+      cleanup();
     };
 
     document.addEventListener('touchmove', onMove, { passive: false });
     document.addEventListener('touchend', onEnd);
-    document.addEventListener('touchcancel', onEnd);
+    document.addEventListener('touchcancel', onCancel);
   }, { passive: true });
 }
 

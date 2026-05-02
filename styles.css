@@ -185,8 +185,20 @@ textarea {
   border: 2px solid white;
   box-shadow: 0 3px 10px -3px rgba(124, 92, 252, 0.18);
 }
-.preview-item { position: relative; cursor: grab; touch-action: none; }
+.preview-item {
+  position: relative;
+  cursor: grab;
+  -webkit-touch-callout: none; /* iOS長押しメニューを抑止 */
+  -webkit-user-select: none;
+  user-select: none;
+}
 .preview-item:active { cursor: grabbing; }
+.preview-item img {
+  -webkit-touch-callout: none;
+  pointer-events: none; /* img自体のタッチを親divに委譲 → iOSの画像共有シートを抑止 */
+  -webkit-user-drag: none;
+  user-drag: none;
+}
 .preview-item .remove {
   position: absolute;
   top: 4px;
