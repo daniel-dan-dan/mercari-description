@@ -67,6 +67,9 @@ async function init() {
   el('compose-close').addEventListener('click', closeImageCompose);
   el('draft-btn').addEventListener('click', saveDraft);
 
+  // 写真並び替え（一度だけ登録）
+  setupDragSort(el('photo-preview'));
+
   // GAS URL読み込み
   const savedGasUrl = localStorage.getItem('gasUrl');
   if (savedGasUrl) {
@@ -199,7 +202,6 @@ function renderPreviews() {
       scheduleSave();
     });
   });
-  if (uploadedImages.length >= 2) setupDragSort(grid);
   const composeBtnRow = el('compose-btn-row');
   if (composeBtnRow) composeBtnRow.hidden = uploadedImages.length < 2;
 }
@@ -320,6 +322,7 @@ function setupDragSort(grid) {
           if (dragIdx !== null && dragIdx !== dropIdx) {
             const moved = uploadedImages.splice(dragIdx, 1)[0];
             uploadedImages.splice(dropIdx, 0, moved);
+            isDragging = false; dragIdx = null; ghost = null;
             renderPreviews(); scheduleSave();
             cleanup(); return;
           }
