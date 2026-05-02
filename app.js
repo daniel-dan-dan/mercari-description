@@ -240,26 +240,45 @@ function setupDragSort(grid) {
     grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
   });
 
-  // --- iOS タッチ ---
-  // 長押し300msでドラッグ開始。スクロール意図（15px超移動）は即キャンセル。
+  // --- iOS タッチ: 長押し300msでドラッグ開始 ---
   grid.addEventListener('touchstart', (e) => {
     const item = e.target.closest('.preview-item');
     if (!item || e.target.closest('.remove')) return;
 
-    let isDragging = false;
-    let ghost = null;
     const t0 = e.touches[0];
     const startX = t0.clientX, startY = t0.clientY;
+    let ghost = null;
+    let ghostHalfW = 0, ghostHalfH = 0;
+    let overItem = null;   // 現在ハイライト中のドロップ先
 
-    const startDrag = () => {
-      isDragging = true;
+    // リスナーを外すだけ（状態リセットは cancel でまとめて行う）
+    const detach = () => {
+      document.removeEventListener('touchmove', onMove, false);
+      document.removeEventListener('touchend',   onEnd,    false);
+      document.removeEventListener('touchcancel', onCancel, false);
+    };
+
+    // ドラッグを中止してすべての状態を初期化
+    const cancel = () => {
+      clearTimeout(timer);
+      detach();
+      if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+      ghost = null;
+      item.classList.remove('dragging');
+      if (overItem) { overItem.classList.remove('drag-over'); overItem = null; }
+      dragIdx = null;
+    };
+
+    // 300ms 長押しでドラッグ開始
+    const timer = setTimeout(() => {
       dragIdx = Number(item.dataset.idx);
       item.classList.add('dragging');
       if (navigator.vibrate) navigator.vibrate(30);
       const rect = item.getBoundingClientRect();
+      ghostHalfW = rect.width / 2;   // 以降 offsetWidth を叩かない（強制リフロー回避）
+      ghostHalfH = rect.height / 2;
       ghost = item.cloneNode(true);
-      ghost.classList.remove('dragging'); // ゴーストに dragging スタイルを継承させない
-      // ゴーストは body 直下なので .preview-grid img の CSS が効かない → 明示指定
+      ghost.classList.remove('dragging');
       const gi = ghost.querySelector('img');
       if (gi) Object.assign(gi.style, {
         width: '100%', height: rect.height + 'px', objectFit: 'cover', display: 'block',
@@ -268,82 +287,61 @@ function setupDragSort(grid) {
         position: 'fixed', pointerEvents: 'none', opacity: '0.85',
         zIndex: '9999', overflow: 'hidden',
         width: rect.width + 'px', height: rect.height + 'px',
-        left: rect.left + 'px', top: rect.top + 'px',
+        left: (startX - ghostHalfW) + 'px', top: (startY - ghostHalfH) + 'px',
         transform: 'scale(1.08)', borderRadius: '12px',
         boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
       });
       document.body.appendChild(ghost);
-    };
-
-    const holdTimer = setTimeout(startDrag, 300);
-
-    const cleanup = () => {
-      document.removeEventListener('touchmove', onMove, { passive: false });
-      document.removeEventListener('touchend', onEnd);
-      document.removeEventListener('touchcancel', onCancel);
-    };
+    }, 300);
 
     const onMove = (e) => {
-      const t = e.touches[0];
-      const dx = Math.abs(t.clientX - startX);
-      const dy = Math.abs(t.clientY - startY);
-
-      // ドラッグ開始前に大きく動いた → スクロール意図なのでキャンセル
-      if (!isDragging) {
-        if (dx > 15 || dy > 15) { clearTimeout(holdTimer); cleanup(); }
+      if (!ghost) {
+        // タイマー前 → 大きく動いたらスクロール判定でキャンセル
+        const t = e.touches[0];
+        if (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10) cancel();
         return;
       }
-
-      e.preventDefault(); // ドラッグ中はスクロール抑止
-
-      ghost.style.left = (t.clientX - ghost.offsetWidth / 2) + 'px';
-      ghost.style.top  = (t.clientY - ghost.offsetHeight / 2) + 'px';
-
-      // ghost の裏にある要素を取得（display:none で一時的に除外）
-      ghost.style.display = 'none';
+      e.preventDefault();
+      const t = e.touches[0];
+      // display:none 不要: ghost は pointerEvents:none なので elementFromPoint が素通りする
+      ghost.style.left = (t.clientX - ghostHalfW) + 'px';
+      ghost.style.top  = (t.clientY - ghostHalfH) + 'px';
       const below = document.elementFromPoint(t.clientX, t.clientY);
-      ghost.style.display = '';
-      const over = below && below.closest('.preview-item');
-      grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('drag-over'));
-      if (over && over !== item) over.classList.add('drag-over');
+      const newOver = (below && below.closest('.preview-item'));
+      const target = (newOver && newOver !== item) ? newOver : null;
+      // 変化したときだけ DOM を触る（毎フレーム querySelectorAll 不要）
+      if (target !== overItem) {
+        if (overItem) overItem.classList.remove('drag-over');
+        overItem = target;
+        if (overItem) overItem.classList.add('drag-over');
+      }
     };
 
     const onEnd = (e) => {
-      clearTimeout(holdTimer);
-      if (isDragging && ghost) {
-        const t = e.changedTouches[0];
-        ghost.style.display = 'none';
+      const savedDragIdx = dragIdx;   // cancel() が dragIdx をリセットする前に保存
+      const hadGhost = !!ghost;
+      const t = e.changedTouches[0];
+      cancel();                       // ghost 削除 + リスナー解除 + 状態リセット
+      if (hadGhost && t && savedDragIdx !== null) {
+        // ghost 削除済みなので elementFromPoint で下の要素を確実に取得できる
         const below = document.elementFromPoint(t.clientX, t.clientY);
-        // ゴーストは常にここで削除（renderPreviews後に残留しないよう先に消す）
-        if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
         const over = below && below.closest('.preview-item');
         if (over && over !== item) {
           const dropIdx = Number(over.dataset.idx);
-          if (dragIdx !== null && dragIdx !== dropIdx) {
-            const moved = uploadedImages.splice(dragIdx, 1)[0];
+          if (savedDragIdx !== dropIdx) {
+            const moved = uploadedImages.splice(savedDragIdx, 1)[0];
             uploadedImages.splice(dropIdx, 0, moved);
-            isDragging = false; dragIdx = null; ghost = null;
             renderPreviews(); scheduleSave();
-            cleanup(); return;
           }
         }
       }
-      isDragging = false; dragIdx = null; ghost = null;
-      grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
-      cleanup();
     };
 
-    const onCancel = () => {
-      clearTimeout(holdTimer);
-      if (ghost && ghost.parentNode) document.body.removeChild(ghost);
-      isDragging = false; dragIdx = null; ghost = null;
-      grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
-      cleanup();
-    };
+    const onCancel = () => cancel();
 
     document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', onEnd);
-    document.addEventListener('touchcancel', onCancel);
+    document.addEventListener('touchend',   onEnd,    false);
+    document.addEventListener('touchcancel', onCancel, false);
   }, { passive: true });
 }
 
