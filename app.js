@@ -6,7 +6,8 @@
 
 const STORAGE_KEY = 'mercari_desc_api_key';
 const MODEL = 'claude-opus-4-7';  // 最新のOpus 4.7（画像解析・説明文品質を最大化）
-const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ
+const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（Claude API用・コスト節約）
+const MAX_MERCARI_EDGE = 1600;       // Mercariアップロード用（高画質）
 const MAX_PHOTOS = 20;               // アップロード可能な写真枚数
 const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
@@ -143,7 +144,7 @@ function processImage(file) {
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
-        // リサイズ
+        // Claude API用（1024px）
         const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.width, img.height));
         const w = Math.round(img.width * scale);
         const h = Math.round(img.height * scale);
@@ -152,8 +153,16 @@ function processImage(file) {
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
         const base64 = dataUrl.split(',')[1];
+        // Mercariアップロード用（1600px・高画質）
+        const scaleHQ = Math.min(1, MAX_MERCARI_EDGE / Math.max(img.width, img.height));
+        const wHQ = Math.round(img.width * scaleHQ);
+        const hHQ = Math.round(img.height * scaleHQ);
+        const canvasHQ = document.createElement('canvas');
+        canvasHQ.width = wHQ; canvasHQ.height = hHQ;
+        canvasHQ.getContext('2d').drawImage(img, 0, 0, wHQ, hHQ);
+        const base64HQ = canvasHQ.toDataURL('image/jpeg', 0.92).split(',')[1];
         resolve({
-          dataUrl, mediaType: 'image/jpeg', base64,
+          dataUrl, mediaType: 'image/jpeg', base64, base64HQ,
           originalDataUrl: dataUrl,
           adjust: { brightness: 0, temp: 0, contrast: 0 },
         });
@@ -2144,7 +2153,7 @@ async function saveDraft() {
       description: lastAiData.description || el('result-text').value,
       price: price,
       category: CATEGORY_JP[lastAiData.category] || lastAiData.category,
-      photos: uploadedImages.map(img => ({ base64: img.base64, mediaType: img.mediaType })),
+      photos: uploadedImages.map(img => ({ base64: img.base64HQ || img.base64, mediaType: img.mediaType })),
     };
     const draftResp = await fetchWithTimeout(`${tunnelUrl}/draft`, {
       method: 'POST',
