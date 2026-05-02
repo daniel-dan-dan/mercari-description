@@ -57,7 +57,6 @@ async function init() {
   el('generate-btn').addEventListener('click', generateDescription);
   el('copy-btn').addEventListener('click', copyResult);
   el('copy-title-btn').addEventListener('click', copyTitle);
-  el('sell-btn').addEventListener('click', openMercariSell);
   el('retry-btn').addEventListener('click', retryGeneration);
   el('title-text').addEventListener('input', scheduleSave);
   el('result-text').addEventListener('input', scheduleSave);
@@ -771,7 +770,6 @@ async function generateDescription() {
     if (aiData.mercari_condition) el('m-condition').value = aiData.mercari_condition;
     el('result-section').hidden = false;
     hideStatus('status');
-    resetMercariSellStage();
     // 結果までスクロール
     el('result-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
@@ -822,69 +820,6 @@ async function copyTitle() {
   const ok = await copyToClipboard(text);
   showStatus('copy-status', ok ? '✅ 商品名をコピーしました' : '❌ コピーに失敗しました', ok ? 'success' : 'error');
   setTimeout(() => hideStatus('copy-status'), 2000);
-}
-
-// ----- メルカリで出品する（2段階フロー） -----
-// Stage 1: <a> のデフォルト遷移（https://jp.mercari.com/sell/create）でUniversal Link発火 → アプリの出品画面が開く
-//          並行して商品名を同期コピー
-// Stage 2: 遷移はキャンセルし、説明文だけ同期コピー（ユーザーがアプリスイッチで戻る）
-//
-// iOS / Android どちらも AASA / assetlinks.json でUniversal Link / App Linksを設定済み。
-// <a href> をユーザーが直接タップすることが、Universal Link発火の必要条件。
-let mercariSellStage = 1;
-
-function openMercariSell(e) {
-  const desc = el('result-text').value;
-  const title = el('title-text').value;
-
-  if (mercariSellStage === 1) {
-    if (!title) {
-      if (e) e.preventDefault();
-      alert('商品名が空です');
-      return;
-    }
-    if (!desc) {
-      if (e) e.preventDefault();
-      alert('説明文が空です');
-      return;
-    }
-    // 商品名を同期コピー（user gesture コンテキストを保つ）
-    const ok = copyToClipboardSync(title);
-    showStatus('copy-status',
-      ok
-        ? '✅ 商品名をコピー。タイトル欄に貼り付け→戻ってきたら下のボタンを押してください'
-        : '⚠️ 商品名コピーに失敗。メルカリは開きます',
-      ok ? 'success' : 'error');
-
-    // ボタンをStage2へ変身（次にPWAに戻ってきたとき用）
-    mercariSellStage = 2;
-    el('sell-btn').textContent = '📋 戻ってきたら押す → 説明文をコピー';
-    el('sell-btn').classList.add('stage2');
-
-    // <a> のデフォルトナビゲーションは止めない → iOSがUniversal Linkを発火 → アプリの出品画面が開く
-  } else {
-    // Stage 2: 遷移キャンセル、説明文コピーのみ
-    if (e) e.preventDefault();
-    if (!desc) { alert('説明文が空です'); return; }
-    const ok = copyToClipboardSync(desc);
-    showStatus('copy-status',
-      ok
-        ? '✅ 説明文をコピー。アプリスイッチでメルカリに戻り、説明欄に貼り付け'
-        : '❌ 説明文のコピーに失敗しました',
-      ok ? 'success' : 'error');
-
-    // 次の出品に備えて戻す
-    resetMercariSellStage();
-  }
-}
-
-function resetMercariSellStage() {
-  mercariSellStage = 1;
-  const btn = el('sell-btn');
-  if (btn) {
-    btn.textContent = '🛒 メルカリで出品する';
-    btn.classList.remove('stage2');
-  }
 }
 
 // ----- 再生成 -----
@@ -1020,7 +955,6 @@ async function resetAll() {
   const fsb = el('final-size-badge'); if (fsb) fsb.hidden = true;
   hideStatus('status');
   hideStatus('copy-status');
-  resetMercariSellStage();
   try { await clearSessionDb(); } catch (e) { console.warn(e); }
   updateGenerateButton();
   updateSizeSuggestion();
