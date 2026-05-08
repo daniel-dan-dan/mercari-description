@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260508a">
+  <link rel="stylesheet" href="styles.css?v=20260508b">
 </head>
 <body>
   <div id="app">
@@ -59,11 +59,17 @@
         </label>
         <input type="file" id="photo-input" accept="image/*" multiple hidden>
         <div id="photo-preview" class="preview-grid"></div>
-        <div id="compose-btn-row" class="compose-btn-row" hidden>
-          <button id="compose-open-btn" class="btn compose-open-btn">切り抜き合成</button>
-          <button id="grid2-btn" class="btn compose-open-btn">2枚合成</button>
-          <button id="grid4-btn" class="btn compose-open-btn">4枚合成</button>
-        </div>
+        <details id="compose-btn-row" class="photo-edit-menu" hidden>
+          <summary class="photo-edit-trigger">
+            <span>写真編集</span>
+            <small>合成・切り抜き</small>
+          </summary>
+          <div class="photo-edit-options">
+            <button id="compose-open-btn" class="btn compose-open-btn">切り抜き合成</button>
+            <button id="grid2-btn" class="btn compose-open-btn">2枚合成</button>
+            <button id="grid4-btn" class="btn compose-open-btn">4枚合成</button>
+          </div>
+        </details>
       </div>
 
       <!-- Step 2: カテゴリと採寸 -->
@@ -154,6 +160,6 @@
 
   </div>
 
-  <script src="app.js?v=20260508a"></script>
+  <script src="app.js?v=20260508b"></script>
 </body>
 </html>

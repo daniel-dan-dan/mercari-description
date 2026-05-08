@@ -713,15 +713,50 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
 #setup-screen h1::before { content: "🔑"; }
 
 /* ========== 画像合成モーダル ========== */
-/* 合成ボタン行 */
-.compose-btn-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
+/* 写真編集メニュー */
+.photo-edit-menu {
+  margin-top: 12px;
 }
-.compose-btn-row[hidden] { display: none; }
+.photo-edit-menu[hidden] { display: none; }
+.photo-edit-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1.5px solid #f2c8df;
+  background: linear-gradient(135deg, #fff7fa 0%, #f8f0ff 100%);
+  color: #7b2ca6;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 16px -12px rgba(124, 44, 166, 0.35);
+  list-style: none;
+}
+.photo-edit-trigger::-webkit-details-marker { display: none; }
+.photo-edit-trigger::after {
+  content: "⌄";
+  font-size: 16px;
+  color: #a855f7;
+  transition: transform 0.15s;
+}
+.photo-edit-menu[open] .photo-edit-trigger::after {
+  transform: rotate(180deg);
+}
+.photo-edit-trigger small {
+  margin-left: auto;
+  color: #9b7ab3;
+  font-size: 12px;
+  font-weight: 700;
+}
+.photo-edit-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
 .compose-open-btn {
-  flex: 1;
   display: block;
   background: linear-gradient(135deg, #fff5f7 0%, #fff0fa 100%);
   border: 1.5px dashed #c857ff;
