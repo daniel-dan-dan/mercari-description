@@ -23,6 +23,7 @@ const el = (id) => document.getElementById(id);
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.hidden = true);
   el(id).hidden = false;
+  updateWorkflowProgress();
 }
 
 function showStatus(target, msg, kind) {
@@ -34,6 +35,35 @@ function showStatus(target, msg, kind) {
 
 function hideStatus(target) {
   el(target).hidden = true;
+}
+
+function setWorkflowStep(activeStep) {
+  const order = ['photos', 'details', 'generate', 'draft'];
+  const activeIdx = order.indexOf(activeStep);
+  document.querySelectorAll('.workflow-step').forEach(node => {
+    const nodeIdx = order.indexOf(node.dataset.step);
+    node.classList.toggle('active', node.dataset.step === activeStep);
+    node.classList.toggle('done', activeIdx > nodeIdx);
+  });
+}
+
+function updateWorkflowProgress() {
+  const categoryEl = el('category');
+  const resultSection = el('result-section');
+  const hasPhotos = uploadedImages.length > 0;
+  const hasCategory = !!categoryEl?.value;
+  const resultVisible = resultSection && !resultSection.hidden;
+  if (resultVisible) setWorkflowStep('draft');
+  else if (hasPhotos && hasCategory) setWorkflowStep('generate');
+  else if (hasPhotos) setWorkflowStep('details');
+  else setWorkflowStep('photos');
+}
+
+function updatePhotoSummary() {
+  const pill = el('photo-count-pill');
+  if (!pill) return;
+  pill.textContent = `${uploadedImages.length}/${MAX_PHOTOS}`;
+  pill.classList.toggle('ready', uploadedImages.length >= 2);
 }
 
 // ----- 初期起動判定 -----
@@ -58,8 +88,8 @@ async function init() {
   el('copy-btn').addEventListener('click', copyResult);
   el('copy-title-btn').addEventListener('click', copyTitle);
   el('retry-btn').addEventListener('click', retryGeneration);
-  el('title-text').addEventListener('input', scheduleSave);
-  el('result-text').addEventListener('input', scheduleSave);
+  el('title-text').addEventListener('input', () => { scheduleSave(); updateDraftChecklist(); });
+  el('result-text').addEventListener('input', () => { scheduleSave(); updateDraftChecklist(); });
   el('compose-open-btn').addEventListener('click', openImageCompose);
   el('grid2-btn').addEventListener('click', () => openGridCompose(2));
   el('grid4-btn').addEventListener('click', () => openGridCompose(4));
@@ -204,6 +234,8 @@ function renderPreviews() {
   });
   const composeBtnRow = el('compose-btn-row');
   if (composeBtnRow) composeBtnRow.hidden = uploadedImages.length < 2;
+  updatePhotoSummary();
+  updateWorkflowProgress();
 }
 
 function setupDragSort(grid) {
@@ -586,6 +618,8 @@ function updateGenerateButton() {
   const hasPhotos = uploadedImages.length > 0;
   const hasCategory = !!el('category').value;
   el('generate-btn').disabled = !(hasPhotos && hasCategory);
+  updatePhotoSummary();
+  updateWorkflowProgress();
 }
 
 // ----- Claude APIコール -----
@@ -770,6 +804,7 @@ async function generateDescription() {
   el('mercari-settings').hidden = true;
   const fsb = el('final-size-badge'); if (fsb) fsb.hidden = true;
   el('result-section').hidden = false;
+  updateWorkflowProgress();
   showStatus('status', 'AIが画像を分析中...', 'loading');
   setTimeout(() => el('result-section').scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 
@@ -980,6 +1015,8 @@ function restoreState(s) {
     if (s.mercariCondition) el('m-condition').value = s.mercariCondition;
   }
   updateGenerateButton();
+  updatePhotoSummary();
+  updateWorkflowProgress();
 }
 
 // ----- リセット -----
@@ -1001,6 +1038,8 @@ async function resetAll() {
   updateGenerateButton();
   updateDraftChecklist();
   updateSizeSuggestion();
+  updatePhotoSummary();
+  updateWorkflowProgress();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -2256,16 +2295,22 @@ function updateDraftChecklist() {
   if (!checklist) return;
   const resultVisible = el('result-section') && !el('result-section').hidden;
   if (!resultVisible) { checklist.hidden = true; return; }
-  const hasDesc = !!lastAiData;
+  const hasPhotos = uploadedImages.length > 0;
+  const hasTitle = !!el('title-text').value.trim();
+  const hasDesc = !!el('result-text').value.trim();
   const hasPrice = !!el('price-input').value.trim();
+  const hasCondition = !el('mercari-settings').hidden && !!el('m-condition').value;
   const items = [
-    { ok: hasDesc, label: hasDesc ? '説明文が生成されています' : '先に説明文を生成してください' },
+    { ok: hasPhotos, label: hasPhotos ? `写真 ${uploadedImages.length}枚` : '写真を選んでください' },
+    { ok: hasTitle, label: hasTitle ? '商品名があります' : '商品名を確認してください' },
+    { ok: hasDesc, label: hasDesc ? '説明文があります' : '先に説明文を生成してください' },
     { ok: hasPrice, label: hasPrice ? '価格が入力されています' : '販売価格を入力してください' },
+    { ok: hasCondition, label: hasCondition ? '状態が選択されています' : '商品の状態を確認してください' },
   ];
   checklist.hidden = false;
   checklist.innerHTML = items.map(item =>
     `<div class="draft-check-item ${item.ok ? 'ok' : 'ng'}">
-      <span>${item.ok ? '✅' : '○'}</span>
+      <span class="draft-check-mark">${item.ok ? '✓' : '○'}</span>
       <span>${item.label}</span>
     </div>`
   ).join('');
