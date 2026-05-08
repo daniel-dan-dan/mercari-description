@@ -85,8 +85,6 @@ async function init() {
     scheduleSave();
   });
   el('generate-btn').addEventListener('click', generateDescription);
-  el('copy-btn').addEventListener('click', copyResult);
-  el('copy-title-btn').addEventListener('click', copyTitle);
   el('retry-btn').addEventListener('click', retryGeneration);
   el('title-text').addEventListener('input', () => { scheduleSave(); updateDraftChecklist(); });
   el('result-text').addEventListener('input', () => { scheduleSave(); updateDraftChecklist(); });
