@@ -5,7 +5,7 @@
  * ============================================================ */
 
 const STORAGE_KEY = 'mercari_desc_api_key';
-const MODEL = 'claude-opus-4-7';  // 最新のOpus 4.7（画像解析・説明文品質を最大化）
+const MODEL = 'claude-sonnet-4-20250514';
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（Claude API用・コスト節約）
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
 const MAX_PHOTOS = 20;               // アップロード可能な写真枚数
@@ -23,7 +23,6 @@ const el = (id) => document.getElementById(id);
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.hidden = true);
   el(id).hidden = false;
-  updateWorkflowProgress();
 }
 
 function showStatus(target, msg, kind) {
@@ -35,28 +34,6 @@ function showStatus(target, msg, kind) {
 
 function hideStatus(target) {
   el(target).hidden = true;
-}
-
-function setWorkflowStep(activeStep) {
-  const order = ['photos', 'details', 'generate', 'draft'];
-  const activeIdx = order.indexOf(activeStep);
-  document.querySelectorAll('.workflow-step').forEach(node => {
-    const nodeIdx = order.indexOf(node.dataset.step);
-    node.classList.toggle('active', node.dataset.step === activeStep);
-    node.classList.toggle('done', activeIdx > nodeIdx);
-  });
-}
-
-function updateWorkflowProgress() {
-  const categoryEl = el('category');
-  const resultSection = el('result-section');
-  const hasPhotos = uploadedImages.length > 0;
-  const hasCategory = !!categoryEl?.value;
-  const resultVisible = resultSection && !resultSection.hidden;
-  if (resultVisible) setWorkflowStep('draft');
-  else if (hasPhotos && hasCategory) setWorkflowStep('generate');
-  else if (hasPhotos) setWorkflowStep('details');
-  else setWorkflowStep('photos');
 }
 
 function updatePhotoSummary() {
@@ -233,7 +210,6 @@ function renderPreviews() {
   const composeBtnRow = el('compose-btn-row');
   if (composeBtnRow) composeBtnRow.hidden = uploadedImages.length < 2;
   updatePhotoSummary();
-  updateWorkflowProgress();
 }
 
 function setupDragSort(grid) {
@@ -617,7 +593,6 @@ function updateGenerateButton() {
   const hasCategory = !!el('category').value;
   el('generate-btn').disabled = !(hasPhotos && hasCategory);
   updatePhotoSummary();
-  updateWorkflowProgress();
 }
 
 // ----- Claude APIコール -----
@@ -802,7 +777,6 @@ async function generateDescription() {
   el('mercari-settings').hidden = true;
   const fsb = el('final-size-badge'); if (fsb) fsb.hidden = true;
   el('result-section').hidden = false;
-  updateWorkflowProgress();
   showStatus('status', 'AIが画像を分析中...', 'loading');
   setTimeout(() => el('result-section').scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 
@@ -854,47 +828,6 @@ async function generateDescription() {
     el('generate-btn').disabled = false;
     updateGenerateButton();
   }
-}
-
-// ----- コピー -----
-async function copyToClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (err) {
-    return copyToClipboardSync(text);
-  }
-}
-
-// 同期版（user gesture を保ったまま即座にコピー → そのまま <a> のデフォルト遷移を継続させる用途）
-function copyToClipboardSync(text) {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.left = '-9999px';
-  ta.setAttribute('readonly', '');
-  document.body.appendChild(ta);
-  ta.focus();
-  ta.select();
-  let ok = false;
-  try { ok = document.execCommand('copy'); } catch {}
-  document.body.removeChild(ta);
-  return ok;
-}
-
-async function copyResult() {
-  const text = el('result-text').value;
-  const ok = await copyToClipboard(text);
-  showStatus('copy-status', ok ? '✅ 説明文をコピーしました' : '❌ コピーに失敗しました', ok ? 'success' : 'error');
-  setTimeout(() => hideStatus('copy-status'), 2000);
-}
-
-async function copyTitle() {
-  const text = el('title-text').value;
-  if (!text) { alert('商品名が空です'); return; }
-  const ok = await copyToClipboard(text);
-  showStatus('copy-status', ok ? '✅ 商品名をコピーしました' : '❌ コピーに失敗しました', ok ? 'success' : 'error');
-  setTimeout(() => hideStatus('copy-status'), 2000);
 }
 
 // ----- 再生成 -----
@@ -1014,7 +947,6 @@ function restoreState(s) {
   }
   updateGenerateButton();
   updatePhotoSummary();
-  updateWorkflowProgress();
 }
 
 // ----- リセット -----
@@ -1031,13 +963,11 @@ async function resetAll() {
   el('m-condition').value = '目立った傷や汚れなし';
   const fsb = el('final-size-badge'); if (fsb) fsb.hidden = true;
   hideStatus('status');
-  hideStatus('copy-status');
   try { await clearSessionDb(); } catch (e) { console.warn(e); }
   updateGenerateButton();
   updateDraftChecklist();
   updateSizeSuggestion();
   updatePhotoSummary();
-  updateWorkflowProgress();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
