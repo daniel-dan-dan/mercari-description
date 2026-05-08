@@ -696,8 +696,29 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
   border: 1px solid rgba(168, 85, 247, 0.12);
   border-radius: 16px;
 }
+.mercari-settings-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  color: #3d2a5c;
+}
+.draft-section .note.small {
+  margin-top: 0;
+}
+.price-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.price-row input[type="number"] {
+  flex: 1;
+}
+.yen-label {
+  flex: 0 0 auto;
+  color: #6b5d7d;
+  font-weight: 800;
+}
 .draft-title {
-  margin: 0 0 8px;
+  margin: 14px 0 8px;
   font-size: 14px;
   color: #3d2a5c;
 }
