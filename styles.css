@@ -3,10 +3,9 @@ html, body { margin: 0; padding: 0; }
 body {
   font-family: -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif;
   background:
-    radial-gradient(circle at 15% 10%, #ffe4d6 0%, transparent 55%),
-    radial-gradient(circle at 90% 5%, #ffd6e0 0%, transparent 50%),
-    radial-gradient(circle at 50% 100%, #e8dbff 0%, transparent 55%),
-    linear-gradient(180deg, #fff7f2 0%, #fbf4ff 100%);
+    radial-gradient(circle at 10% 8%, #ffe5e7 0%, transparent 48%),
+    radial-gradient(circle at 92% 6%, #ffd9dc 0%, transparent 44%),
+    linear-gradient(180deg, #fff8f8 0%, #fff 52%, #fff6f6 100%);
   background-attachment: fixed;
   color: #1a1a1a;
   line-height: 1.6;
@@ -30,7 +29,7 @@ h1 {
   margin: 0;
   font-weight: 800;
   letter-spacing: -0.02em;
-  background: linear-gradient(135deg, #ff4757 0%, #ff6b7e 40%, #a855f7 100%);
+  background: linear-gradient(135deg, #ff4b55 0%, #ff6b70 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -60,7 +59,7 @@ h1::before {
 .step {
   margin-bottom: 14px;
   padding: 16px 14px;
-  background: linear-gradient(180deg, #ffffff 0%, #fffaf5 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #fffafa 100%);
   border-radius: 18px;
   border: 1px solid rgba(255, 71, 87, 0.08);
   box-shadow: 0 2px 10px -4px rgba(255, 107, 126, 0.1);
@@ -69,53 +68,6 @@ h1::before {
 .step:last-child { margin-bottom: 0; }
 .step:hover {
   box-shadow: 0 6px 18px -6px rgba(255, 107, 126, 0.18);
-}
-
-/* ========== 出品フロー ========== */
-.workflow-progress {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin: 0 0 14px;
-  padding: 6px;
-  background: rgba(255, 255, 255, 0.74);
-  border: 1px solid rgba(255, 71, 87, 0.08);
-  border-radius: 14px;
-  box-shadow: 0 3px 12px -8px rgba(168, 85, 247, 0.2);
-}
-.workflow-step {
-  min-width: 0;
-  padding: 7px 4px;
-  border-radius: 10px;
-  color: #8a7e99;
-  font-size: 11px;
-  font-weight: 800;
-  text-align: center;
-  white-space: nowrap;
-}
-.workflow-step span {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-right: 3px;
-  border-radius: 50%;
-  background: #f4efff;
-  color: #8a7e99;
-  font-size: 10px;
-}
-.workflow-step.active {
-  color: #ff4757;
-  background: linear-gradient(135deg, #fff4f7 0%, #f4efff 100%);
-}
-.workflow-step.active span,
-.workflow-step.done span {
-  background: linear-gradient(135deg, #ff4757 0%, #a855f7 100%);
-  color: #fff;
-}
-.workflow-step.done {
-  color: #4a3570;
 }
 
 h2 {
@@ -218,7 +170,7 @@ textarea.streaming {
   align-items: center;
   gap: 8px;
   padding: 14px 22px;
-  background: linear-gradient(135deg, #ff4757 0%, #ff6b7e 100%);
+  background: linear-gradient(135deg, #ff4b55 0%, #ff7478 100%);
   color: white;
   border-radius: 14px;
   cursor: pointer;
@@ -234,7 +186,7 @@ textarea.streaming {
   align-items: center;
   gap: 8px;
   margin: 2px 0 12px;
-  color: #6b5d7d;
+  color: #5f5f63;
   font-size: 12px;
   font-weight: 600;
 }
@@ -245,13 +197,13 @@ textarea.streaming {
   min-width: 48px;
   padding: 3px 8px;
   border-radius: 999px;
-  background: #f4efff;
-  color: #7b2ca6;
+  background: #fff0f1;
+  color: #d9363e;
   font-weight: 800;
 }
 .photo-count-pill.ready {
-  background: linear-gradient(135deg, #ffedf1 0%, #f1e7ff 100%);
-  color: #ff4757;
+  background: linear-gradient(135deg, #ffe7e9 0%, #fff3f3 100%);
+  color: #ff4b55;
 }
 .file-label:active {
   transform: translateY(1px);
@@ -270,7 +222,7 @@ textarea.streaming {
 }
 .preview-grid::-webkit-scrollbar { height: 6px; }
 .preview-grid::-webkit-scrollbar-thumb {
-  background: #ead7f6;
+  background: #ffd9dc;
   border-radius: 999px;
 }
 .preview-grid img {
@@ -332,7 +284,7 @@ textarea.streaming {
 }
 .preview-item.dragging { opacity: 0.35; }
 .preview-item.drag-over img {
-  box-shadow: 0 0 0 3px #a855f7, 0 3px 10px -3px rgba(124, 92, 252, 0.3);
+  box-shadow: 0 0 0 3px #ff7478, 0 3px 10px -3px rgba(255, 90, 95, 0.3);
 }
 
 /* ========== ボタン ========== */
@@ -343,17 +295,17 @@ textarea.streaming {
   font-size: 14px;
   font-weight: 700;
   background: white;
-  color: #3d2a5c;
+  color: #363236;
   cursor: pointer;
   font-family: inherit;
-  border: 1.5px solid #e9dff0;
+  border: 1.5px solid #f0dcdf;
   transition: transform 0.12s, box-shadow 0.12s, background 0.12s;
 }
 .btn:active { transform: translateY(1px); }
-.btn:hover { background: #faf5ff; }
+.btn:hover { background: #fff5f5; }
 
 .btn.primary {
-  background: linear-gradient(135deg, #ff4757 0%, #ff6b7e 50%, #c857ff 100%);
+  background: linear-gradient(135deg, #ff4b55 0%, #ff7478 100%);
   background-size: 180% 180%;
   background-position: 0% 50%;
   color: white;
@@ -363,7 +315,7 @@ textarea.streaming {
 }
 .btn.primary:hover {
   background-position: 100% 50%;
-  box-shadow: 0 10px 24px -6px rgba(200, 87, 255, 0.4);
+  box-shadow: 0 10px 24px -6px rgba(255, 90, 95, 0.38);
 }
 .btn.primary:disabled {
   background: #d8d0e0;
@@ -675,33 +627,46 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
 
 #result-section {
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(252,247,255,0.9) 100%),
-    radial-gradient(circle at 100% 0%, rgba(255, 183, 77, 0.18) 0%, transparent 50%),
-    radial-gradient(circle at 0% 100%, rgba(168, 85, 247, 0.15) 0%, transparent 55%);
-  border: 1px solid rgba(168, 85, 247, 0.12);
+    linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,247,247,0.94) 100%),
+    radial-gradient(circle at 100% 0%, rgba(255, 90, 95, 0.14) 0%, transparent 50%),
+    radial-gradient(circle at 0% 100%, rgba(255, 186, 190, 0.18) 0%, transparent 55%);
+  border: 1px solid rgba(255, 90, 95, 0.12);
   animation: fadeInUp 0.4s ease-out;
 }
 #result-section h2 {
   font-size: 17px;
-  background: linear-gradient(135deg, #ff4757 0%, #a855f7 100%);
+  background: linear-gradient(135deg, #ff4b55 0%, #ff7a7f 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-.draft-section {
+.draft-save-area {
   margin-top: 16px;
+}
+.draft-card {
   padding: 14px;
-  background: rgba(255, 255, 255, 0.68);
-  border: 1px solid rgba(168, 85, 247, 0.12);
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(255, 90, 95, 0.14);
   border-radius: 16px;
+  box-shadow: 0 6px 18px -14px rgba(255, 90, 95, 0.28);
+}
+.draft-card + .draft-card {
+  margin-top: 10px;
+}
+.mercari-settings-card {
+  background: linear-gradient(180deg, #ffffff 0%, #fff8f8 100%);
+}
+.draft-check-card {
+  padding: 14px;
+  background: #ffffff;
 }
 .mercari-settings-title {
   margin: 0 0 4px;
   font-size: 15px;
-  color: #3d2a5c;
+  color: #2b2b2b;
 }
-.draft-section .note.small {
+.draft-card .note.small {
   margin-top: 0;
 }
 .price-row {
@@ -714,13 +679,13 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
 }
 .yen-label {
   flex: 0 0 auto;
-  color: #6b5d7d;
+  color: #5f5f63;
   font-weight: 800;
 }
 .draft-title {
-  margin: 14px 0 8px;
+  margin: 0 0 8px;
   font-size: 14px;
-  color: #3d2a5c;
+  color: #2b2b2b;
 }
 
 @keyframes fadeInUp {
