@@ -40,16 +40,15 @@ h1 {
 h1::before {
   content: "";
 }
-.app-version {
-  -webkit-text-fill-color: initial;
-  background: #fff0f1;
-  color: #d9363e;
-  border: 1px solid #ffd9dc;
-  border-radius: 999px;
-  padding: 2px 7px;
+.settings-version {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed #f1c0c4;
+  color: #9c6168;
   font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-align: center;
 }
 
 /* ========== カード ========== */
