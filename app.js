@@ -5,7 +5,7 @@
  * ============================================================ */
 
 const STORAGE_KEY = 'mercari_desc_api_key';
-const MODEL = 'claude-sonnet-4-20250514';
+const MODEL = 'claude-sonnet-4-5';
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（Claude API用・コスト節約）
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
 const MAX_PHOTOS = 20;               // アップロード可能な写真枚数
