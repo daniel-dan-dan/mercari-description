@@ -638,9 +638,50 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 - 写真から読み取れない情報は "---" と記載する（推測で埋めない）
 - 状態は正直に記載する（ダメージを隠さない）
 - appealの文章は丁寧だが簡潔に
-- 必ず以下のJSON形式のみで返す。前後に説明やバッククォートを付けない
+- **出力は JSON オブジェクト1つのみ**。前置きの文章・後置きの説明・「以下の通りです」のような挨拶・\`\`\`json などのコードフェンス・改行のみの行を一切含めない。最初の文字は { で、最後の文字は } とすること
+- JSON 内の文字列は二重引用符 " で囲む（' は使わない）。文字列中の改行は \\n でエスケープする
 
 {"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"...","mercari_condition":"目立った傷や汚れなし"}`;
+
+/**
+ * Claude応答からJSONオブジェクトを取り出す。
+ * - 素直にパースできればそれを返す
+ * - ```json ... ``` のmarkdownを剥がす
+ * - 最初の { から最後の } までを抜き出して再試行
+ * - 末尾のカンマやコードフェンス残骸も除去
+ * 失敗時は例外を投げる
+ */
+function parseAiJson(rawText) {
+  if (!rawText) throw new Error('empty response');
+  let text = String(rawText).trim();
+
+  // そのまま試す
+  try { return JSON.parse(text); } catch (_) {}
+
+  // ```json ... ``` または ``` ... ``` を剥がす
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch) {
+    const inner = fenceMatch[1].trim();
+    try { return JSON.parse(inner); } catch (_) {}
+    text = inner;
+  }
+
+  // 先頭 { と末尾 } の範囲を取り出す
+  const first = text.indexOf('{');
+  const last = text.lastIndexOf('}');
+  if (first >= 0 && last > first) {
+    let candidate = text.slice(first, last + 1);
+    // 末尾の余分なカンマ ( "key": "val", } ) を消す
+    candidate = candidate.replace(/,(\s*[}\]])/g, '$1');
+    // smart quotes を ASCII に正規化
+    candidate = candidate
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'");
+    try { return JSON.parse(candidate); } catch (_) {}
+  }
+
+  throw new Error('not a parseable JSON');
+}
 
 async function callClaude(images, onChunk) {
   const key = localStorage.getItem(STORAGE_KEY);
@@ -790,10 +831,10 @@ async function generateDescription() {
 
     let aiData;
     try {
-      aiData = JSON.parse(rawText.trim());
+      aiData = parseAiJson(rawText);
     } catch (e) {
-      // JSONパース失敗 → そのまま表示
-      showStatus('status', '⚠️ AIの応答がJSON形式でなかったため、そのまま表示しました', 'error');
+      console.error('AI応答パース失敗:', e, 'rawText:', rawText);
+      showStatus('status', '⚠️ AIの応答がJSON形式でなかったため、そのまま表示しました。ブラウザのコンソールで詳細を確認できます。', 'error');
       el('generate-btn').disabled = false;
       return;
     }
