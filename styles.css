@@ -123,6 +123,7 @@ label {
 input[type="text"],
 input[type="password"],
 input[type="number"],
+input[type="url"],
 select,
 textarea {
   width: 100%;
@@ -138,6 +139,7 @@ textarea {
 input[type="text"]:focus,
 input[type="password"]:focus,
 input[type="number"]:focus,
+input[type="url"]:focus,
 select:focus,
 textarea:focus {
   outline: none;
@@ -1107,4 +1109,349 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
   .result-actions { justify-content: stretch; }
   .result-actions .btn { width: 100%; }
   .draft-checklist { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   v20260517a Visual Refresh — 手順は変えず、出品作業を見やすく整理
+   ============================================================ */
+
+:root {
+  --brand: #f23d4a;
+  --brand-dark: #d92f3b;
+  --brand-soft: #fff0f2;
+  --ink: #201c1f;
+  --muted: #6f6568;
+  --line: #f0d7da;
+  --surface: #ffffff;
+  --surface-soft: #fff8f8;
+  --ok: #12834f;
+}
+
+body {
+  background:
+    linear-gradient(180deg, #fff7f8 0%, #ffffff 46%, #fff6f7 100%);
+  color: var(--ink);
+}
+
+#app {
+  max-width: 620px;
+}
+
+.screen {
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow:
+    0 1px 2px rgba(55, 33, 36, .05),
+    0 18px 36px -24px rgba(242, 61, 74, .24);
+}
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: -8px -4px 16px;
+  padding: 10px 6px;
+  background: rgba(255, 255, 255, .9);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+h1 {
+  letter-spacing: 0;
+  background: none;
+  -webkit-text-fill-color: var(--ink);
+  color: var(--ink);
+}
+
+h2 {
+  letter-spacing: 0;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.note {
+  color: var(--muted);
+}
+
+label {
+  color: #342b2e;
+  letter-spacing: 0;
+}
+
+.step {
+  border-radius: 16px;
+  border: 1px solid rgba(242, 61, 74, .12);
+  background: #fff;
+  box-shadow: 0 8px 22px -20px rgba(242, 61, 74, .24);
+}
+
+.photo-step {
+  border-color: rgba(242, 61, 74, .22);
+}
+
+.photo-summary {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--brand-soft);
+  color: #6e3b40;
+}
+
+.photo-count-pill {
+  background: #fff;
+  border: 1px solid #ffd2d7;
+  color: var(--brand-dark);
+}
+
+.file-label {
+  width: 100%;
+  min-height: 88px;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1.5px dashed #f3a2aa;
+  background: linear-gradient(180deg, #fffafa 0%, #fff2f3 100%);
+  color: var(--brand-dark);
+  box-shadow: none;
+}
+
+.file-label:active {
+  background: #fff0f2;
+}
+
+.preview-grid {
+  gap: 10px;
+  padding: 3px 2px 12px;
+}
+
+.preview-grid img,
+.preview-item {
+  width: 96px;
+  height: 96px;
+}
+
+.preview-item {
+  flex-basis: 96px;
+}
+
+.preview-grid img {
+  border-radius: 10px;
+  border: 1px solid #efd9dc;
+  box-shadow: 0 6px 16px -12px rgba(23, 18, 19, .5);
+}
+
+.photo-edit-trigger {
+  border-radius: 12px;
+  border-color: #f2a2aa;
+  background: #fff;
+  color: var(--brand-dark);
+}
+
+.photo-edit-trigger small {
+  color: #9a676d;
+}
+
+.compose-open-btn {
+  border-color: #f1c8cd;
+  color: var(--brand-dark);
+}
+
+.measurement-section,
+.multi-voice-bar,
+.size-suggestion {
+  background: #fff8f8;
+  border-color: #f2d8dc;
+}
+
+.measurement-section h3,
+.measurement-row label,
+.size-main,
+.final-size-badge .fs-head {
+  color: #342b2e;
+}
+
+.measurement-section h3::before {
+  content: "";
+}
+
+.measurement-row {
+  grid-template-columns: minmax(80px, 1fr) 88px 22px 40px;
+}
+
+.multi-voice-btn {
+  border-color: #f1c8cd;
+  color: var(--brand-dark);
+}
+
+.multi-voice-btn:hover {
+  background: #fff8f8;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="number"],
+select,
+textarea {
+  border-color: #eedcde;
+  border-radius: 10px;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px rgba(242, 61, 74, .11);
+}
+
+select {
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' width='12' height='8'><path fill='%23d92f3b' d='M1 1l5 5 5-5'/></svg>") no-repeat right 14px center / 12px 8px,
+    white;
+}
+
+.btn {
+  border-radius: 10px;
+  border-color: #ecd6d9;
+}
+
+.btn:hover {
+  background: #fff8f8;
+}
+
+.btn.primary {
+  background: linear-gradient(180deg, #ff4c59 0%, var(--brand) 100%);
+  box-shadow: 0 10px 20px -12px rgba(242, 61, 74, .7);
+}
+
+.btn.large {
+  letter-spacing: 0;
+  border-radius: 12px;
+}
+
+.generate-step {
+  background: linear-gradient(180deg, #fff 0%, #fff8f8 100%);
+}
+
+.status.loading {
+  background: #fff5f6;
+  color: #753d43;
+}
+
+.status.loading::before {
+  border-color: rgba(242, 61, 74, .22);
+  border-top-color: var(--brand);
+}
+
+#result-section {
+  background: #fff;
+  border-color: rgba(242, 61, 74, .18);
+}
+
+#result-section h2 {
+  background: none;
+  -webkit-text-fill-color: var(--ink);
+  color: var(--ink);
+}
+
+#title-text {
+  min-height: 46px;
+}
+
+#result-text {
+  min-height: 360px;
+}
+
+.final-size-badge:not([hidden]) {
+  border-radius: 12px;
+  background: #fff8f8;
+  border-color: #f2cbd0;
+}
+
+.final-size-badge .fs-size,
+.size-main strong {
+  background: none;
+  -webkit-text-fill-color: var(--brand-dark);
+  color: var(--brand-dark);
+}
+
+.draft-save-area {
+  display: grid;
+  gap: 12px;
+}
+
+.draft-card,
+.draft-check-card,
+.mercari-settings-card {
+  border-radius: 12px;
+  border-color: #efd9dd;
+  background: #fff;
+}
+
+.mercari-settings-card {
+  background: linear-gradient(180deg, #ffffff 0%, #fff9f9 100%);
+}
+
+.mercari-settings-title,
+.draft-title {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.price-row {
+  min-height: 50px;
+}
+
+.price-row input[type="number"] {
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--brand-dark);
+}
+
+.yen-label {
+  padding: 0 2px;
+  color: #4d4548;
+}
+
+.draft-checklist {
+  gap: 8px;
+}
+
+.draft-check-item {
+  border-radius: 10px;
+  border-color: #efd9dd;
+  background: #fff;
+}
+
+.draft-check-item.ok {
+  color: var(--ok);
+  background: #f2fbf5;
+  border-color: #caefd6;
+}
+
+#draft-btn {
+  margin-top: 0 !important;
+}
+
+.icon-btn {
+  border-color: #eed9dc;
+  background: #fff;
+}
+
+.settings-version {
+  letter-spacing: 0;
+  color: #7c555a;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+@media (max-width: 480px) {
+  .file-label {
+    min-height: 82px;
+  }
+  .measurement-row {
+    grid-template-columns: minmax(72px, 1fr) 84px 20px 38px;
+  }
+  #result-text {
+    min-height: 320px;
+  }
 }

@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#ff5a5f">
+  <meta name="theme-color" content="#f23d4a">
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260511b">
+  <link rel="stylesheet" href="styles.css?v=20260517a">
 </head>
 <body>
   <div id="app">
@@ -27,7 +27,7 @@
         APIキーの取得: <br>
         <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a> にログインし、Settings → API Keys から発行
       </p>
-      <p class="settings-version" id="settings-version">アプリバージョン: v20260511b（model: claude-sonnet-4-5）</p>
+      <p class="settings-version" id="settings-version">v20260517a / model: claude-sonnet-4-5</p>
     </section>
 
     <!-- メイン画面 -->
@@ -41,7 +41,7 @@
       </header>
 
       <!-- Step 1: 写真アップロード -->
-      <div class="step">
+      <div class="step photo-step">
         <h2>① 写真をアップロード</h2>
         <p class="note">全体写真・タグ写真・ディテール写真を複数枚選べます（最大20枚、最低: 全体1枚 + タグ1枚）</p>
         <div class="photo-summary">
@@ -67,7 +67,7 @@
       </div>
 
       <!-- Step 2: カテゴリと採寸 -->
-      <div class="step">
+      <div class="step measure-step">
         <h2>② カテゴリと採寸を入力</h2>
         <label for="category">カテゴリ</label>
         <select id="category">
@@ -83,14 +83,14 @@
       </div>
 
       <!-- Step 3: 生成 -->
-      <div class="step">
+      <div class="step generate-step">
         <button id="generate-btn" class="btn primary large" disabled>説明文を生成</button>
         <p class="note small action-note">写真とカテゴリが揃うと生成できます。採寸を入れると説明文の精度が上がります。</p>
         <p id="status" class="status" hidden></p>
       </div>
 
       <!-- Step 4: 結果表示 -->
-      <div id="result-section" class="step" hidden>
+      <div id="result-section" class="step result-step" hidden>
         <h2>✨ 生成結果</h2>
 
         <div id="final-size-badge" class="final-size-badge" hidden></div>
@@ -150,6 +150,6 @@
 
   </div>
 
-  <script src="app.js?v=20260511b"></script>
+  <script src="app.js?v=20260517a"></script>
 </body>
 </html>
