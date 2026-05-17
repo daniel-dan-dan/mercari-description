@@ -14,6 +14,8 @@ const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
 const DB_STORE = 'session';
 const CATEGORY_JP = { suit: 'スーツ', tops: 'アウター/トップス', bottoms: 'ボトムス', bag: 'バッグ', other: 'その他' };
+const RESEARCH_REQUESTS_KEY = 'mercari_research_requests';
+const RESEARCH_RESULTS_KEY = 'mercari_research_results';
 
 let lastAiData = null;
 
@@ -71,6 +73,11 @@ async function init() {
   el('compose-close').addEventListener('click', closeImageCompose);
   el('draft-btn').addEventListener('click', saveDraft);
   el('price-input').addEventListener('input', updateDraftChecklist);
+  el('description-tab-btn').addEventListener('click', () => switchMainTab('description'));
+  el('research-tab-btn').addEventListener('click', () => switchMainTab('research'));
+  el('research-save-btn').addEventListener('click', saveResearchRequest);
+  el('research-copy-btn').addEventListener('click', copyResearchRequestForNightWork);
+  el('research-result-save-btn').addEventListener('click', saveResearchResultNote);
 
   // 写真並び替え（一度だけ登録）
   setupDragSort(el('photo-preview'));
@@ -91,6 +98,7 @@ async function init() {
       console.warn('セッション復元失敗:', e);
     }
   }
+  renderResearchData();
 }
 
 // ----- APIキー設定 -----
@@ -988,6 +996,210 @@ function restoreState(s) {
   }
   updateGenerateButton();
   updatePhotoSummary();
+}
+
+// ----- メインタブ / 相場リサーチ -----
+function switchMainTab(tab) {
+  const description = tab === 'description';
+  el('description-panel').hidden = !description;
+  el('research-panel').hidden = description;
+  el('description-panel').classList.toggle('active', description);
+  el('research-panel').classList.toggle('active', !description);
+  el('description-tab-btn').classList.toggle('active', description);
+  el('research-tab-btn').classList.toggle('active', !description);
+  el('description-tab-btn').setAttribute('aria-selected', String(description));
+  el('research-tab-btn').setAttribute('aria-selected', String(!description));
+}
+
+function readJsonList(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeJsonList(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function collectResearchForm() {
+  const title = el('research-title').value.trim();
+  const keyword = el('research-keyword').value.trim();
+  const genre = el('research-genre').value;
+  const gender = el('research-gender').value;
+  const minPrice = Number(el('research-min-price').value || 0);
+  const maxPrice = Number(el('research-max-price').value || 0);
+  const sampleSize = Number(el('research-sample-size').value || 200);
+  const sort = el('research-sort').value;
+  const excludes = el('research-excludes').value.trim();
+  const note = el('research-note').value.trim();
+  return {
+    id: `research-${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    title: title || [keyword, genre].filter(Boolean).join(' / ') || '相場リサーチ',
+    keyword,
+    genre,
+    gender,
+    minPrice,
+    maxPrice,
+    sampleSize,
+    sort,
+    excludes,
+    note,
+    status: '未調査',
+  };
+}
+
+function saveResearchRequest() {
+  const request = collectResearchForm();
+  if (!request.keyword) {
+    alert('検索キーワードを入力してください');
+    return;
+  }
+  const list = readJsonList(RESEARCH_REQUESTS_KEY);
+  list.unshift(request);
+  writeJsonList(RESEARCH_REQUESTS_KEY, list.slice(0, 50));
+  clearResearchForm(false);
+  renderResearchData();
+}
+
+function clearResearchForm(keepKeyword) {
+  el('research-title').value = '';
+  if (!keepKeyword) el('research-keyword').value = '';
+  el('research-note').value = '';
+}
+
+function buildResearchPrompt(requests) {
+  const targets = requests.length ? requests : [collectResearchForm()].filter(r => r.keyword);
+  if (!targets.length) return '';
+  const lines = [
+    '# メルカリ相場リサーチ依頼',
+    '',
+    '共通条件:',
+    '- メルカリの売り切れ商品を対象',
+    '- 個人出品寄りを優先',
+    '- 業者風、専用、公式/ショップ、明らかな別ジャンルは除外',
+    '- 新着順で確認',
+    '- 出力はブランド別、状態別、高単価サンプル、仕入れ目線の所感でまとめる',
+    '',
+    '調査対象:',
+  ];
+  targets.forEach((r, idx) => {
+    lines.push('');
+    lines.push(`## ${idx + 1}. ${r.title}`);
+    lines.push(`- キーワード: ${r.keyword}`);
+    lines.push(`- ジャンル: ${r.genre}`);
+    lines.push(`- 対象: ${r.gender}`);
+    lines.push(`- 価格帯: ${r.minPrice.toLocaleString()}〜${r.maxPrice.toLocaleString()}円`);
+    lines.push(`- サンプル数: ${r.sampleSize}件`);
+    lines.push(`- 並び順: ${r.sort}`);
+    lines.push(`- 除外ワード: ${r.excludes || 'なし'}`);
+    if (r.note) lines.push(`- 補足: ${r.note}`);
+  });
+  return lines.join('\n');
+}
+
+async function copyText(text) {
+  if (!text) return false;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return true;
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  document.body.appendChild(area);
+  area.select();
+  const ok = document.execCommand('copy');
+  document.body.removeChild(area);
+  return ok;
+}
+
+async function copyResearchRequestForNightWork() {
+  const requests = readJsonList(RESEARCH_REQUESTS_KEY);
+  const text = buildResearchPrompt(requests);
+  if (!text) {
+    alert('先に調査依頼を保存するか、検索キーワードを入力してください');
+    return;
+  }
+  try {
+    await copyText(text);
+    alert('夜間作業用の依頼文をコピーしました');
+  } catch (e) {
+    console.warn(e);
+    alert('コピーに失敗しました');
+  }
+}
+
+function saveResearchResultNote() {
+  const text = el('research-result-input').value.trim();
+  if (!text) {
+    alert('保存する結果メモを入力してください');
+    return;
+  }
+  const list = readJsonList(RESEARCH_RESULTS_KEY);
+  list.unshift({
+    id: `result-${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    text,
+  });
+  writeJsonList(RESEARCH_RESULTS_KEY, list.slice(0, 30));
+  el('research-result-input').value = '';
+  renderResearchData();
+}
+
+function renderResearchData() {
+  renderResearchRequests();
+  renderResearchResults();
+}
+
+function renderResearchRequests() {
+  const node = el('research-request-list');
+  if (!node) return;
+  const list = readJsonList(RESEARCH_REQUESTS_KEY);
+  if (!list.length) {
+    node.innerHTML = '<div class="research-empty">保存済みの調査依頼はまだありません</div>';
+    return;
+  }
+  node.innerHTML = list.map((r) => `
+    <article class="research-card">
+      <h3>${escapeHtml(r.title)}</h3>
+      <p>${escapeHtml(r.keyword)} / ${escapeHtml(r.genre)} / ${escapeHtml(r.gender)}</p>
+      <p>${Number(r.minPrice).toLocaleString()}〜${Number(r.maxPrice).toLocaleString()}円 / ${Number(r.sampleSize).toLocaleString()}件 / ${escapeHtml(r.sort)}</p>
+      ${r.note ? `<p>${escapeHtml(r.note)}</p>` : ''}
+      <div class="research-card-meta">
+        <span class="research-pill">${escapeHtml(r.status || '未調査')}</span>
+        <span class="research-pill">${new Date(r.createdAt).toLocaleDateString('ja-JP')}</span>
+      </div>
+    </article>
+  `).join('');
+}
+
+function renderResearchResults() {
+  const node = el('research-result-list');
+  if (!node) return;
+  const list = readJsonList(RESEARCH_RESULTS_KEY);
+  if (!list.length) {
+    node.innerHTML = '<div class="research-empty">保存済みの調査結果メモはまだありません</div>';
+    return;
+  }
+  node.innerHTML = list.map((r) => `
+    <article class="research-card">
+      <h3>${new Date(r.createdAt).toLocaleString('ja-JP')}</h3>
+      <p>${escapeHtml(r.text).replace(/\n/g, '<br>')}</p>
+    </article>
+  `).join('');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  }[c]));
 }
 
 // ----- リセット -----

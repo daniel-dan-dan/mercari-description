@@ -377,6 +377,105 @@ textarea.streaming {
   align-items: center;
 }
 
+/* ========== メインタブ ========== */
+.app-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 5px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(255, 71, 87, 0.10);
+  box-shadow: 0 6px 18px -14px rgba(255, 90, 95, 0.32);
+}
+.app-tab {
+  min-height: 42px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #7b697d;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.app-tab.active {
+  background: linear-gradient(135deg, #ff4b55 0%, #ff7478 100%);
+  color: white;
+  box-shadow: 0 8px 18px -12px rgba(255, 71, 87, 0.65);
+}
+.tab-panel[hidden] { display: none !important; }
+.tab-panel.active {
+  display: block;
+}
+
+/* ========== 相場リサーチ ========== */
+.research-step h2 {
+  color: #2d1e4a;
+}
+.research-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.research-grid label {
+  margin-top: 12px;
+}
+.research-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+.research-list {
+  display: grid;
+  gap: 10px;
+}
+.research-card {
+  padding: 13px;
+  border: 1px solid rgba(255, 90, 95, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 6px 18px -16px rgba(255, 90, 95, 0.28);
+}
+.research-card h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  color: #2d1e4a;
+}
+.research-card p {
+  margin: 3px 0;
+  color: #665a70;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.research-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.research-pill {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #fff0f1;
+  color: #c03445;
+  font-size: 11px;
+  font-weight: 800;
+}
+.research-empty {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed #f0c7ce;
+  background: rgba(255,255,255,0.65);
+  color: #8a7e99;
+  font-size: 13px;
+  text-align: center;
+}
+
 /* ========== 採寸 ========== */
 .measurement-row {
   display: grid;
@@ -1447,6 +1546,10 @@ select {
 @media (max-width: 480px) {
   .file-label {
     min-height: 82px;
+  }
+  .research-grid,
+  .research-actions {
+    grid-template-columns: 1fr;
   }
   .measurement-row {
     grid-template-columns: minmax(72px, 1fr) 84px 20px 38px;

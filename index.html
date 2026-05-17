@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260517a">
+  <link rel="stylesheet" href="styles.css?v=20260517b">
 </head>
 <body>
   <div id="app">
@@ -27,7 +27,7 @@
         APIキーの取得: <br>
         <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a> にログインし、Settings → API Keys から発行
       </p>
-      <p class="settings-version" id="settings-version">v20260517a / model: claude-sonnet-4-5</p>
+      <p class="settings-version" id="settings-version">v20260517b / model: claude-sonnet-4-5</p>
     </section>
 
     <!-- メイン画面 -->
@@ -39,6 +39,13 @@
           <button id="settings-btn" class="icon-btn" title="設定">⚙️</button>
         </div>
       </header>
+
+      <div class="app-tabs" role="tablist" aria-label="メルカリAI出品メニュー">
+        <button id="description-tab-btn" class="app-tab active" type="button" role="tab" aria-selected="true" aria-controls="description-panel">説明文</button>
+        <button id="research-tab-btn" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="research-panel">相場リサーチ</button>
+      </div>
+
+      <div id="description-panel" class="tab-panel active" role="tabpanel" aria-labelledby="description-tab-btn">
 
       <!-- Step 1: 写真アップロード -->
       <div class="step photo-step">
@@ -133,6 +140,93 @@
           <p id="draft-status" class="status" hidden></p>
         </div>
       </div>
+
+      </div>
+
+      <div id="research-panel" class="tab-panel" role="tabpanel" aria-labelledby="research-tab-btn" hidden>
+        <div class="step research-step">
+          <h2>相場リサーチ</h2>
+          <p class="note">夜間にまとめて調査する条件を作ります。アプリ内では購入・出品・コメント操作は行いません。</p>
+
+          <label for="research-title">調査名</label>
+          <input type="text" id="research-title" placeholder="例: BURBERRY メンズ シャツ">
+
+          <label for="research-keyword">検索キーワード</label>
+          <input type="text" id="research-keyword" placeholder="例: BURBERRY シャツ">
+
+          <div class="research-grid">
+            <label for="research-genre">ジャンル
+              <select id="research-genre">
+                <option value="長袖シャツ">長袖シャツ</option>
+                <option value="半袖シャツ">半袖シャツ</option>
+                <option value="ポロシャツ">ポロシャツ</option>
+                <option value="ワンピース">ワンピース</option>
+                <option value="スーツ">スーツ</option>
+                <option value="その他">その他</option>
+              </select>
+            </label>
+            <label for="research-gender">対象
+              <select id="research-gender">
+                <option value="指定なし">指定なし</option>
+                <option value="メンズ">メンズ</option>
+                <option value="レディース">レディース</option>
+                <option value="キッズ">キッズ</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="research-grid">
+            <label for="research-min-price">最低価格
+              <input type="number" id="research-min-price" value="5000" min="0" step="500">
+            </label>
+            <label for="research-max-price">最高価格
+              <input type="number" id="research-max-price" value="20000" min="0" step="500">
+            </label>
+          </div>
+
+          <div class="research-grid">
+            <label for="research-sample-size">サンプル数
+              <select id="research-sample-size">
+                <option value="50">50件</option>
+                <option value="100">100件</option>
+                <option value="200" selected>200件</option>
+              </select>
+            </label>
+            <label for="research-sort">並び順
+              <select id="research-sort">
+                <option value="新着順" selected>新着順</option>
+                <option value="おすすめ順">おすすめ順</option>
+              </select>
+            </label>
+          </div>
+
+          <label for="research-excludes">除外ワード</label>
+          <input type="text" id="research-excludes" value="専用, 業者, 公式, ショップ, まとめ売り">
+
+          <label for="research-note">補足メモ</label>
+          <textarea id="research-note" rows="4" placeholder="状態の見方、除外したい条件、セラーURLなど"></textarea>
+
+          <div class="research-actions">
+            <button id="research-save-btn" class="btn primary" type="button">調査依頼を保存</button>
+            <button id="research-copy-btn" class="btn" type="button">夜間作業用にコピー</button>
+          </div>
+        </div>
+
+        <div class="step research-step">
+          <h2>保存済みの調査依頼</h2>
+          <div id="research-request-list" class="research-list"></div>
+        </div>
+
+        <div class="step research-step">
+          <h2>調査結果メモ</h2>
+          <p class="note">夜間作業後の結果をここに貼ると、アプリ内に残せます。</p>
+          <textarea id="research-result-input" rows="8" placeholder="ブランド別価格、状態別傾向、高単価サンプルなど"></textarea>
+          <div class="research-actions">
+            <button id="research-result-save-btn" class="btn" type="button">結果メモを保存</button>
+          </div>
+          <div id="research-result-list" class="research-list"></div>
+        </div>
+      </div>
     </section>
 
     <!-- 画像合成モーダル -->
@@ -150,6 +244,6 @@
 
   </div>
 
-  <script src="app.js?v=20260517a"></script>
+  <script src="app.js?v=20260517b"></script>
 </body>
 </html>
