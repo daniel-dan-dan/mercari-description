@@ -78,6 +78,8 @@ async function init() {
   el('research-save-btn').addEventListener('click', saveResearchRequest);
   el('research-copy-btn').addEventListener('click', copyResearchRequestForNightWork);
   el('research-result-save-btn').addEventListener('click', saveResearchResultNote);
+  el('research-request-list').addEventListener('click', handleResearchRequestAction);
+  el('research-result-list').addEventListener('click', handleResearchResultAction);
 
   // 写真並び替え（一度だけ登録）
   setupDragSort(el('photo-preview'));
@@ -1132,6 +1134,40 @@ async function copyResearchRequestForNightWork() {
   }
 }
 
+async function handleResearchRequestAction(event) {
+  const button = event.target.closest('[data-research-action]');
+  if (!button) return;
+  const action = button.dataset.researchAction;
+  const id = button.dataset.researchId;
+  const list = readJsonList(RESEARCH_REQUESTS_KEY);
+  const item = list.find((request) => request.id === id);
+  if (!item) return;
+
+  if (action === 'copy') {
+    try {
+      await copyText(buildResearchPrompt([item]));
+      alert('この調査依頼をコピーしました');
+    } catch (e) {
+      console.warn(e);
+      alert('コピーに失敗しました');
+    }
+    return;
+  }
+
+  if (action === 'toggle') {
+    item.status = item.status === '調査済み' ? '未調査' : '調査済み';
+    writeJsonList(RESEARCH_REQUESTS_KEY, list);
+    renderResearchRequests();
+    return;
+  }
+
+  if (action === 'delete') {
+    if (!confirm('この調査依頼を削除しますか？')) return;
+    writeJsonList(RESEARCH_REQUESTS_KEY, list.filter((request) => request.id !== id));
+    renderResearchRequests();
+  }
+}
+
 function saveResearchResultNote() {
   const text = el('research-result-input').value.trim();
   if (!text) {
@@ -1147,6 +1183,17 @@ function saveResearchResultNote() {
   writeJsonList(RESEARCH_RESULTS_KEY, list.slice(0, 30));
   el('research-result-input').value = '';
   renderResearchData();
+}
+
+function handleResearchResultAction(event) {
+  const button = event.target.closest('[data-result-action]');
+  if (!button) return;
+  const id = button.dataset.resultId;
+  if (button.dataset.resultAction !== 'delete') return;
+  if (!confirm('この結果メモを削除しますか？')) return;
+  const list = readJsonList(RESEARCH_RESULTS_KEY).filter((result) => result.id !== id);
+  writeJsonList(RESEARCH_RESULTS_KEY, list);
+  renderResearchResults();
 }
 
 function renderResearchData() {
@@ -1172,6 +1219,11 @@ function renderResearchRequests() {
         <span class="research-pill">${escapeHtml(r.status || '未調査')}</span>
         <span class="research-pill">${new Date(r.createdAt).toLocaleDateString('ja-JP')}</span>
       </div>
+      <div class="research-mini-actions">
+        <button type="button" data-research-action="copy" data-research-id="${escapeHtml(r.id)}">コピー</button>
+        <button type="button" data-research-action="toggle" data-research-id="${escapeHtml(r.id)}">${r.status === '調査済み' ? '未調査へ戻す' : '調査済みにする'}</button>
+        <button class="danger" type="button" data-research-action="delete" data-research-id="${escapeHtml(r.id)}">削除</button>
+      </div>
     </article>
   `).join('');
 }
@@ -1188,6 +1240,9 @@ function renderResearchResults() {
     <article class="research-card">
       <h3>${new Date(r.createdAt).toLocaleString('ja-JP')}</h3>
       <p>${escapeHtml(r.text).replace(/\n/g, '<br>')}</p>
+      <div class="research-mini-actions">
+        <button class="danger" type="button" data-result-action="delete" data-result-id="${escapeHtml(r.id)}">削除</button>
+      </div>
     </article>
   `).join('');
 }
