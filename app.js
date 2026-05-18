@@ -16,8 +16,10 @@ const DB_STORE = 'session';
 const CATEGORY_JP = { suit: 'スーツ', tops: 'アウター/トップス', bottoms: 'ボトムス', bag: 'バッグ', other: 'その他' };
 const RESEARCH_REQUESTS_KEY = 'mercari_research_requests';
 const RESEARCH_RESULTS_KEY = 'mercari_research_results';
+const MULTI_VOICE_IDLE_STOP_MS = 3500;
 
 let lastAiData = null;
+let activeMultiVoiceSession = null;
 
 // ----- 画面制御 -----
 const el = (id) => document.getElementById(id);
@@ -80,6 +82,10 @@ async function init() {
   el('research-result-save-btn').addEventListener('click', saveResearchResultNote);
   el('research-request-list').addEventListener('click', handleResearchRequestAction);
   el('research-result-list').addEventListener('click', handleResearchResultAction);
+  window.addEventListener('pagehide', () => stopActiveMultiVoiceInput({ clearStatus: true }));
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopActiveMultiVoiceInput({ clearStatus: true });
+  });
 
   // 写真並び替え（一度だけ登録）
   setupDragSort(el('photo-preview'));
@@ -441,6 +447,7 @@ const MEASUREMENT_SCHEMA = {
 function renderMeasurements() {
   const cat = el('category').value;
   const container = el('measurement-fields');
+  stopActiveMultiVoiceInput({ clearStatus: true });
   container.innerHTML = '';
   if (!cat) {
     updateGenerateButton();
@@ -1279,6 +1286,39 @@ async function resetAll() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+function stopActiveMultiVoiceInput(options = {}) {
+  const session = activeMultiVoiceSession;
+  if (!session) return;
+
+  activeMultiVoiceSession = null;
+  session.active = false;
+  clearTimeout(session.idleTimer);
+  clearTimeout(session.statusTimer);
+
+  const { btn, rec, statusEl } = session;
+  if (btn) {
+    btn.classList.remove('listening');
+    btn.textContent = '🎤 まとめて音声入力';
+    btn._stopFn = null;
+  }
+
+  try { rec.stop(); } catch {}
+  try { rec.abort(); } catch {}
+
+  if (statusEl) {
+    if (options.clearStatus) {
+      statusEl.textContent = '';
+    } else {
+      statusEl.textContent = options.message || '音声入力を終了しました';
+      session.statusTimer = setTimeout(() => {
+        if (statusEl.textContent === (options.message || '音声入力を終了しました')) {
+          statusEl.textContent = '';
+        }
+      }, 1800);
+    }
+  }
+}
+
 // ----- 連続音声入力（ラベル＋数値を1度のマイク押下で複数入力） -----
 function startMultiVoiceInput(btn) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1286,6 +1326,7 @@ function startMultiVoiceInput(btn) {
     alert('このブラウザは音声入力に対応していません');
     return;
   }
+  stopActiveMultiVoiceInput({ clearStatus: true });
   const statusEl = el('multi-voice-status');
   const rec = new SR();
   rec.lang = 'ja-JP';
@@ -1293,23 +1334,26 @@ function startMultiVoiceInput(btn) {
   rec.interimResults = false;
   rec.maxAlternatives = 3;
 
-  let active = true;
+  const session = { active: true, btn, rec, statusEl, idleTimer: null, statusTimer: null };
+  activeMultiVoiceSession = session;
   const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
-
-  const stop = () => {
-    active = false;
-    btn.classList.remove('listening');
-    btn.textContent = '🎤 まとめて音声入力';
-    btn._stopFn = null;
-    try { rec.stop(); } catch {}
-    setStatus('');
+  const scheduleIdleStop = (delay = MULTI_VOICE_IDLE_STOP_MS) => {
+    clearTimeout(session.idleTimer);
+    session.idleTimer = setTimeout(() => {
+      if (activeMultiVoiceSession === session) {
+        stopActiveMultiVoiceInput({ message: '音声入力を終了しました' });
+      }
+    }, delay);
   };
-  btn._stopFn = stop;
+
+  btn._stopFn = () => stopActiveMultiVoiceInput({ clearStatus: true });
   btn.classList.add('listening');
   btn.textContent = '⏹ 停止（録音中…）';
   setStatus('話してください（例:「肩幅 45」「袖丈 60.5」）');
+  scheduleIdleStop(8000);
 
   rec.onresult = (e) => {
+    if (activeMultiVoiceSession !== session) return;
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const result = e.results[i];
       if (!result.isFinal) continue;
@@ -1332,22 +1376,28 @@ function startMultiVoiceInput(btn) {
         const first = result[0]?.transcript || '';
         setStatus(`⚠️ 認識できませんでした: "${first}"`);
       }
+      scheduleIdleStop();
     }
   };
   rec.onend = () => {
-    if (active) {
-      try { rec.start(); } catch { stop(); }
+    if (activeMultiVoiceSession === session && session.active) {
+      try { rec.start(); } catch { stopActiveMultiVoiceInput({ clearStatus: true }); }
     }
   };
   rec.onerror = (e) => {
+    if (activeMultiVoiceSession !== session) return;
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
       alert('マイクのアクセスが許可されていません');
-      stop();
+      stopActiveMultiVoiceInput({ clearStatus: true });
+    } else if (e.error === 'no-speech') {
+      setStatus('音声を聞き取れませんでした。もう一度押してください');
+      scheduleIdleStop(1200);
     } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
       console.warn('音声認識エラー:', e.error);
+      stopActiveMultiVoiceInput({ message: '音声入力を終了しました' });
     }
   };
-  try { rec.start(); } catch (e) { stop(); console.warn(e); }
+  try { rec.start(); } catch (e) { stopActiveMultiVoiceInput({ clearStatus: true }); console.warn(e); }
 }
 
 // 「ラベル 数値」発話を解析して対象フィールドIDと値を返す
