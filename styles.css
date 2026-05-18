@@ -295,6 +295,9 @@ textarea.streaming {
   pointer-events: none;
 }
 .preview-item.dragging { opacity: 0.35; }
+.preview-grid.drag-sorting {
+  scroll-snap-type: none;
+}
 .preview-item.drag-over img {
   box-shadow: 0 0 0 3px #ff7478, 0 3px 10px -3px rgba(255, 90, 95, 0.3);
 }

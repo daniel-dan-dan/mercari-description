@@ -230,6 +230,82 @@ function renderPreviews() {
 
 function setupDragSort(grid) {
   let dragIdx = null;
+  let autoScrollFrame = null;
+  let autoScrollSpeed = 0;
+
+  const stopAutoScroll = () => {
+    autoScrollSpeed = 0;
+    if (autoScrollFrame) {
+      cancelAnimationFrame(autoScrollFrame);
+      autoScrollFrame = null;
+    }
+  };
+
+  const runAutoScroll = () => {
+    if (!autoScrollSpeed) {
+      autoScrollFrame = null;
+      return;
+    }
+    const maxScroll = grid.scrollWidth - grid.clientWidth;
+    if (maxScroll <= 0) {
+      stopAutoScroll();
+      return;
+    }
+    const nextScroll = Math.max(0, Math.min(maxScroll, grid.scrollLeft + autoScrollSpeed));
+    if (nextScroll === grid.scrollLeft) {
+      stopAutoScroll();
+      return;
+    }
+    grid.scrollLeft = nextScroll;
+    autoScrollFrame = requestAnimationFrame(runAutoScroll);
+  };
+
+  const updateAutoScroll = (clientX) => {
+    const rect = grid.getBoundingClientRect();
+    const edgeWidth = Math.min(72, Math.max(36, rect.width * 0.18));
+    let nextSpeed = 0;
+
+    if (clientX < rect.left + edgeWidth) {
+      const ratio = Math.min(1, (rect.left + edgeWidth - clientX) / edgeWidth);
+      nextSpeed = -Math.ceil(4 + ratio * 14);
+    } else if (clientX > rect.right - edgeWidth) {
+      const ratio = Math.min(1, (clientX - (rect.right - edgeWidth)) / edgeWidth);
+      nextSpeed = Math.ceil(4 + ratio * 14);
+    }
+
+    if (!nextSpeed || grid.scrollWidth <= grid.clientWidth) {
+      stopAutoScroll();
+      return;
+    }
+
+    autoScrollSpeed = nextSpeed;
+    if (!autoScrollFrame) autoScrollFrame = requestAnimationFrame(runAutoScroll);
+  };
+
+  const clearDragHighlight = () => {
+    grid.classList.remove('drag-sorting');
+    grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
+  };
+
+  const getDropIndex = (clientX, overItem) => {
+    if (overItem) return Number(overItem.dataset.idx);
+    const rect = grid.getBoundingClientRect();
+    if (clientX < rect.left + 40) return 0;
+    if (clientX > rect.right - 40) return uploadedImages.length;
+    return null;
+  };
+
+  const movePreviewItem = (fromIdx, toIdx) => {
+    if (fromIdx === null || toIdx === null) return false;
+    if (fromIdx === toIdx || (fromIdx === uploadedImages.length - 1 && toIdx >= uploadedImages.length)) {
+      return false;
+    }
+    const moved = uploadedImages.splice(fromIdx, 1)[0];
+    uploadedImages.splice(Math.max(0, Math.min(toIdx, uploadedImages.length)), 0, moved);
+    renderPreviews();
+    scheduleSave();
+    return true;
+  };
 
   // --- デスクトップ: HTML5 drag API ---
   grid.addEventListener('dragstart', (e) => {
@@ -237,10 +313,12 @@ function setupDragSort(grid) {
     if (!item) return;
     dragIdx = Number(item.dataset.idx);
     e.dataTransfer.effectAllowed = 'move';
+    grid.classList.add('drag-sorting');
     setTimeout(() => item.classList.add('dragging'), 0);
   });
   grid.addEventListener('dragover', (e) => {
     e.preventDefault();
+    updateAutoScroll(e.clientX);
     const item = e.target.closest('.preview-item');
     grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('drag-over'));
     if (item) item.classList.add('drag-over');
@@ -248,18 +326,16 @@ function setupDragSort(grid) {
   grid.addEventListener('drop', (e) => {
     e.preventDefault();
     const item = e.target.closest('.preview-item');
-    if (!item || dragIdx === null) return;
-    const dropIdx = Number(item.dataset.idx);
-    if (dragIdx !== dropIdx) {
-      const moved = uploadedImages.splice(dragIdx, 1)[0];
-      uploadedImages.splice(dropIdx, 0, moved);
-      renderPreviews(); scheduleSave();
-    }
+    const dropIdx = getDropIndex(e.clientX, item);
+    movePreviewItem(dragIdx, dropIdx);
+    stopAutoScroll();
     dragIdx = null;
+    clearDragHighlight();
   });
   grid.addEventListener('dragend', () => {
+    stopAutoScroll();
     dragIdx = null;
-    grid.querySelectorAll('.preview-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
+    clearDragHighlight();
   });
 
   // --- iOS タッチ: 長押し300msでドラッグ開始 ---
@@ -287,7 +363,9 @@ function setupDragSort(grid) {
       if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
       ghost = null;
       item.classList.remove('dragging');
+      grid.classList.remove('drag-sorting');
       if (overItem) { overItem.classList.remove('drag-over'); overItem = null; }
+      stopAutoScroll();
       dragIdx = null;
     };
 
@@ -295,6 +373,7 @@ function setupDragSort(grid) {
     const timer = setTimeout(() => {
       dragIdx = Number(item.dataset.idx);
       item.classList.add('dragging');
+      grid.classList.add('drag-sorting');
       if (navigator.vibrate) navigator.vibrate(30);
       const rect = item.getBoundingClientRect();
       ghostHalfW = rect.width / 2;   // 以降 offsetWidth を叩かない（強制リフロー回避）
@@ -328,6 +407,7 @@ function setupDragSort(grid) {
       // display:none 不要: ghost は pointerEvents:none なので elementFromPoint が素通りする
       ghost.style.left = (t.clientX - ghostHalfW) + 'px';
       ghost.style.top  = (t.clientY - ghostHalfH) + 'px';
+      updateAutoScroll(t.clientX);
       const below = document.elementFromPoint(t.clientX, t.clientY);
       const newOver = (below && below.closest('.preview-item'));
       const target = (newOver && newOver !== item) ? newOver : null;
@@ -348,14 +428,8 @@ function setupDragSort(grid) {
         // ghost 削除済みなので elementFromPoint で下の要素を確実に取得できる
         const below = document.elementFromPoint(t.clientX, t.clientY);
         const over = below && below.closest('.preview-item');
-        if (over && over !== item) {
-          const dropIdx = Number(over.dataset.idx);
-          if (savedDragIdx !== dropIdx) {
-            const moved = uploadedImages.splice(savedDragIdx, 1)[0];
-            uploadedImages.splice(dropIdx, 0, moved);
-            renderPreviews(); scheduleSave();
-          }
-        }
+        const dropIdx = getDropIndex(t.clientX, (over && over !== item) ? over : null);
+        movePreviewItem(savedDragIdx, dropIdx);
       }
     };
 
