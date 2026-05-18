@@ -1107,9 +1107,19 @@ function writeJsonList(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+function getResearchBrand(request) {
+  return String(request?.brand || request?.keyword || '').trim();
+}
+
+function buildResearchCondition(request) {
+  const brand = getResearchBrand(request);
+  const gender = request.gender && request.gender !== '指定なし' ? request.gender : '';
+  return [brand, request.genre, gender].filter(Boolean).join(' / ');
+}
+
 function collectResearchForm() {
   const title = el('research-title').value.trim();
-  const keyword = el('research-keyword').value.trim();
+  const brand = el('research-brand').value.trim();
   const genre = el('research-genre').value;
   const gender = el('research-gender').value;
   const minPrice = Number(el('research-min-price').value || 0);
@@ -1121,8 +1131,9 @@ function collectResearchForm() {
   return {
     id: `research-${Date.now()}`,
     createdAt: new Date().toISOString(),
-    title: title || [keyword, genre].filter(Boolean).join(' / ') || '相場リサーチ',
-    keyword,
+    title: title || buildResearchCondition({ brand, genre, gender }) || '相場リサーチ',
+    brand,
+    keyword: [brand, genre, gender !== '指定なし' ? gender : ''].filter(Boolean).join(' '),
     genre,
     gender,
     minPrice,
@@ -1137,8 +1148,8 @@ function collectResearchForm() {
 
 function saveResearchRequest() {
   const request = collectResearchForm();
-  if (!request.keyword) {
-    alert('検索キーワードを入力してください');
+  if (!request.brand) {
+    alert('ブランドを入力してください');
     return;
   }
   const list = readJsonList(RESEARCH_REQUESTS_KEY);
@@ -1148,14 +1159,14 @@ function saveResearchRequest() {
   renderResearchData();
 }
 
-function clearResearchForm(keepKeyword) {
+function clearResearchForm(keepBrand) {
   el('research-title').value = '';
-  if (!keepKeyword) el('research-keyword').value = '';
+  if (!keepBrand) el('research-brand').value = '';
   el('research-note').value = '';
 }
 
 function buildResearchPrompt(requests) {
-  const targets = requests.length ? requests : [collectResearchForm()].filter(r => r.keyword);
+  const targets = requests.length ? requests : [collectResearchForm()].filter(r => getResearchBrand(r));
   if (!targets.length) return '';
   const lines = [
     '# メルカリ相場リサーチ依頼',
@@ -1165,16 +1176,19 @@ function buildResearchPrompt(requests) {
     '- 個人出品寄りを優先',
     '- 業者風、専用、公式/ショップ、明らかな別ジャンルは除外',
     '- 新着順で確認',
+    '- ブランド・ジャンル・対象を別項目として絞り込む',
     '- 出力はブランド別、状態別、高単価サンプル、仕入れ目線の所感でまとめる',
     '',
     '調査対象:',
   ];
   targets.forEach((r, idx) => {
+    const brand = getResearchBrand(r);
     lines.push('');
     lines.push(`## ${idx + 1}. ${r.title}`);
-    lines.push(`- キーワード: ${r.keyword}`);
+    lines.push(`- ブランド: ${brand}`);
     lines.push(`- ジャンル: ${r.genre}`);
     lines.push(`- 対象: ${r.gender}`);
+    lines.push(`- 調査条件: ${buildResearchCondition(r)}`);
     lines.push(`- 価格帯: ${r.minPrice.toLocaleString()}〜${r.maxPrice.toLocaleString()}円`);
     lines.push(`- サンプル数: ${r.sampleSize}件`);
     lines.push(`- 並び順: ${r.sort}`);
@@ -1203,7 +1217,7 @@ async function copyResearchRequestForNightWork() {
   const requests = readJsonList(RESEARCH_REQUESTS_KEY);
   const text = buildResearchPrompt(requests);
   if (!text) {
-    alert('先に調査依頼を保存するか、検索キーワードを入力してください');
+    alert('先に調査依頼を保存するか、ブランドを入力してください');
     return;
   }
   try {
@@ -1293,7 +1307,7 @@ function renderResearchRequests() {
   node.innerHTML = list.map((r) => `
     <article class="research-card">
       <h3>${escapeHtml(r.title)}</h3>
-      <p>${escapeHtml(r.keyword)} / ${escapeHtml(r.genre)} / ${escapeHtml(r.gender)}</p>
+      <p>${escapeHtml(buildResearchCondition(r))}</p>
       <p>${Number(r.minPrice).toLocaleString()}〜${Number(r.maxPrice).toLocaleString()}円 / ${Number(r.sampleSize).toLocaleString()}件 / ${escapeHtml(r.sort)}</p>
       ${r.note ? `<p>${escapeHtml(r.note)}</p>` : ''}
       <div class="research-card-meta">
