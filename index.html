@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260518c">
+  <link rel="stylesheet" href="styles.css?v=20260519a">
 </head>
 <body>
   <div id="app">
@@ -27,7 +27,7 @@
         APIキーの取得: <br>
         <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a> にログインし、Settings → API Keys から発行
       </p>
-      <p class="settings-version" id="settings-version">v20260518c / model: claude-sonnet-4-5</p>
+      <p class="settings-version" id="settings-version">v20260519a / model: claude-sonnet-4-5</p>
     </section>
 
     <!-- メイン画面 -->
@@ -92,7 +92,7 @@
       <!-- Step 3: 生成 -->
       <div class="step generate-step">
         <button id="generate-btn" class="btn primary large" disabled>説明文を生成</button>
-        <p class="note small action-note">写真とカテゴリが揃うと生成できます。採寸を入れると説明文の精度が上がります。</p>
+        <p id="generate-note" class="note small action-note">写真とカテゴリが揃うと生成できます。採寸を入れると説明文の精度が上がります。</p>
         <p id="status" class="status" hidden></p>
       </div>
 
@@ -175,6 +175,11 @@
             </label>
           </div>
 
+          <div id="research-condition-preview" class="research-condition-preview" aria-live="polite">
+            <span>調査条件</span>
+            <strong>ブランド / ジャンル / 対象を入力してください</strong>
+          </div>
+
           <div class="research-grid">
             <label for="research-min-price">最低価格
               <input type="number" id="research-min-price" value="5000" min="0" step="500">
@@ -244,6 +249,6 @@
 
   </div>
 
-  <script src="app.js?v=20260518c"></script>
+  <script src="app.js?v=20260519a"></script>
 </body>
 </html>

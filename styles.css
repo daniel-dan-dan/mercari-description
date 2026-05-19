@@ -110,6 +110,10 @@ h2::first-letter {
   text-align: center;
   margin-bottom: 0;
 }
+.action-note.ready {
+  color: #b43142;
+  font-weight: 800;
+}
 
 label {
   display: block;
@@ -431,6 +435,29 @@ textarea.streaming {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-top: 14px;
+}
+.research-condition-preview {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0 4px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #fff7f8;
+  border: 1px solid rgba(255, 90, 95, 0.16);
+}
+.research-condition-preview span {
+  color: #8a5260;
+  font-size: 11px;
+  font-weight: 800;
+}
+.research-condition-preview strong {
+  color: #2d1e4a;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.research-condition-preview small {
+  color: #7d6f87;
+  font-size: 12px;
 }
 .research-list {
   display: grid;

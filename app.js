@@ -82,6 +82,13 @@ async function init() {
   el('research-result-save-btn').addEventListener('click', saveResearchResultNote);
   el('research-request-list').addEventListener('click', handleResearchRequestAction);
   el('research-result-list').addEventListener('click', handleResearchResultAction);
+  ['research-title', 'research-brand', 'research-genre', 'research-gender', 'research-min-price', 'research-max-price', 'research-sample-size', 'research-sort', 'research-excludes', 'research-note']
+    .forEach(id => {
+      const node = el(id);
+      if (!node) return;
+      node.addEventListener('input', updateResearchPreview);
+      node.addEventListener('change', updateResearchPreview);
+    });
   window.addEventListener('pagehide', () => stopActiveMultiVoiceInput({ clearStatus: true }));
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) stopActiveMultiVoiceInput({ clearStatus: true });
@@ -107,6 +114,8 @@ async function init() {
     }
   }
   renderResearchData();
+  updateGenerateButton();
+  updateResearchPreview();
 }
 
 // ----- APIキー設定 -----
@@ -682,7 +691,21 @@ function formatMeasurements(m) {
 function updateGenerateButton() {
   const hasPhotos = uploadedImages.length > 0;
   const hasCategory = !!el('category').value;
-  el('generate-btn').disabled = !(hasPhotos && hasCategory);
+  const ready = hasPhotos && hasCategory;
+  el('generate-btn').disabled = !ready;
+  const note = el('generate-note');
+  if (note) {
+    note.classList.toggle('ready', ready);
+    if (!hasPhotos && !hasCategory) {
+      note.textContent = '写真を追加して、カテゴリを選ぶと生成できます。';
+    } else if (!hasPhotos) {
+      note.textContent = '写真を1枚以上追加してください。タグ写真もあると精度が上がります。';
+    } else if (!hasCategory) {
+      note.textContent = 'カテゴリを選択してください。採寸欄が出ます。';
+    } else {
+      note.textContent = '生成できます。採寸も入れると説明文の精度が上がります。';
+    }
+  }
   updatePhotoSummary();
 }
 
@@ -1117,6 +1140,28 @@ function buildResearchCondition(request) {
   return [brand, request.genre, gender].filter(Boolean).join(' / ');
 }
 
+function updateResearchPreview() {
+  const node = el('research-condition-preview');
+  if (!node) return;
+  const condition = buildResearchCondition({
+    brand: el('research-brand')?.value || '',
+    genre: el('research-genre')?.value || '',
+    gender: el('research-gender')?.value || '',
+  });
+  const minPrice = Number(el('research-min-price')?.value || 0);
+  const maxPrice = Number(el('research-max-price')?.value || 0);
+  const sampleSize = Number(el('research-sample-size')?.value || 200);
+  const sort = el('research-sort')?.value || '新着順';
+  const priceText = minPrice || maxPrice
+    ? `${minPrice.toLocaleString()}〜${maxPrice.toLocaleString()}円`
+    : '価格指定なし';
+  node.innerHTML = `
+    <span>調査条件</span>
+    <strong>${escapeHtml(condition || 'ブランド / ジャンル / 対象を入力してください')}</strong>
+    <small>${escapeHtml(priceText)} / ${sampleSize.toLocaleString()}件 / ${escapeHtml(sort)}</small>
+  `;
+}
+
 function collectResearchForm() {
   const title = el('research-title').value.trim();
   const brand = el('research-brand').value.trim();
@@ -1163,6 +1208,7 @@ function clearResearchForm(keepBrand) {
   el('research-title').value = '';
   if (!keepBrand) el('research-brand').value = '';
   el('research-note').value = '';
+  updateResearchPreview();
 }
 
 function buildResearchPrompt(requests) {
