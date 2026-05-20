@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260520a">
+  <link rel="stylesheet" href="styles.css?v=20260520b">
 </head>
 <body>
   <div id="app">
@@ -22,7 +22,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260520a / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
+      <p class="settings-version" id="settings-version">v20260520b / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
     </section>
 
     <!-- メイン画面 -->
@@ -141,7 +141,7 @@
       <div id="research-panel" class="tab-panel" role="tabpanel" aria-labelledby="research-tab-btn" hidden>
         <div class="step research-step">
           <h2>相場リサーチ</h2>
-          <p class="note">夜間にまとめて調査する条件を作ります。アプリ内では購入・出品・コメント操作は行いません。</p>
+          <p class="note">保存した条件はMacに送られ、毎日3:20に自動リサーチされます。購入・出品・コメント操作は行いません。</p>
 
           <label for="research-title">調査名</label>
           <input type="text" id="research-title" placeholder="例: BURBERRY メンズ シャツ">
@@ -208,18 +208,23 @@
 
           <div class="research-actions">
             <button id="research-save-btn" class="btn primary" type="button">調査依頼を保存</button>
-            <button id="research-copy-btn" class="btn" type="button">夜間作業用にコピー</button>
+            <button id="research-copy-btn" class="btn" type="button">依頼文をコピー</button>
           </div>
+          <p id="research-sync-status" class="status" hidden></p>
         </div>
 
         <div class="step research-step">
           <h2>保存済みの調査依頼</h2>
+          <div class="research-actions">
+            <button id="research-refresh-btn" class="btn" type="button">結果を更新</button>
+            <button id="research-run-btn" class="btn" type="button">今すぐリサーチ実行</button>
+          </div>
           <div id="research-request-list" class="research-list"></div>
         </div>
 
         <div class="step research-step">
           <h2>調査結果メモ</h2>
-          <p class="note">夜間作業後の結果をここに貼ると、アプリ内に残せます。</p>
+          <p class="note">夜間自動リサーチの結果がここに入ります。手動メモも保存できます。</p>
           <textarea id="research-result-input" rows="8" placeholder="ブランド別価格、状態別傾向、高単価サンプルなど"></textarea>
           <div class="research-actions">
             <button id="research-result-save-btn" class="btn" type="button">結果メモを保存</button>
@@ -244,6 +249,6 @@
 
   </div>
 
-  <script src="app.js?v=20260520a"></script>
+  <script src="app.js?v=20260520b"></script>
 </body>
 </html>

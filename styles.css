@@ -474,6 +474,10 @@ textarea.streaming {
   margin: 0 0 6px;
   font-size: 15px;
   color: #2d1e4a;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 .research-card p {
   margin: 3px 0;
@@ -753,6 +757,10 @@ textarea.streaming {
 .status.error {
   background: linear-gradient(135deg, #ffd6d6 0%, #ffc2d0 100%);
   color: #7a1028;
+}
+.status.warn {
+  background: linear-gradient(135deg, #fff4d8 0%, #ffe8a6 100%);
+  color: #795100;
 }
 .status.loading {
   background: linear-gradient(135deg, #e0e8ff 0%, #e8dfff 100%);

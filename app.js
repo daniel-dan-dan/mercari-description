@@ -82,6 +82,8 @@ async function init() {
   el('research-tab-btn').addEventListener('click', () => switchMainTab('research'));
   el('research-save-btn').addEventListener('click', saveResearchRequest);
   el('research-copy-btn').addEventListener('click', copyResearchRequestForNightWork);
+  el('research-refresh-btn').addEventListener('click', () => refreshResearchResultsFromMac({ silent: false }));
+  el('research-run-btn').addEventListener('click', runResearchNow);
   el('research-result-save-btn').addEventListener('click', saveResearchResultNote);
   el('research-request-list').addEventListener('click', handleResearchRequestAction);
   el('research-result-list').addEventListener('click', handleResearchResultAction);
@@ -117,6 +119,7 @@ async function init() {
     }
   }
   renderResearchData();
+  if (serviceUrl) refreshResearchResultsFromMac({ silent: true }).catch(() => {});
   updateGenerateButton();
   updateResearchPreview();
 }
@@ -1207,7 +1210,7 @@ function collectResearchForm() {
   };
 }
 
-function saveResearchRequest() {
+async function saveResearchRequest() {
   const request = collectResearchForm();
   if (!request.brand) {
     alert('ブランドを入力してください');
@@ -1218,6 +1221,7 @@ function saveResearchRequest() {
   writeJsonList(RESEARCH_REQUESTS_KEY, list.slice(0, 50));
   clearResearchForm(false);
   renderResearchData();
+  await syncResearchRequestToMac(request);
 }
 
 function clearResearchForm(keepBrand) {
@@ -1284,10 +1288,109 @@ async function copyResearchRequestForNightWork() {
   }
   try {
     await copyText(text);
-    alert('夜間作業用の依頼文をコピーしました');
+    alert('相場リサーチ依頼文をコピーしました');
   } catch (e) {
     console.warn(e);
     alert('コピーに失敗しました');
+  }
+}
+
+function setResearchStatus(message, kind = '') {
+  const node = el('research-sync-status');
+  if (!node) return;
+  node.hidden = !message;
+  node.className = 'status ' + kind;
+  node.textContent = message || '';
+}
+
+function upsertLocalResearchRequest(request) {
+  const list = readJsonList(RESEARCH_REQUESTS_KEY);
+  const next = [request, ...list.filter(item => item.id !== request.id)];
+  writeJsonList(RESEARCH_REQUESTS_KEY, next.slice(0, 50));
+  renderResearchRequests();
+}
+
+async function syncResearchRequestToMac(request) {
+  setResearchStatus('Macへ調査依頼を送信中...');
+  try {
+    const tunnelUrl = await getMercariServiceUrl((message) => setResearchStatus(message));
+    const resp = await fetchWithTimeout(`${tunnelUrl}/research/requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    }, 20000);
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || '送信に失敗しました');
+    if (data.request) upsertLocalResearchRequest(data.request);
+    setResearchStatus('Macへ保存しました。夜間に自動リサーチされます。', 'success');
+  } catch (e) {
+    console.warn(e);
+    setResearchStatus(`アプリ内には保存しました。Mac同期は未完了: ${e.message}`, 'warn');
+  }
+}
+
+function mergeResearchResults(incoming) {
+  const local = readJsonList(RESEARCH_RESULTS_KEY);
+  const byId = new Map();
+  [...incoming, ...local].forEach(item => {
+    if (!item) return;
+    const id = item.id || `${item.requestId || 'manual'}-${item.createdAt || Date.now()}`;
+    byId.set(id, { ...item, id });
+  });
+  const merged = Array.from(byId.values())
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .slice(0, 60);
+  writeJsonList(RESEARCH_RESULTS_KEY, merged);
+  renderResearchResults();
+}
+
+async function refreshResearchResultsFromMac({ silent = false } = {}) {
+  if (!silent) setResearchStatus('Macから相場リサーチ結果を取得中...');
+  try {
+    const tunnelUrl = await getMercariServiceUrl((message) => {
+      if (!silent) setResearchStatus(message);
+    });
+    const resp = await fetchWithTimeout(`${tunnelUrl}/research/results`, {}, 20000);
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || '結果取得に失敗しました');
+    mergeResearchResults(data.results || []);
+    if (!silent) setResearchStatus(`結果を更新しました（${(data.results || []).length}件）`, 'success');
+  } catch (e) {
+    console.warn(e);
+    if (!silent) setResearchStatus(`結果更新に失敗しました: ${e.message}`, 'warn');
+  }
+}
+
+async function runResearchNow() {
+  if (!confirm('待機中の相場リサーチを今すぐMacで実行しますか？')) return;
+  const btn = el('research-run-btn');
+  btn.disabled = true;
+  setResearchStatus('Macで相場リサーチを開始しています...');
+  try {
+    const tunnelUrl = await getMercariServiceUrl((message) => setResearchStatus(message));
+    const resp = await fetchWithTimeout(`${tunnelUrl}/research/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 5 }),
+    }, 20000);
+    const data = await resp.json();
+    if (!data.ok || !data.job_id) throw new Error(data.error || '実行開始に失敗しました');
+    setResearchStatus('Macがリサーチ中です。完了まで待っています...');
+    while (true) {
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      const statusResp = await fetchWithTimeout(`${tunnelUrl}/status/${data.job_id}`, {}, 10000);
+      const statusData = await statusResp.json();
+      setResearchStatus(statusData.message || '処理中...');
+      if (statusData.status === 'done') break;
+      if (statusData.status === 'error') throw new Error(statusData.message || 'リサーチに失敗しました');
+    }
+    await refreshResearchResultsFromMac({ silent: true });
+    setResearchStatus('相場リサーチが完了しました。結果メモを更新しました。', 'success');
+  } catch (e) {
+    console.warn(e);
+    setResearchStatus(`リサーチ実行に失敗しました: ${e.message}`, 'warn');
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -1335,6 +1438,8 @@ function saveResearchResultNote() {
   list.unshift({
     id: `result-${Date.now()}`,
     createdAt: new Date().toISOString(),
+    title: '手動メモ',
+    status: '保存済み',
     text,
   });
   writeJsonList(RESEARCH_RESULTS_KEY, list.slice(0, 30));
@@ -1395,7 +1500,11 @@ function renderResearchResults() {
   }
   node.innerHTML = list.map((r) => `
     <article class="research-card">
-      <h3>${new Date(r.createdAt).toLocaleString('ja-JP')}</h3>
+      <h3>${escapeHtml(r.title || '調査結果')} ${r.status ? `<span class="research-pill">${escapeHtml(r.status)}</span>` : ''}</h3>
+      <div class="research-card-meta">
+        <span class="research-pill">${new Date(r.createdAt).toLocaleString('ja-JP')}</span>
+        ${Number.isFinite(Number(r.itemCount)) ? `<span class="research-pill">${Number(r.itemCount).toLocaleString()}件</span>` : ''}
+      </div>
       <p>${escapeHtml(r.text).replace(/\n/g, '<br>')}</p>
       <div class="research-mini-actions">
         <button class="danger" type="button" data-result-action="delete" data-result-id="${escapeHtml(r.id)}">削除</button>
