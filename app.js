@@ -1505,12 +1505,103 @@ function renderResearchResults() {
         <span class="research-pill">${new Date(r.createdAt).toLocaleString('ja-JP')}</span>
         ${Number.isFinite(Number(r.itemCount)) ? `<span class="research-pill">${Number(r.itemCount).toLocaleString()}件</span>` : ''}
       </div>
-      <p class="research-result-text">${escapeHtml(r.text).replace(/\n/g, '<br>')}</p>
+      ${renderResearchResultBody(r)}
       <div class="research-mini-actions">
         <button class="danger" type="button" data-result-action="delete" data-result-id="${escapeHtml(r.id)}">削除</button>
       </div>
     </article>
   `).join('');
+}
+
+function renderResearchResultBody(result) {
+  const stats = result.stats && typeof result.stats === 'object' ? result.stats : {};
+  const samples = Array.isArray(result.samples) ? result.samples : [];
+  const conditionCounts = result.conditionCounts && typeof result.conditionCounts === 'object'
+    ? result.conditionCounts
+    : {};
+  const hasStructuredData = Object.keys(stats).length || samples.length || Object.keys(conditionCounts).length;
+
+  if (!hasStructuredData) {
+    return `<p class="research-result-text">${escapeHtml(result.text || '').replace(/\n/g, '<br>')}</p>`;
+  }
+
+  const sortedSamples = samples
+    .filter(sample => Number(sample.price) > 0)
+    .sort((a, b) => Number(b.price) - Number(a.price))
+    .slice(0, 6);
+  const conditionEntries = Object.entries(conditionCounts)
+    .filter(([, count]) => Number(count) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]));
+  const maxConditionCount = Math.max(1, ...conditionEntries.map(([, count]) => Number(count) || 0));
+  const buyingNote = extractBuyingNote(result.text);
+
+  return `
+    <div class="research-summary-grid">
+      ${renderResearchMetric('中央値', formatYen(stats.median), 'main')}
+      ${renderResearchMetric('最高', formatYen(stats.max))}
+      ${renderResearchMetric('最安', formatYen(stats.min))}
+      ${renderResearchMetric('平均', formatYen(stats.average))}
+    </div>
+    ${buyingNote ? `<div class="research-insight"><span>仕入れ目線</span>${escapeHtml(buyingNote)}</div>` : ''}
+    ${conditionEntries.length ? `
+      <div class="research-section">
+        <div class="research-section-title">状態別</div>
+        <div class="research-condition-list">
+          ${conditionEntries.map(([condition, count]) => {
+            const width = Math.max(10, Math.round((Number(count) / maxConditionCount) * 100));
+            return `
+              <div class="research-condition-row">
+                <div class="research-condition-label">${escapeHtml(condition)}</div>
+                <div class="research-condition-track"><span style="width:${width}%"></span></div>
+                <div class="research-condition-count">${Number(count).toLocaleString()}件</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    ` : ''}
+    ${sortedSamples.length ? `
+      <div class="research-section">
+        <div class="research-section-title">高単価サンプル</div>
+        <div class="research-sample-list">
+          ${sortedSamples.map(sample => `
+            <a class="research-sample" href="${escapeHtml(sample.url || '#')}" target="_blank" rel="noopener">
+              <span class="research-sample-price">${formatYen(sample.price)}</span>
+              <span class="research-sample-main">
+                <span class="research-sample-title">${escapeHtml(sample.title || 'タイトル未取得')}</span>
+                ${sample.condition ? `<span class="research-sample-condition">${escapeHtml(sample.condition)}</span>` : ''}
+              </span>
+            </a>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+    <details class="research-raw-details">
+      <summary>詳細テキストを見る</summary>
+      <p class="research-result-text">${escapeHtml(result.text || '').replace(/\n/g, '<br>')}</p>
+      ${result.searchUrl ? `<a class="research-search-link" href="${escapeHtml(result.searchUrl)}" target="_blank" rel="noopener">検索結果を開く</a>` : ''}
+    </details>
+  `;
+}
+
+function renderResearchMetric(label, value, tone = '') {
+  return `
+    <div class="research-metric ${tone}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function formatYen(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? `${Math.round(n).toLocaleString()}円` : '-';
+}
+
+function extractBuyingNote(text) {
+  const match = String(text || '').match(/仕入れ目線:\s*([\s\S]+)/);
+  if (!match) return '';
+  return match[1].split('\n').map(line => line.trim()).filter(Boolean).join(' ');
 }
 
 function escapeHtml(value) {
