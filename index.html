@@ -7,27 +7,22 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260519a">
+  <link rel="stylesheet" href="styles.css?v=20260520a">
 </head>
 <body>
   <div id="app">
 
-    <!-- 初期設定（APIキー未登録時のみ表示） -->
+    <!-- 初期設定（Mac側サービスURL未登録時のみ表示） -->
     <section id="setup-screen" class="screen" hidden>
       <h1>初期設定</h1>
-      <p class="note">ご自分のAnthropic APIキーを入力してください。キーは端末内のみに保存されます。</p>
-      <label for="api-key">Anthropic API キー</label>
-      <input type="password" id="api-key" placeholder="sk-ant-..." autocomplete="off">
-      <label for="gas-url-input">GAS URL（下書き機能用）</label>
+      <p class="note">Mac側サービスへ接続するためのGAS URLを入力してください。AI用のAPIキーはMac側に保存され、スマホ側には保存しません。</p>
+      <label for="gas-url-input">GAS URL（AI生成・下書き機能用）</label>
       <input type="url" id="gas-url-input" placeholder="https://script.google.com/..." autocomplete="off">
       <div class="button-row">
         <button id="save-key" class="btn primary">保存</button>
       </div>
-      <p class="note small">
-        APIキーの取得: <br>
-        <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a> にログインし、Settings → API Keys から発行
-      </p>
-      <p class="settings-version" id="settings-version">v20260519a / model: claude-sonnet-4-5</p>
+      <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
+      <p class="settings-version" id="settings-version">v20260520a / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
     </section>
 
     <!-- メイン画面 -->
@@ -249,6 +244,6 @@
 
   </div>
 
-  <script src="app.js?v=20260519a"></script>
+  <script src="app.js?v=20260520a"></script>
 </body>
 </html>

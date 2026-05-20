@@ -4,9 +4,9 @@
  * メルカリ説明文AI生成 - Phase 1 MVP
  * ============================================================ */
 
-const STORAGE_KEY = 'mercari_desc_api_key';
-const MODEL = 'claude-sonnet-4-5';
-const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（Claude API用・コスト節約）
+const LEGACY_API_KEY_STORAGE_KEY = 'mercari_desc_api_key';
+const SERVICE_URL_KEY = 'gasUrl';
+const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（AI分析用・コスト節約）
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
 const MAX_PHOTOS = 20;               // アップロード可能な写真枚数
 
@@ -49,15 +49,18 @@ function updatePhotoSummary() {
 
 // ----- 初期起動判定 -----
 async function init() {
-  const key = localStorage.getItem(STORAGE_KEY);
-  if (!key) {
+  const serviceUrl = localStorage.getItem(SERVICE_URL_KEY);
+  if (localStorage.getItem(LEGACY_API_KEY_STORAGE_KEY)) {
+    localStorage.removeItem(LEGACY_API_KEY_STORAGE_KEY);
+  }
+  if (!serviceUrl) {
     showScreen('setup-screen');
   } else {
     showScreen('main-screen');
   }
 
   // イベントバインド
-  el('save-key').addEventListener('click', saveApiKey);
+  el('save-key').addEventListener('click', saveSettings);
   el('settings-btn').addEventListener('click', openSettings);
   el('reset-btn').addEventListener('click', resetAll);
   el('photo-input').addEventListener('change', handlePhotoSelect);
@@ -98,14 +101,14 @@ async function init() {
   setupDragSort(el('photo-preview'));
 
   // GAS URL読み込み
-  const savedGasUrl = localStorage.getItem('gasUrl');
+  const savedGasUrl = localStorage.getItem(SERVICE_URL_KEY);
   if (savedGasUrl) {
     const gasUrlInput = el('gas-url-input');
     if (gasUrlInput) gasUrlInput.value = savedGasUrl;
   }
 
   // 前回のセッションを復元
-  if (key) {
+  if (serviceUrl) {
     try {
       const saved = await loadSession();
       if (saved) restoreState(saved);
@@ -118,24 +121,21 @@ async function init() {
   updateResearchPreview();
 }
 
-// ----- APIキー設定 -----
-function saveApiKey() {
-  const key = el('api-key').value.trim();
-  if (!key) { alert('APIキーを入力してください'); return; }
-  if (!key.startsWith('sk-ant-')) {
-    if (!confirm('APIキーの形式が標準的でないようです。このまま保存しますか？')) return;
-  }
-  localStorage.setItem(STORAGE_KEY, key);
+// ----- 設定 -----
+function saveSettings() {
   const gasUrlInput = el('gas-url-input');
-  if (gasUrlInput && gasUrlInput.value.trim()) {
-    localStorage.setItem('gasUrl', gasUrlInput.value.trim());
+  const gasUrl = gasUrlInput ? gasUrlInput.value.trim() : '';
+  if (!gasUrl) { alert('GAS URLを入力してください'); return; }
+  localStorage.setItem(SERVICE_URL_KEY, gasUrl);
+  if (localStorage.getItem(LEGACY_API_KEY_STORAGE_KEY)) {
+    localStorage.removeItem(LEGACY_API_KEY_STORAGE_KEY);
   }
   showScreen('main-screen');
 }
 
 function openSettings() {
-  const current = localStorage.getItem(STORAGE_KEY) || '';
-  el('api-key').value = current;
+  const gasUrlInput = el('gas-url-input');
+  if (gasUrlInput) gasUrlInput.value = localStorage.getItem(SERVICE_URL_KEY) || '';
   showScreen('setup-screen');
 }
 
@@ -178,7 +178,7 @@ function processImage(file) {
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
-        // Claude API用（1024px）
+        // AI分析用（1024px）
         const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.width, img.height));
         const w = Math.round(img.width * scale);
         const h = Math.round(img.height * scale);
@@ -709,7 +709,7 @@ function updateGenerateButton() {
   updatePhotoSummary();
 }
 
-// ----- Claude APIコール -----
+// ----- AIコール -----
 const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 アップロードされた古着の写真を分析し、以下の情報をJSON形式で返してください。
 
@@ -758,7 +758,7 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 {"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"...","mercari_condition":"目立った傷や汚れなし"}`;
 
 /**
- * Claude応答からJSONオブジェクトを取り出す。
+ * AI応答からJSONオブジェクトを取り出す。
  * - 素直にパースできればそれを返す
  * - ```json ... ``` のmarkdownを剥がす
  * - 最初の { から最後の } までを抜き出して再試行
@@ -797,76 +797,92 @@ function parseAiJson(rawText) {
   throw new Error('not a parseable JSON');
 }
 
-async function callClaude(images, onChunk) {
-  const key = localStorage.getItem(STORAGE_KEY);
-  if (!key) throw new Error('APIキーが設定されていません');
+function fetchWithTimeout(url, opts = {}, ms = 15000) {
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(tid));
+}
 
-  const content = [
-    ...images.map(img => ({
-      type: 'image',
-      source: { type: 'base64', media_type: img.mediaType, data: img.base64 }
-    })),
-    { type: 'text', text: 'この古着の出品情報を抽出してください。' },
-  ];
+async function getMercariServiceUrl(statusCallback) {
+  const gasUrl = localStorage.getItem(SERVICE_URL_KEY);
+  if (!gasUrl) throw new Error('設定画面でGAS URLを入力してください');
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
+  statusCallback?.('MacサービスURLを取得中...');
+  const gasResp = await fetchWithTimeout(
+    gasUrl,
+    {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'getTunnelUrl' }),
     },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      stream: !!onChunk,
-      messages: [{ role: 'user', content }],
-    }),
+    15000
+  );
+  const gasData = await gasResp.json();
+  let tunnelUrl = (gasData.data && gasData.data.url) || '';
+  if (!tunnelUrl) throw new Error('Macのメルカリ自動入力サービスが起動していません。Macでstart.pyを確認してください。');
+  tunnelUrl = tunnelUrl.replace(/\/+$/, '');
+
+  statusCallback?.('Macサービスに接続確認中...');
+  const pingOk = async (url) => {
+    const resp = await fetchWithTimeout(`${url}/ping`, {}, 8000);
+    const json = await resp.json();
+    return !!json.ok;
+  };
+
+  let passed = false;
+  try { passed = await pingOk(tunnelUrl); } catch (_) {}
+  if (!passed) {
+    statusCallback?.('トンネル再接続中... (3秒後に再試行)');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    const retryResp = await fetchWithTimeout(
+      gasUrl,
+      {
+        method: 'POST',
+        mode: 'cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'getTunnelUrl' }),
+      },
+      15000
+    );
+    const retryData = await retryResp.json();
+    tunnelUrl = ((retryData.data && retryData.data.url) || tunnelUrl).replace(/\/+$/, '');
+    statusCallback?.('再接続確認中...');
+    try { passed = await pingOk(tunnelUrl); } catch (_) {}
+  }
+
+  if (!passed) throw new Error('Macサービスに接続できません。Cloudflare tunnelの再起動が必要です。');
+  return tunnelUrl;
+}
+
+async function callDescriptionAi(images, onChunk) {
+  const tunnelUrl = await getMercariServiceUrl((message) => {
+    if (onChunk) onChunk(message);
   });
 
+  if (onChunk) onChunk('AIが画像を分析中...');
+  const res = await fetchWithTimeout(
+    `${tunnelUrl}/describe`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        images: images.map(img => ({ mediaType: img.mediaType, base64: img.base64 })),
+        systemPrompt: SYSTEM_PROMPT,
+      }),
+    },
+    120000
+  );
+
+  const data = await res.json();
   if (!res.ok) {
-    const errText = await res.text();
-    let errMsg = `APIエラー (${res.status})`;
-    try {
-      const j = JSON.parse(errText);
-      errMsg += ': ' + (j.error?.message || errText);
-    } catch { errMsg += ': ' + errText; }
-    throw new Error(errMsg);
+    throw new Error(data.error || `AI APIエラー (${res.status})`);
   }
-
-  if (!onChunk) {
-    const data = await res.json();
-    return data.content?.[0]?.text || '';
+  if (!data.text) {
+    throw new Error('AI応答が空でした');
   }
-
-  // SSEストリーミング: Anthropicはdata:行でテキストデルタを送ってくる
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let fullText = '';
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop(); // 未完了行はバッファに残す
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const data = line.slice(6).trim();
-      if (data === '[DONE]') continue;
-      try {
-        const event = JSON.parse(data);
-        if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-          fullText += event.delta.text;
-          onChunk(fullText);
-        }
-      } catch {}
-    }
-  }
-  return fullText;
+  if (onChunk) onChunk(data.text);
+  return data.text;
 }
 
 // ----- テンプレート組み立て -----
@@ -936,7 +952,7 @@ async function generateDescription() {
   setTimeout(() => el('result-section').scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 
   try {
-    const rawText = await callClaude(uploadedImages, (chunk) => {
+    const rawText = await callDescriptionAi(uploadedImages, (chunk) => {
       textarea.value = chunk;
       textarea.scrollTop = textarea.scrollHeight;
     });
@@ -2738,7 +2754,7 @@ function updateDraftChecklist() {
 
 // ----- 下書き保存（Cloudflare tunnel経由でMac自動入力） -----
 async function saveDraft() {
-  const gasUrl = localStorage.getItem('gasUrl');
+  const gasUrl = localStorage.getItem(SERVICE_URL_KEY);
   if (!gasUrl) {
     alert('設定画面でGAS URLを入力してください');
     return;
@@ -2757,56 +2773,12 @@ async function saveDraft() {
   const draftBtn = el('draft-btn');
   draftBtn.disabled = true;
   draftStatus.hidden = false;
-  draftStatus.textContent = 'GASからURL取得中...';
-
-  // AbortControllerでタイムアウト実装（AbortSignal.timeoutの代替）
-  function fetchWithTimeout(url, opts, ms) {
-    const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), ms);
-    return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(tid));
-  }
+  draftStatus.textContent = 'MacサービスURLを取得中...';
 
   try {
-    // GASからトンネルURL取得（POSTでtext/plain → CORSプリフライト不要）
-    let tunnelUrl = '';
-    try {
-      const gasResp = await fetchWithTimeout(
-        gasUrl,
-        { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'getTunnelUrl' }) },
-        15000
-      );
-      const gasData = await gasResp.json();
-      tunnelUrl = (gasData.data && gasData.data.url) || '';
-    } catch (e) {
-      throw new Error(`GAS接続タイムアウト(15秒): ${e.message}`);
-    }
-    if (!tunnelUrl) throw new Error('Macの下書きサービスが起動していません。Macでstart.pyを確認してください。');
-
-    // 死活確認（失敗時は3秒待って新URLで1回自動リトライ）
-    draftStatus.textContent = 'Macに接続確認中...';
-    const pingOk = async (url) => {
-      const r = await fetchWithTimeout(`${url}/ping`, {}, 10000);
-      return r.ok;
-    };
-    let pingPassed = false;
-    try { pingPassed = await pingOk(tunnelUrl); } catch (_) {}
-    if (!pingPassed) {
-      draftStatus.textContent = 'トンネル再接続中... (3秒後に再試行)';
-      await new Promise(r => setTimeout(r, 3000));
-      // GASから最新URLを再取得
-      try {
-        const r2 = await fetchWithTimeout(
-          gasUrl,
-          { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'getTunnelUrl' }) },
-          15000
-        );
-        const d2 = await r2.json();
-        tunnelUrl = (d2.data && d2.data.url) || tunnelUrl;
-      } catch (_) {}
-      draftStatus.textContent = '再接続確認中...';
-      try { pingPassed = await pingOk(tunnelUrl); } catch (_) {}
-      if (!pingPassed) throw new Error('Macのトンネルに接続できません。もう一度タップしてください。');
-    }
+    const tunnelUrl = await getMercariServiceUrl((message) => {
+      draftStatus.textContent = message;
+    });
 
     // 下書きリクエスト送信
     draftStatus.textContent = '下書き情報を送信中...';
