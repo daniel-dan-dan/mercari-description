@@ -16,6 +16,7 @@ const DB_STORE = 'session';
 const CATEGORY_JP = { suit: 'スーツ', tops: 'アウター/トップス', bottoms: 'ボトムス', bag: 'バッグ', other: 'その他' };
 const RESEARCH_REQUESTS_KEY = 'mercari_research_requests';
 const RESEARCH_RESULTS_KEY = 'mercari_research_results';
+const RESEARCH_EMPTY_VALUES = new Set(['', '指定なし', 'すべて']);
 const MULTI_VOICE_IDLE_STOP_MS = 3500;
 
 let lastAiData = null;
@@ -87,7 +88,7 @@ async function init() {
   el('research-result-save-btn').addEventListener('click', saveResearchResultNote);
   el('research-request-list').addEventListener('click', handleResearchRequestAction);
   el('research-result-list').addEventListener('click', handleResearchResultAction);
-  ['research-title', 'research-brand', 'research-genre', 'research-gender', 'research-min-price', 'research-max-price', 'research-sample-size', 'research-sort', 'research-excludes', 'research-note']
+  ['research-title', 'research-keyword', 'research-category', 'research-brand', 'research-size', 'research-condition', 'research-gender', 'research-sale-status', 'research-min-price', 'research-max-price', 'research-sample-size', 'research-sort', 'research-excludes', 'research-note']
     .forEach(id => {
       const node = el(id);
       if (!node) return;
@@ -1150,56 +1151,110 @@ function writeJsonList(key, value) {
 }
 
 function getResearchBrand(request) {
-  return String(request?.brand || request?.keyword || '').trim();
+  return String(request?.brand || '').trim();
+}
+
+function normalizeResearchValue(value) {
+  const text = String(value || '').trim();
+  return RESEARCH_EMPTY_VALUES.has(text) ? '' : text;
+}
+
+function getSelectedOptionLabel(id) {
+  const node = el(id);
+  const option = node?.selectedOptions?.[0];
+  return String(option?.dataset?.label || option?.textContent || node?.value || '').trim();
+}
+
+function getResearchCategoryLabel(request) {
+  return normalizeResearchValue(request?.categoryLabel)
+    || normalizeResearchValue(request?.category)
+    || normalizeResearchValue(request?.genre);
+}
+
+function getResearchCategoryKeyword(request) {
+  return normalizeResearchValue(request?.category)
+    || normalizeResearchValue(request?.genre);
+}
+
+function buildResearchKeyword(request) {
+  const keywordInput = normalizeResearchValue(request?.keywordInput);
+  const brand = normalizeResearchValue(request?.brand);
+  const category = getResearchCategoryKeyword(request);
+  const gender = normalizeResearchValue(request?.gender);
+  const size = normalizeResearchValue(request?.size);
+  return [brand, keywordInput, category, gender, size].filter(Boolean).join(' ');
 }
 
 function buildResearchCondition(request) {
   const brand = getResearchBrand(request);
-  const gender = request.gender && request.gender !== '指定なし' ? request.gender : '';
-  return [brand, request.genre, gender].filter(Boolean).join(' / ');
+  const keywordInput = normalizeResearchValue(request?.keywordInput);
+  const category = getResearchCategoryLabel(request);
+  const gender = normalizeResearchValue(request?.gender);
+  const size = normalizeResearchValue(request?.size);
+  const condition = normalizeResearchValue(request?.condition);
+  const saleStatus = normalizeResearchValue(request?.saleStatus);
+  return [keywordInput, brand, category, gender, size, condition, saleStatus].filter(Boolean).join(' / ');
 }
 
 function updateResearchPreview() {
   const node = el('research-condition-preview');
   if (!node) return;
   const condition = buildResearchCondition({
+    keywordInput: el('research-keyword')?.value || '',
+    category: el('research-category')?.value || '',
+    categoryLabel: getSelectedOptionLabel('research-category'),
     brand: el('research-brand')?.value || '',
-    genre: el('research-genre')?.value || '',
+    size: el('research-size')?.value || '',
+    condition: el('research-condition')?.value || '',
     gender: el('research-gender')?.value || '',
+    saleStatus: el('research-sale-status')?.value || '',
   });
   const minPrice = Number(el('research-min-price')?.value || 0);
   const maxPrice = Number(el('research-max-price')?.value || 0);
   const sampleSize = Number(el('research-sample-size')?.value || 200);
-  const sort = el('research-sort')?.value || '新着順';
+  const sort = el('research-sort')?.value || '新しい順';
   const priceText = minPrice || maxPrice
     ? `${minPrice.toLocaleString()}〜${maxPrice.toLocaleString()}円`
     : '価格指定なし';
   node.innerHTML = `
     <span>調査条件</span>
-    <strong>${escapeHtml(condition || 'ブランド / ジャンル / 対象を入力してください')}</strong>
+    <strong>${escapeHtml(condition || '検索条件を入力してください')}</strong>
     <small>${escapeHtml(priceText)} / ${sampleSize.toLocaleString()}件 / ${escapeHtml(sort)}</small>
   `;
 }
 
 function collectResearchForm() {
   const title = el('research-title').value.trim();
+  const keywordInput = el('research-keyword').value.trim();
+  const category = el('research-category').value;
+  const categoryLabel = getSelectedOptionLabel('research-category');
   const brand = el('research-brand').value.trim();
-  const genre = el('research-genre').value;
+  const size = el('research-size').value;
+  const condition = el('research-condition').value;
   const gender = el('research-gender').value;
+  const saleStatus = el('research-sale-status').value;
   const minPrice = Number(el('research-min-price').value || 0);
   const maxPrice = Number(el('research-max-price').value || 0);
   const sampleSize = Number(el('research-sample-size').value || 200);
   const sort = el('research-sort').value;
   const excludes = el('research-excludes').value.trim();
   const note = el('research-note').value.trim();
+  const requestBase = { keywordInput, category, categoryLabel, brand, size, condition, gender, saleStatus };
+  const keyword = buildResearchKeyword(requestBase);
   return {
     id: `research-${Date.now()}`,
     createdAt: new Date().toISOString(),
-    title: title || buildResearchCondition({ brand, genre, gender }) || '相場リサーチ',
+    title: title || [brand, keywordInput, category, normalizeResearchValue(gender)].filter(Boolean).join(' ') || '相場リサーチ',
     brand,
-    keyword: [brand, genre, gender !== '指定なし' ? gender : ''].filter(Boolean).join(' '),
-    genre,
+    keyword,
+    keywordInput,
+    category,
+    categoryLabel,
+    genre: category,
+    size,
+    condition,
     gender,
+    saleStatus,
     minPrice,
     maxPrice,
     sampleSize,
@@ -1212,8 +1267,8 @@ function collectResearchForm() {
 
 async function saveResearchRequest() {
   const request = collectResearchForm();
-  if (!request.brand) {
-    alert('ブランドを入力してください');
+  if (!request.brand && !request.keywordInput) {
+    alert('ブランドまたは検索キーワードを入力してください');
     return;
   }
   const list = readJsonList(RESEARCH_REQUESTS_KEY);
@@ -1226,6 +1281,7 @@ async function saveResearchRequest() {
 
 function clearResearchForm(keepBrand) {
   el('research-title').value = '';
+  el('research-keyword').value = '';
   if (!keepBrand) el('research-brand').value = '';
   el('research-note').value = '';
   updateResearchPreview();
@@ -1241,8 +1297,8 @@ function buildResearchPrompt(requests) {
     '- メルカリの売り切れ商品を対象',
     '- 個人出品寄りを優先',
     '- 業者風、専用、公式/ショップ、明らかな別ジャンルは除外',
-    '- 新着順で確認',
-    '- ブランド・ジャンル・対象を別項目として絞り込む',
+    '- メルカリの絞り込み順に近い条件で確認',
+    '- カテゴリー・ブランド・サイズ・状態・販売状況を別項目として絞り込む',
     '- 出力はブランド別、状態別、高単価サンプル、仕入れ目線の所感でまとめる',
     '',
     '調査対象:',
@@ -1251,9 +1307,13 @@ function buildResearchPrompt(requests) {
     const brand = getResearchBrand(r);
     lines.push('');
     lines.push(`## ${idx + 1}. ${r.title}`);
+    if (r.keywordInput) lines.push(`- 検索キーワード: ${r.keywordInput}`);
+    lines.push(`- カテゴリー: ${getResearchCategoryLabel(r) || r.genre || '指定なし'}`);
     lines.push(`- ブランド: ${brand}`);
-    lines.push(`- ジャンル: ${r.genre}`);
-    lines.push(`- 対象: ${r.gender}`);
+    lines.push(`- サイズ: ${r.size || '指定なし'}`);
+    lines.push(`- 商品の状態: ${r.condition || 'すべて'}`);
+    lines.push(`- 対象: ${r.gender || '指定なし'}`);
+    lines.push(`- 販売状況: ${r.saleStatus || '売り切れ'}`);
     lines.push(`- 調査条件: ${buildResearchCondition(r)}`);
     lines.push(`- 価格帯: ${r.minPrice.toLocaleString()}〜${r.maxPrice.toLocaleString()}円`);
     lines.push(`- サンプル数: ${r.sampleSize}件`);
@@ -1475,10 +1535,11 @@ function renderResearchRequests() {
     <article class="research-card">
       <h3>${escapeHtml(r.title)}</h3>
       <p>${escapeHtml(buildResearchCondition(r))}</p>
-      <p>${Number(r.minPrice).toLocaleString()}〜${Number(r.maxPrice).toLocaleString()}円 / ${Number(r.sampleSize).toLocaleString()}件 / ${escapeHtml(r.sort)}</p>
+      <p>${escapeHtml(r.saleStatus || '売り切れ')} / ${Number(r.minPrice).toLocaleString()}〜${Number(r.maxPrice).toLocaleString()}円 / ${Number(r.sampleSize).toLocaleString()}件 / ${escapeHtml(r.sort || '新しい順')}</p>
       ${r.note ? `<p>${escapeHtml(r.note)}</p>` : ''}
       <div class="research-card-meta">
         <span class="research-pill">${escapeHtml(r.status || '未調査')}</span>
+        ${getResearchCategoryLabel(r) ? `<span class="research-pill">${escapeHtml(getResearchCategoryLabel(r))}</span>` : ''}
         <span class="research-pill">${new Date(r.createdAt).toLocaleDateString('ja-JP')}</span>
       </div>
       <div class="research-mini-actions">

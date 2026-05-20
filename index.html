@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260520d">
+  <link rel="stylesheet" href="styles.css?v=20260520e">
 </head>
 <body>
   <div id="app">
@@ -22,7 +22,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260520d / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
+      <p class="settings-version" id="settings-version">v20260520e / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
     </section>
 
     <!-- メイン画面 -->
@@ -146,26 +146,78 @@
           <label for="research-title">調査名</label>
           <input type="text" id="research-title" placeholder="例: BURBERRY メンズ シャツ">
 
+          <label for="research-keyword">検索キーワード</label>
+          <input type="text" id="research-keyword" placeholder="例: 長袖 ノバチェック">
+
+          <label for="research-category">カテゴリー</label>
+          <select id="research-category">
+            <option value="シャツ" data-label="メンズ > トップス > シャツ" selected>メンズ > トップス > シャツ</option>
+            <option value="シャツ" data-label="レディース > トップス > シャツ/ブラウス">レディース > トップス > シャツ/ブラウス</option>
+            <option value="ポロシャツ" data-label="メンズ > トップス > ポロシャツ">メンズ > トップス > ポロシャツ</option>
+            <option value="ワンピース" data-label="レディース > ワンピース">レディース > ワンピース</option>
+            <option value="スーツ" data-label="メンズ > スーツ">メンズ > スーツ</option>
+            <option value="スーツ" data-label="レディース > スーツ/フォーマル/ドレス">レディース > スーツ/フォーマル/ドレス</option>
+            <option value="ジャケット" data-label="ジャケット/アウター">ジャケット/アウター</option>
+            <option value="パンツ" data-label="パンツ">パンツ</option>
+            <option value="スカート" data-label="スカート">スカート</option>
+            <option value="バッグ" data-label="バッグ">バッグ</option>
+            <option value="靴" data-label="靴">靴</option>
+            <option value="その他" data-label="その他">その他</option>
+          </select>
+
           <label for="research-brand">ブランド</label>
           <input type="text" id="research-brand" placeholder="例: BURBERRY">
 
           <div class="research-grid">
-            <label for="research-genre">ジャンル
-              <select id="research-genre">
-                <option value="長袖シャツ">長袖シャツ</option>
-                <option value="半袖シャツ">半袖シャツ</option>
-                <option value="ポロシャツ">ポロシャツ</option>
-                <option value="ワンピース">ワンピース</option>
-                <option value="スーツ">スーツ</option>
-                <option value="その他">その他</option>
+            <label for="research-size">サイズ
+              <select id="research-size">
+                <option value="指定なし" selected>指定なし</option>
+                <option value="XS">XS</option>
+                <option value="S">S</option>
+                <option value="M">M</option>
+                <option value="L">L</option>
+                <option value="XL">XL</option>
+                <option value="2XL">2XL</option>
+                <option value="3XL">3XL</option>
+                <option value="FREE SIZE">FREE SIZE</option>
+                <option value="80cm">80cm</option>
+                <option value="90cm">90cm</option>
+                <option value="100cm">100cm</option>
+                <option value="110cm">110cm</option>
+                <option value="120cm">120cm</option>
+                <option value="130cm">130cm</option>
+                <option value="140cm">140cm</option>
+                <option value="150cm">150cm</option>
+                <option value="160cm">160cm</option>
               </select>
             </label>
+            <label for="research-condition">商品の状態
+              <select id="research-condition">
+                <option value="すべて" selected>すべて</option>
+                <option value="新品、未使用">新品、未使用</option>
+                <option value="未使用に近い">未使用に近い</option>
+                <option value="目立った傷や汚れなし">目立った傷や汚れなし</option>
+                <option value="やや傷や汚れあり">やや傷や汚れあり</option>
+                <option value="傷や汚れあり">傷や汚れあり</option>
+                <option value="全体的に状態が悪い">全体的に状態が悪い</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="research-grid">
             <label for="research-gender">対象
               <select id="research-gender">
                 <option value="指定なし">指定なし</option>
                 <option value="メンズ">メンズ</option>
                 <option value="レディース">レディース</option>
-                <option value="キッズ">キッズ</option>
+                <option value="キッズ・ベビー">キッズ・ベビー</option>
+              </select>
+            </label>
+            <label for="research-sale-status">販売状況
+              <select id="research-sale-status">
+                <option value="すべて">すべて</option>
+                <option value="販売中">販売中</option>
+                <option value="売り切れ" selected>売り切れ</option>
               </select>
             </label>
           </div>
@@ -194,8 +246,10 @@
             </label>
             <label for="research-sort">並び順
               <select id="research-sort">
-                <option value="新着順" selected>新着順</option>
                 <option value="おすすめ順">おすすめ順</option>
+                <option value="新しい順" selected>新しい順</option>
+                <option value="価格の安い順">価格の安い順</option>
+                <option value="価格の高い順">価格の高い順</option>
               </select>
             </label>
           </div>
@@ -249,6 +303,6 @@
 
   </div>
 
-  <script src="app.js?v=20260520d"></script>
+  <script src="app.js?v=20260520e"></script>
 </body>
 </html>
