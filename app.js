@@ -1196,10 +1196,47 @@ function buildResearchCondition(request) {
   return [keywordInput, brand, category, gender, size, condition, saleStatus].filter(Boolean).join(' / ');
 }
 
+function formatResearchDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('ja-JP', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatResearchPriceRange(request) {
+  const min = Number(request?.minPrice || 0);
+  const max = Number(request?.maxPrice || 0);
+  if (min && max) return `${min.toLocaleString()}〜${max.toLocaleString()}円`;
+  if (min) return `${min.toLocaleString()}円〜`;
+  if (max) return `〜${max.toLocaleString()}円`;
+  return '価格指定なし';
+}
+
+function getResearchStatusClass(status) {
+  const text = String(status || '');
+  if (/完了|調査済み|done|completed/i.test(text)) return 'done';
+  if (/失敗|エラー|error/i.test(text)) return 'error';
+  if (/実行|処理|running/i.test(text)) return 'running';
+  return 'waiting';
+}
+
+function renderResearchChipRow(values) {
+  const chips = values
+    .map(value => normalizeResearchValue(value))
+    .filter(Boolean)
+    .map(value => `<span class="research-chip">${escapeHtml(value)}</span>`)
+    .join('');
+  return chips ? `<div class="research-chip-row">${chips}</div>` : '';
+}
+
 function updateResearchPreview() {
   const node = el('research-condition-preview');
   if (!node) return;
-  const condition = buildResearchCondition({
+  const request = {
     keywordInput: el('research-keyword')?.value || '',
     category: el('research-category')?.value || '',
     categoryLabel: getSelectedOptionLabel('research-category'),
@@ -1208,18 +1245,26 @@ function updateResearchPreview() {
     condition: el('research-condition')?.value || '',
     gender: el('research-gender')?.value || '',
     saleStatus: el('research-sale-status')?.value || '',
-  });
+  };
+  const condition = buildResearchCondition(request);
   const minPrice = Number(el('research-min-price')?.value || 0);
   const maxPrice = Number(el('research-max-price')?.value || 0);
   const sampleSize = Number(el('research-sample-size')?.value || 200);
   const sort = el('research-sort')?.value || '新しい順';
-  const priceText = minPrice || maxPrice
-    ? `${minPrice.toLocaleString()}〜${maxPrice.toLocaleString()}円`
-    : '価格指定なし';
+  const priceText = formatResearchPriceRange({ minPrice, maxPrice });
   node.innerHTML = `
-    <span>調査条件</span>
+    <span>現在の条件</span>
     <strong>${escapeHtml(condition || '検索条件を入力してください')}</strong>
-    <small>${escapeHtml(priceText)} / ${sampleSize.toLocaleString()}件 / ${escapeHtml(sort)}</small>
+    ${renderResearchChipRow([
+      getSelectedOptionLabel('research-category'),
+      request.gender,
+      request.size,
+      request.condition,
+      request.saleStatus,
+      priceText,
+      `${sampleSize.toLocaleString()}件`,
+      sort,
+    ])}
   `;
 }
 
@@ -1532,18 +1577,29 @@ function renderResearchRequests() {
     return;
   }
   node.innerHTML = list.map((r) => `
-    <article class="research-card">
-      <h3>${escapeHtml(r.title)}</h3>
-      <p>${escapeHtml(buildResearchCondition(r))}</p>
-      <p>${escapeHtml(r.saleStatus || '売り切れ')} / ${Number(r.minPrice).toLocaleString()}〜${Number(r.maxPrice).toLocaleString()}円 / ${Number(r.sampleSize).toLocaleString()}件 / ${escapeHtml(r.sort || '新しい順')}</p>
+    <article class="research-card research-request-card">
+      <div class="research-card-header">
+        <h3>${escapeHtml(r.title)}</h3>
+        <span class="research-status ${getResearchStatusClass(r.status)}">${escapeHtml(r.status || '未調査')}</span>
+      </div>
+      <p class="research-card-primary">${escapeHtml(buildResearchCondition(r) || '条件未設定')}</p>
+      ${renderResearchChipRow([
+        getResearchCategoryLabel(r),
+        r.gender,
+        r.size,
+        r.condition,
+        r.saleStatus || '売り切れ',
+        formatResearchPriceRange(r),
+        `${Number(r.sampleSize || 200).toLocaleString()}件`,
+        r.sort || '新しい順',
+      ])}
       ${r.note ? `<p>${escapeHtml(r.note)}</p>` : ''}
-      <div class="research-card-meta">
-        <span class="research-pill">${escapeHtml(r.status || '未調査')}</span>
-        ${getResearchCategoryLabel(r) ? `<span class="research-pill">${escapeHtml(getResearchCategoryLabel(r))}</span>` : ''}
-        <span class="research-pill">${new Date(r.createdAt).toLocaleDateString('ja-JP')}</span>
+      <div class="research-card-meta research-card-footer">
+        <span>${escapeHtml(formatResearchDate(r.createdAt) || '日時未取得')}</span>
+        <span>Mac保存後に自動調査</span>
       </div>
       <div class="research-mini-actions">
-        <button type="button" data-research-action="copy" data-research-id="${escapeHtml(r.id)}">コピー</button>
+        <button type="button" data-research-action="copy" data-research-id="${escapeHtml(r.id)}">依頼文コピー</button>
         <button type="button" data-research-action="toggle" data-research-id="${escapeHtml(r.id)}">${r.status === '調査済み' ? '未調査へ戻す' : '調査済みにする'}</button>
         <button class="danger" type="button" data-research-action="delete" data-research-id="${escapeHtml(r.id)}">削除</button>
       </div>
@@ -1560,10 +1616,13 @@ function renderResearchResults() {
     return;
   }
   node.innerHTML = list.map((r) => `
-    <article class="research-card">
-      <h3>${escapeHtml(r.title || '調査結果')} ${r.status ? `<span class="research-pill">${escapeHtml(r.status)}</span>` : ''}</h3>
+    <article class="research-card research-result-card">
+      <div class="research-card-header">
+        <h3>${escapeHtml(r.title || '調査結果')}</h3>
+        ${r.status ? `<span class="research-status ${getResearchStatusClass(r.status)}">${escapeHtml(r.status)}</span>` : ''}
+      </div>
       <div class="research-card-meta">
-        <span class="research-pill">${new Date(r.createdAt).toLocaleString('ja-JP')}</span>
+        <span>${escapeHtml(formatResearchDate(r.createdAt) || '日時未取得')}</span>
         ${Number.isFinite(Number(r.itemCount)) ? `<span class="research-pill">${Number(r.itemCount).toLocaleString()}件</span>` : ''}
       </div>
       ${renderResearchResultBody(r)}
@@ -1595,10 +1654,12 @@ function renderResearchResultBody(result) {
     .sort((a, b) => Number(b[1]) - Number(a[1]));
   const maxConditionCount = Math.max(1, ...conditionEntries.map(([, count]) => Number(count) || 0));
   const buyingNote = extractBuyingNote(result.text);
+  const itemCount = Number(result.itemCount || stats.count || stats.sampleCount || 0);
 
   return `
     <div class="research-summary-grid">
       ${renderResearchMetric('中央値', formatYen(stats.median), 'main')}
+      ${renderResearchMetric('取得件数', itemCount > 0 ? `${Math.round(itemCount).toLocaleString()}件` : '-')}
       ${renderResearchMetric('最高', formatYen(stats.max))}
       ${renderResearchMetric('最安', formatYen(stats.min))}
       ${renderResearchMetric('平均', formatYen(stats.average))}
