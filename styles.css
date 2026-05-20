@@ -462,8 +462,11 @@ textarea.streaming {
 .research-list {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 .research-card {
+  max-width: 100%;
+  min-width: 0;
   padding: 13px;
   border: 1px solid rgba(255, 90, 95, 0.14);
   border-radius: 14px;
@@ -471,6 +474,7 @@ textarea.streaming {
   box-shadow: 0 6px 18px -16px rgba(255, 90, 95, 0.28);
 }
 .research-card h3 {
+  min-width: 0;
   margin: 0 0 6px;
   font-size: 15px;
   color: #2d1e4a;
@@ -478,27 +482,39 @@ textarea.streaming {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .research-card p {
+  max-width: 100%;
+  min-width: 0;
   margin: 3px 0;
   color: #665a70;
   font-size: 12px;
   line-height: 1.5;
+}
+.research-result-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .research-card-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+  min-width: 0;
 }
 .research-pill {
   display: inline-flex;
+  max-width: 100%;
   padding: 4px 8px;
   border-radius: 999px;
   background: #fff0f1;
   color: #c03445;
   font-size: 11px;
   font-weight: 800;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .research-mini-actions {
   display: flex;

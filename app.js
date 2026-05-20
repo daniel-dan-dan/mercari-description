@@ -1505,7 +1505,7 @@ function renderResearchResults() {
         <span class="research-pill">${new Date(r.createdAt).toLocaleString('ja-JP')}</span>
         ${Number.isFinite(Number(r.itemCount)) ? `<span class="research-pill">${Number(r.itemCount).toLocaleString()}件</span>` : ''}
       </div>
-      <p>${escapeHtml(r.text).replace(/\n/g, '<br>')}</p>
+      <p class="research-result-text">${escapeHtml(r.text).replace(/\n/g, '<br>')}</p>
       <div class="research-mini-actions">
         <button class="danger" type="button" data-result-action="delete" data-result-id="${escapeHtml(r.id)}">削除</button>
       </div>
