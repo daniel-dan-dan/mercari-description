@@ -17,7 +17,9 @@ const CATEGORY_JP = { suit: 'スーツ', tops: 'アウター/トップス', bott
 const RESEARCH_REQUESTS_KEY = 'mercari_research_requests';
 const RESEARCH_RESULTS_KEY = 'mercari_research_results';
 const RESEARCH_EMPTY_VALUES = new Set(['', '指定なし', 'すべて']);
-const MULTI_VOICE_IDLE_STOP_MS = 3500;
+const MULTI_VOICE_IDLE_STOP_MS = 45000;
+const MULTI_VOICE_RESTART_DELAY_MS = 250;
+const MULTI_VOICE_COMPLETE_STOP_MS = 900;
 
 let lastAiData = null;
 let activeMultiVoiceSession = null;
@@ -1765,6 +1767,7 @@ function stopActiveMultiVoiceInput(options = {}) {
   activeMultiVoiceSession = null;
   session.active = false;
   clearTimeout(session.idleTimer);
+  clearTimeout(session.restartTimer);
   clearTimeout(session.statusTimer);
 
   const { btn, rec, statusEl } = session;
@@ -1806,43 +1809,89 @@ function startMultiVoiceInput(btn) {
   rec.interimResults = false;
   rec.maxAlternatives = 3;
 
-  const session = { active: true, btn, rec, statusEl, idleTimer: null, statusTimer: null };
+  const session = {
+    active: true,
+    btn,
+    rec,
+    statusEl,
+    idleTimer: null,
+    restartTimer: null,
+    statusTimer: null,
+  };
   activeMultiVoiceSession = session;
   const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
   const scheduleIdleStop = (delay = MULTI_VOICE_IDLE_STOP_MS) => {
     clearTimeout(session.idleTimer);
     session.idleTimer = setTimeout(() => {
       if (activeMultiVoiceSession === session) {
-        stopActiveMultiVoiceInput({ message: '音声入力を終了しました' });
+        stopActiveMultiVoiceInput({ message: 'しばらく入力がなかったため音声入力を終了しました' });
       }
     }, delay);
+  };
+  const restartRecognition = () => {
+    clearTimeout(session.restartTimer);
+    session.restartTimer = setTimeout(() => {
+      if (activeMultiVoiceSession !== session || !session.active) return;
+      try {
+        rec.start();
+      } catch (e) {
+        const name = String(e?.name || '');
+        const message = String(e?.message || e || '');
+        if (!/InvalidState|already started|recognition has already started/i.test(`${name} ${message}`)) {
+          console.warn('音声認識の再開に失敗:', e);
+          setStatus('マイクが一時停止しました。もう一度「まとめて音声入力」を押してください');
+          stopActiveMultiVoiceInput({ message: '音声入力を終了しました' });
+        }
+      }
+    }, MULTI_VOICE_RESTART_DELAY_MS);
   };
 
   btn._stopFn = () => stopActiveMultiVoiceInput({ clearStatus: true });
   btn.classList.add('listening');
   btn.textContent = '⏹ 停止（録音中…）';
-  setStatus('話してください（例:「肩幅 45」「袖丈 60.5」）');
-  scheduleIdleStop(8000);
+  setStatus('続けて話してください。終える時は停止を押します');
+  scheduleIdleStop();
 
   rec.onresult = (e) => {
     if (activeMultiVoiceSession !== session) return;
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const result = e.results[i];
       if (!result.isFinal) continue;
-      let matched = null;
+      let matches = [];
       for (let a = 0; a < result.length; a++) {
         const t = result[a]?.transcript || '';
-        const m = parseMeasurementUtterance(t);
-        if (m) { matched = m; break; }
+        const parsed = parseMeasurementUtterances(t);
+        if (parsed.length) { matches = parsed; break; }
       }
-      if (matched) {
-        const target = el(matched.fieldId);
-        if (target) {
-          target.value = String(matched.value);
-          target.dispatchEvent(new Event('input', { bubbles: true }));
-          setStatus(`✅ ${matched.label}: ${matched.value} cm`);
-        } else {
-          setStatus(`⚠️ ${matched.label} の入力欄が見つかりません（ラグランONを確認）`);
+      if (matches.length) {
+        const applied = [];
+        const missing = [];
+        matches.forEach(matched => {
+          const target = el(matched.fieldId);
+          if (target) {
+            target.value = String(matched.value);
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+            applied.push(`${matched.label}: ${matched.value}cm`);
+          } else {
+            missing.push(matched.label);
+          }
+        });
+        const progress = getVisibleMeasurementProgress();
+        if (applied.length) {
+          setStatus(`✅ ${applied.join(' / ')}（${progress.filled}/${progress.total}）`);
+        }
+        if (missing.length) {
+          setStatus(`⚠️ ${missing.join('、')} の入力欄が見つかりません（ラグランONを確認）`);
+        }
+        if (progress.complete) {
+          clearTimeout(session.idleTimer);
+          setStatus(`✅ 採寸がすべて入りました（${progress.filled}/${progress.total}）`);
+          setTimeout(() => {
+            if (activeMultiVoiceSession === session) {
+              stopActiveMultiVoiceInput({ message: '採寸がすべて入りました' });
+            }
+          }, MULTI_VOICE_COMPLETE_STOP_MS);
+          return;
         }
       } else {
         const first = result[0]?.transcript || '';
@@ -1853,7 +1902,7 @@ function startMultiVoiceInput(btn) {
   };
   rec.onend = () => {
     if (activeMultiVoiceSession === session && session.active) {
-      try { rec.start(); } catch { stopActiveMultiVoiceInput({ clearStatus: true }); }
+      restartRecognition();
     }
   };
   rec.onerror = (e) => {
@@ -1862,8 +1911,8 @@ function startMultiVoiceInput(btn) {
       alert('マイクのアクセスが許可されていません');
       stopActiveMultiVoiceInput({ clearStatus: true });
     } else if (e.error === 'no-speech') {
-      setStatus('音声を聞き取れませんでした。もう一度押してください');
-      scheduleIdleStop(1200);
+      setStatus('待機中です。続けて採寸を話してください（終了は停止）');
+      scheduleIdleStop();
     } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
       console.warn('音声認識エラー:', e.error);
       stopActiveMultiVoiceInput({ message: '音声入力を終了しました' });
@@ -1872,17 +1921,14 @@ function startMultiVoiceInput(btn) {
   try { rec.start(); } catch (e) { stopActiveMultiVoiceInput({ clearStatus: true }); console.warn(e); }
 }
 
-// 「ラベル 数値」発話を解析して対象フィールドIDと値を返す
-function parseMeasurementUtterance(text) {
-  if (!text) return null;
-  const cat = el('category').value;
-  if (!cat) return null;
-
-  const normalized = text
+function normalizeMeasurementSpeech(text) {
+  return String(text || '')
     .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
     .replace(/[,，、]/g, '')
     .replace(/\s+/g, '');
+}
 
+function getMeasurementDict(cat) {
   const suitPrefixed = [
     { keys: ['ジャケット肩幅','ジャケ肩幅'], field: 'j_shoulder', label: 'ジャケット肩幅' },
     { keys: ['ジャケット身幅','ジャケ身幅'], field: 'j_chest',    label: 'ジャケット身幅' },
@@ -1906,25 +1952,96 @@ function parseMeasurementUtterance(text) {
     { keys: ['股下','またした'],                              field: 'inseam',   label: '股下' },
     { keys: ['股上','またがみ'],                              field: 'rise',     label: '股上' },
     { keys: ['裾幅','すそはば','裾','すそ'],                   field: 'hem',      label: '裾幅' },
+    { keys: ['縦','たて'],                                    field: 'height',   label: '縦' },
+    { keys: ['横','よこ'],                                    field: 'width',    label: '横' },
+    { keys: ['マチ','まち'],                                  field: 'depth',    label: 'マチ' },
+    { keys: ['持ち手','もちて'],                              field: 'handle',   label: '持ち手' },
+    { keys: ['高さ','たかさ'],                                field: 'depth',    label: '高さ' },
   ];
-  const dict = cat === 'suit' ? [...suitPrefixed, ...common] : common;
+  return cat === 'suit' ? [...suitPrefixed, ...common] : common;
+}
 
-  for (const entry of dict) {
-    for (const key of entry.keys) {
-      const idx = normalized.indexOf(key);
-      if (idx < 0) continue;
-      const rest = normalized.slice(idx + key.length) + ' ' + normalized.slice(0, idx);
-      const n = parseSpokenNumber(rest);
-      if (n === null) continue;
-      return { fieldId: 'm-' + resolveFieldKey(entry.field, cat), value: n, label: entry.label };
-    }
-  }
-  return null;
+function getVisibleMeasurementInputs() {
+  const container = el('measurement-fields');
+  if (!container) return [];
+  return Array.from(container.querySelectorAll('input[type="number"]'))
+    .filter(input => !input.disabled && !input.closest('[hidden]'));
+}
+
+function getVisibleMeasurementProgress() {
+  const inputs = getVisibleMeasurementInputs();
+  const filled = inputs.filter(input => String(input.value || '').trim() !== '').length;
+  return { filled, total: inputs.length, complete: inputs.length > 0 && filled >= inputs.length };
+}
+
+// 「ラベル 数値」を複数含む発話を解析して対象フィールドIDと値を返す
+function parseMeasurementUtterances(text) {
+  if (!text) return [];
+  const cat = el('category').value;
+  if (!cat) return [];
+
+  const normalized = normalizeMeasurementSpeech(text);
+  const labels = [];
+  getMeasurementDict(cat).forEach(entry => {
+    entry.keys.forEach(key => {
+      let idx = normalized.indexOf(key);
+      while (idx >= 0) {
+        labels.push({ entry, key, idx, end: idx + key.length });
+        idx = normalized.indexOf(key, idx + key.length);
+      }
+    });
+  });
+
+  const orderedLabels = [];
+  labels
+    .sort((a, b) => a.idx - b.idx || b.key.length - a.key.length)
+    .forEach(label => {
+      const prev = orderedLabels[orderedLabels.length - 1];
+      if (prev && label.idx < prev.end) return;
+      orderedLabels.push(label);
+    });
+
+  const parsed = [];
+  const usedFields = new Set();
+  orderedLabels.forEach((label, index) => {
+    const next = orderedLabels[index + 1];
+    const segment = normalized.slice(label.end, next ? next.idx : normalized.length);
+    const fallbackSegment = orderedLabels.length === 1
+      ? `${segment} ${normalized.slice(0, label.idx)}`
+      : segment;
+    const n = parseSpokenNumber(fallbackSegment);
+    if (n === null) return;
+    const fieldId = 'm-' + resolveFieldKey(label.entry.field, cat);
+    if (usedFields.has(fieldId)) return;
+    usedFields.add(fieldId);
+    parsed.push({ fieldId, value: n, label: label.entry.label });
+  });
+
+  return parsed;
+}
+
+// 「ラベル 数値」発話を解析して対象フィールドIDと値を返す
+function parseMeasurementUtterance(text) {
+  return parseMeasurementUtterances(text)[0] || null;
+}
+
+function resolveGenericMeasurementKey(baseKey, cat) {
+  const prefixByCategory = {
+    bag: 'bag_',
+    other: 'other_',
+  };
+  if (baseKey === 'height') return (prefixByCategory[cat] || '') + 'height';
+  if (baseKey === 'width') return (prefixByCategory[cat] || '') + 'width';
+  if (baseKey === 'depth') return (prefixByCategory[cat] || '') + 'depth';
+  if (baseKey === 'handle') return (prefixByCategory[cat] || '') + 'handle';
+  return baseKey;
 }
 
 function resolveFieldKey(baseKey, cat) {
   if (/^[jpv]_/.test(baseKey)) return baseKey;
   if (baseKey === 'yuki') return 'yuki';
+  const genericKey = resolveGenericMeasurementKey(baseKey, cat);
+  if (genericKey !== baseKey) return genericKey;
   if (cat === 'suit') {
     const bottomKeys = ['waist','inseam','rise','hem'];
     const jacketKeys = ['shoulder','chest','sleeve','length'];
