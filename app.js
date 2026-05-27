@@ -90,7 +90,7 @@ async function init() {
   el('research-result-save-btn').addEventListener('click', saveResearchResultNote);
   el('research-request-list').addEventListener('click', handleResearchRequestAction);
   el('research-result-list').addEventListener('click', handleResearchResultAction);
-  ['research-title', 'research-keyword', 'research-category', 'research-brand', 'research-size', 'research-condition', 'research-gender', 'research-sale-status', 'research-min-price', 'research-max-price', 'research-sample-size', 'research-sort', 'research-excludes', 'research-note']
+  ['research-title', 'research-keyword', 'research-category', 'research-brand', 'research-size', 'research-condition', 'research-gender', 'research-sale-status', 'research-min-price', 'research-max-price', 'research-sample-size', 'research-sort', 'research-period-months', 'research-excludes', 'research-note']
     .forEach(id => {
       const node = el(id);
       if (!node) return;
@@ -1198,6 +1198,16 @@ function buildResearchCondition(request) {
   return [keywordInput, brand, category, gender, size, condition, saleStatus].filter(Boolean).join(' / ');
 }
 
+function hasResearchSearchAxis(request) {
+  return Boolean(
+    getResearchBrand(request)
+    || normalizeResearchValue(request?.keywordInput)
+    || getResearchCategoryKeyword(request)
+    || getResearchCategoryLabel(request)
+    || normalizeResearchValue(request?.keyword)
+  );
+}
+
 function formatResearchDate(value) {
   if (!value) return '';
   const date = new Date(value);
@@ -1216,6 +1226,12 @@ function formatResearchPriceRange(request) {
   if (min) return `${min.toLocaleString()}円〜`;
   if (max) return `〜${max.toLocaleString()}円`;
   return '価格指定なし';
+}
+
+function formatResearchPeriod(value) {
+  const months = Number(value || 0);
+  if (!months) return '期間指定なし';
+  return months === 1 ? '直近1ヶ月' : `直近${months}ヶ月`;
 }
 
 function getResearchStatusClass(status) {
@@ -1253,6 +1269,7 @@ function updateResearchPreview() {
   const maxPrice = Number(el('research-max-price')?.value || 0);
   const sampleSize = Number(el('research-sample-size')?.value || 200);
   const sort = el('research-sort')?.value || '新しい順';
+  const periodMonths = Number(el('research-period-months')?.value || 0);
   const priceText = formatResearchPriceRange({ minPrice, maxPrice });
   node.innerHTML = `
     <span>現在の条件</span>
@@ -1266,6 +1283,7 @@ function updateResearchPreview() {
       priceText,
       `${sampleSize.toLocaleString()}件`,
       sort,
+      formatResearchPeriod(periodMonths),
     ])}
   `;
 }
@@ -1284,14 +1302,18 @@ function collectResearchForm() {
   const maxPrice = Number(el('research-max-price').value || 0);
   const sampleSize = Number(el('research-sample-size').value || 200);
   const sort = el('research-sort').value;
+  const periodMonths = Number(el('research-period-months').value || 0);
   const excludes = el('research-excludes').value.trim();
   const note = el('research-note').value.trim();
   const requestBase = { keywordInput, category, categoryLabel, brand, size, condition, gender, saleStatus };
   const keyword = buildResearchKeyword(requestBase);
+  const fallbackTitle = [brand, keywordInput, categoryLabel || category, normalizeResearchValue(gender)]
+    .filter(Boolean)
+    .join(' ');
   return {
     id: `research-${Date.now()}`,
     createdAt: new Date().toISOString(),
-    title: title || [brand, keywordInput, category, normalizeResearchValue(gender)].filter(Boolean).join(' ') || '相場リサーチ',
+    title: title || fallbackTitle || '相場リサーチ',
     brand,
     keyword,
     keywordInput,
@@ -1306,6 +1328,7 @@ function collectResearchForm() {
     maxPrice,
     sampleSize,
     sort,
+    periodMonths,
     excludes,
     note,
     status: '未調査',
@@ -1314,8 +1337,8 @@ function collectResearchForm() {
 
 async function saveResearchRequest() {
   const request = collectResearchForm();
-  if (!request.brand && !request.keywordInput) {
-    alert('ブランドまたは検索キーワードを入力してください');
+  if (!hasResearchSearchAxis(request)) {
+    alert('カテゴリー、ブランド、検索キーワードのいずれかを指定してください');
     return;
   }
   const list = readJsonList(RESEARCH_REQUESTS_KEY);
@@ -1331,11 +1354,12 @@ function clearResearchForm(keepBrand) {
   el('research-keyword').value = '';
   if (!keepBrand) el('research-brand').value = '';
   el('research-note').value = '';
+  el('research-period-months').value = '0';
   updateResearchPreview();
 }
 
 function buildResearchPrompt(requests) {
-  const targets = requests.length ? requests : [collectResearchForm()].filter(r => getResearchBrand(r));
+  const targets = requests.length ? requests : [collectResearchForm()].filter(hasResearchSearchAxis);
   if (!targets.length) return '';
   const lines = [
     '# メルカリ相場リサーチ依頼',
@@ -1356,7 +1380,7 @@ function buildResearchPrompt(requests) {
     lines.push(`## ${idx + 1}. ${r.title}`);
     if (r.keywordInput) lines.push(`- 検索キーワード: ${r.keywordInput}`);
     lines.push(`- カテゴリー: ${getResearchCategoryLabel(r) || r.genre || '指定なし'}`);
-    lines.push(`- ブランド: ${brand}`);
+    lines.push(`- ブランド: ${brand || '指定なし'}`);
     lines.push(`- サイズ: ${r.size || '指定なし'}`);
     lines.push(`- 商品の状態: ${r.condition || 'すべて'}`);
     lines.push(`- 対象: ${r.gender || '指定なし'}`);
@@ -1365,6 +1389,7 @@ function buildResearchPrompt(requests) {
     lines.push(`- 価格帯: ${r.minPrice.toLocaleString()}〜${r.maxPrice.toLocaleString()}円`);
     lines.push(`- サンプル数: ${r.sampleSize}件`);
     lines.push(`- 並び順: ${r.sort}`);
+    lines.push(`- 対象期間: ${formatResearchPeriod(r.periodMonths)}`);
     lines.push(`- 除外ワード: ${r.excludes || 'なし'}`);
     if (r.note) lines.push(`- 補足: ${r.note}`);
   });
@@ -1390,7 +1415,7 @@ async function copyResearchRequestForNightWork() {
   const requests = readJsonList(RESEARCH_REQUESTS_KEY);
   const text = buildResearchPrompt(requests);
   if (!text) {
-    alert('先に調査依頼を保存するか、ブランドを入力してください');
+    alert('先に調査依頼を保存するか、カテゴリーなどの条件を入力してください');
     return;
   }
   try {
@@ -1594,6 +1619,7 @@ function renderResearchRequests() {
         formatResearchPriceRange(r),
         `${Number(r.sampleSize || 200).toLocaleString()}件`,
         r.sort || '新しい順',
+        formatResearchPeriod(r.periodMonths),
       ])}
       ${r.note ? `<p>${escapeHtml(r.note)}</p>` : ''}
       <div class="research-card-meta research-card-footer">

@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260524a">
+  <link rel="stylesheet" href="styles.css?v=20260527a">
 </head>
 <body>
   <div id="app">
@@ -22,7 +22,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260524a / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
+      <p class="settings-version" id="settings-version">v20260527a / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
     </section>
 
     <!-- メイン画面 -->
@@ -174,9 +174,6 @@
 
             <label for="research-keyword">キーワード</label>
             <input type="text" id="research-keyword" placeholder="例: 長袖 ノバチェック">
-
-            <label for="research-title">保存名</label>
-            <input type="text" id="research-title" placeholder="例: BURBERRY メンズ シャツ">
           </div>
 
           <div class="research-form-section">
@@ -253,6 +250,7 @@
                   <option value="50">50件</option>
                   <option value="100">100件</option>
                   <option value="200" selected>200件</option>
+                  <option value="300">300件</option>
                 </select>
               </label>
               <label for="research-sort">並び順
@@ -261,6 +259,15 @@
                   <option value="新しい順" selected>新しい順</option>
                   <option value="価格の安い順">価格の安い順</option>
                   <option value="価格の高い順">価格の高い順</option>
+                </select>
+              </label>
+              <label for="research-period-months">対象期間
+                <select id="research-period-months">
+                  <option value="0" selected>指定なし</option>
+                  <option value="1">直近1ヶ月</option>
+                  <option value="3">直近3ヶ月</option>
+                  <option value="6">直近6ヶ月</option>
+                  <option value="12">直近12ヶ月</option>
                 </select>
               </label>
             </div>
@@ -279,6 +286,12 @@
             <label for="research-note">補足メモ</label>
             <textarea id="research-note" rows="4" placeholder="状態の見方、除外したい条件、セラーURLなど"></textarea>
           </details>
+
+          <div class="research-form-section">
+            <div class="research-section-label">保存</div>
+            <label for="research-title">保存名</label>
+            <input type="text" id="research-title" placeholder="例: BURBERRY メンズ シャツ">
+          </div>
 
           <div class="research-actions">
             <button id="research-save-btn" class="btn primary" type="button">調査依頼を保存</button>
@@ -335,6 +348,6 @@
 
   </div>
 
-  <script src="app.js?v=20260524a"></script>
+  <script src="app.js?v=20260527a"></script>
 </body>
 </html>
