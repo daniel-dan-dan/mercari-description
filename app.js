@@ -17,6 +17,64 @@ const CATEGORY_JP = { suit: 'スーツ', tops: 'アウター/トップス', bott
 const RESEARCH_REQUESTS_KEY = 'mercari_research_requests';
 const RESEARCH_RESULTS_KEY = 'mercari_research_results';
 const RESEARCH_EMPTY_VALUES = new Set(['', '指定なし', 'すべて']);
+const RESEARCH_BRAND_ALIASES = [
+  ['BURBERRY BLACK LABEL', ['burberry black label', 'black label crestbridge', 'ブラックレーベル']],
+  ['BURBERRY', ['burberry', 'burberrys', 'バーバリー', 'バーバリーズ']],
+  ['RALPH LAUREN', ['polo ralph lauren', 'ralph lauren', 'ラルフローレン', 'ポロラルフローレン']],
+  ['FRED PERRY', ['fred perry', 'フレッドペリー']],
+  ['TENDERLOIN', ['tenderloin', 'テンダーロイン']],
+  ['WTAPS', ['wtaps', 'ダブルタップス']],
+  ['SUPREME', ['supreme', 'シュプリーム']],
+  ['BRIEFING', ['briefing', 'ブリーフィング']],
+  ['DIESEL', ['diesel', 'ディーゼル']],
+  ['LANVIN', ['lanvin', 'ランバン']],
+  ['KENZO', ['kenzo', 'ケンゾー']],
+  ['MADISONBLUE', ['madisonblue', 'madison blue', 'マディソンブルー']],
+  ['BLUMARINE', ['blumarine', 'ブルマリン']],
+  ['SNIDEL', ['snidel', 'スナイデル']],
+  ['HELLY HANSEN', ['helly hansen', 'ヘリーハンセン']],
+  ['LEVI\'S', ['levi\'s', 'levis', 'リーバイス']],
+  ['COMME DES GARCONS', ['comme des garcons', 'コムデギャルソン', 'コム デ ギャルソン']],
+  ['YOHJI YAMAMOTO', ['yohji yamamoto', 'ヨウジヤマモト']],
+  ['ISSEY MIYAKE', ['issey miyake', 'イッセイミヤケ']],
+  ['PLEATS PLEASE', ['pleats please', 'プリーツプリーズ']],
+  ['AURALEE', ['auralee', 'オーラリー']],
+  ['COMOLI', ['comoli', 'コモリ']],
+  ['NEEDLES', ['needles', 'ニードルス']],
+  ['THE NORTH FACE', ['the north face', 'ノースフェイス']],
+  ['PATAGONIA', ['patagonia', 'パタゴニア']],
+  ['ARC\'TERYX', ['arc\'teryx', 'arcteryx', 'アークテリクス']],
+  ['MONCLER', ['moncler', 'モンクレール']],
+  ['STONE ISLAND', ['stone island', 'ストーンアイランド']],
+  ['GUCCI', ['gucci', 'グッチ']],
+  ['PRADA', ['prada', 'プラダ']],
+  ['LOUIS VUITTON', ['louis vuitton', 'ルイヴィトン']],
+  ['CHANEL', ['chanel', 'シャネル']],
+  ['HERMES', ['hermes', 'エルメス']],
+  ['CELINE', ['celine', 'セリーヌ']],
+  ['DIOR', ['dior', 'ディオール']],
+  ['FENDI', ['fendi', 'フェンディ']],
+  ['BALENCIAGA', ['balenciaga', 'バレンシアガ']],
+  ['BOTTEGA VENETA', ['bottega veneta', 'ボッテガ']],
+  ['COACH', ['coach', 'コーチ']],
+  ['PORTER', ['porter', 'ポーター']],
+  ['MARGARET HOWELL', ['margaret howell', 'マーガレットハウエル']],
+  ['MACKINTOSH', ['mackintosh', 'マッキントッシュ']],
+  ['A.P.C.', ['a.p.c', 'apc', 'アーペーセー']],
+  ['UNITED ARROWS', ['united arrows', 'ユナイテッドアローズ']],
+  ['BEAMS', ['beams', 'ビームス']],
+  ['SHIPS', ['ships', 'シップス']],
+  ['JOURNAL STANDARD', ['journal standard', 'ジャーナルスタンダード']],
+  ['NANO UNIVERSE', ['nano universe', 'ナノユニバース']],
+  ['URBAN RESEARCH', ['urban research', 'アーバンリサーチ']],
+  ['UNIQLO', ['uniqlo', 'ユニクロ']],
+  ['GU', [' gu ', 'ジーユー']],
+];
+const RESEARCH_BRAND_NOISE = new Set([
+  '新品', '未使用', '美品', '極美品', '希少', 'レア', '古着', 'メンズ', 'レディース',
+  'まとめ', 'まとめ商品', 'リクエスト', '専用', '販売中', '様', 'トップス', 'シャツ',
+  'ブラウス', 'ポロシャツ', '半袖', '長袖', '大きいサイズ',
+]);
 const MULTI_VOICE_IDLE_STOP_MS = 45000;
 const MULTI_VOICE_RESTART_DELAY_MS = 250;
 const MULTI_VOICE_COMPLETE_STOP_MS = 900;
@@ -1664,10 +1722,11 @@ function renderResearchResults() {
 function renderResearchResultBody(result) {
   const stats = result.stats && typeof result.stats === 'object' ? result.stats : {};
   const samples = Array.isArray(result.samples) ? result.samples : [];
+  const brandStats = getResearchBrandStats(result, samples);
   const conditionCounts = result.conditionCounts && typeof result.conditionCounts === 'object'
     ? result.conditionCounts
     : {};
-  const hasStructuredData = Object.keys(stats).length || samples.length || Object.keys(conditionCounts).length;
+  const hasStructuredData = Object.keys(stats).length || brandStats.length || samples.length || Object.keys(conditionCounts).length;
 
   if (!hasStructuredData) {
     return `<p class="research-result-text">${escapeHtml(result.text || '').replace(/\n/g, '<br>')}</p>`;
@@ -1685,6 +1744,7 @@ function renderResearchResultBody(result) {
   const itemCount = Number(result.itemCount || stats.count || stats.sampleCount || 0);
 
   return `
+    ${brandStats.length ? renderResearchBrandRanking(brandStats) : ''}
     <div class="research-summary-grid">
       ${renderResearchMetric('中央値', formatYen(stats.median), 'main')}
       ${renderResearchMetric('取得件数', itemCount > 0 ? `${Math.round(itemCount).toLocaleString()}件` : '-')}
@@ -1734,6 +1794,46 @@ function renderResearchResultBody(result) {
   `;
 }
 
+function renderResearchBrandRanking(brandStats) {
+  const rows = brandStats.slice(0, 8);
+  return `
+    <div class="research-brand-ranking">
+      <div class="research-section-title">ブランド別 高値ランキング</div>
+      <div class="research-brand-list">
+        ${rows.map((row, index) => `
+          <article class="research-brand-row">
+            <div class="research-brand-rank">${index + 1}</div>
+            <div class="research-brand-main">
+              <div class="research-brand-name">${escapeHtml(row.brand || 'ブランド未判定')}</div>
+              <div class="research-brand-meta">
+                <span>中央値 ${formatYen(row.median)}</span>
+                <span>最高 ${formatYen(row.max)}</span>
+                <span>${Number(row.count || 0).toLocaleString()}件</span>
+              </div>
+              ${renderResearchBrandSamples(row.samples)}
+            </div>
+          </article>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderResearchBrandSamples(samples) {
+  const rows = Array.isArray(samples) ? samples.slice(0, 2) : [];
+  if (!rows.length) return '';
+  return `
+    <div class="research-brand-samples">
+      ${rows.map(sample => `
+        <a href="${escapeHtml(sample.url || '#')}" target="_blank" rel="noopener">
+          <span>${formatYen(sample.price)}</span>
+          <small>${escapeHtml(sample.title || 'タイトル未取得')}</small>
+        </a>
+      `).join('')}
+    </div>
+  `;
+}
+
 function renderResearchMetric(label, value, tone = '') {
   return `
     <div class="research-metric ${tone}">
@@ -1746,6 +1846,99 @@ function renderResearchMetric(label, value, tone = '') {
 function formatYen(value) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? `${Math.round(n).toLocaleString()}円` : '-';
+}
+
+function getResearchBrandStats(result, samples) {
+  const rows = Array.isArray(result.brandStats) ? result.brandStats : [];
+  if (rows.length) return rows.filter(row => row?.brand);
+  return buildClientBrandStats(samples);
+}
+
+function buildClientBrandStats(samples) {
+  const grouped = new Map();
+  (samples || []).forEach(sample => {
+    const brand = sample.brand || inferResearchSampleBrand(sample.title || '');
+    if (!brand || brand === 'ブランド未判定') return;
+    const rows = grouped.get(brand) || [];
+    rows.push({ ...sample, brand });
+    grouped.set(brand, rows);
+  });
+  return Array.from(grouped.entries()).map(([brand, rows]) => {
+    const prices = rows.map(row => Number(row.price)).filter(price => Number.isFinite(price) && price > 0).sort((a, b) => a - b);
+    if (!prices.length) return null;
+    const mid = Math.floor(prices.length / 2);
+    const median = prices.length % 2 ? prices[mid] : Math.round((prices[mid - 1] + prices[mid]) / 2);
+    return {
+      brand,
+      count: rows.length,
+      min: prices[0],
+      median,
+      max: prices[prices.length - 1],
+      average: Math.round(prices.reduce((sum, price) => sum + price, 0) / prices.length),
+      samples: rows.sort((a, b) => Number(b.price || 0) - Number(a.price || 0)).slice(0, 3),
+    };
+  }).filter(Boolean).sort((a, b) => {
+    const aReliable = a.count >= 2 ? 1 : 0;
+    const bReliable = b.count >= 2 ? 1 : 0;
+    return (bReliable - aReliable)
+      || (Number(b.median) - Number(a.median))
+      || (Number(b.max) - Number(a.max))
+      || (Number(b.count) - Number(a.count))
+      || String(a.brand).localeCompare(String(b.brand), 'ja');
+  });
+}
+
+function inferResearchSampleBrand(title) {
+  const normalized = normalizeResearchBrandText(title);
+  for (const [brand, aliases] of RESEARCH_BRAND_ALIASES) {
+    for (const alias of aliases) {
+      const aliasKey = normalizeResearchBrandText(alias);
+      if (!aliasKey) continue;
+      if (aliasKey.length <= 2 && !hasResearchShortBrandToken(title, alias)) continue;
+      if (normalized.includes(aliasKey)) return brand;
+    }
+  }
+  return leadingResearchBrandCandidate(title) || 'ブランド未判定';
+}
+
+function normalizeResearchBrandText(value) {
+  return String(value || '').toLowerCase().replace(/[\s　'’.\-]+/g, '');
+}
+
+function hasResearchShortBrandToken(title, alias) {
+  const escaped = String(alias || '').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!escaped) return false;
+  return new RegExp(`(^|[\\s　/／|｜【】\\[\\]（）()])${escaped}($|[\\s　/／|｜【】\\[\\]（）()])`, 'i').test(String(title || ''));
+}
+
+function leadingResearchBrandCandidate(title) {
+  const cleaned = String(title || '').replace(/^[【\[][^\]】]{1,12}[\]】]/, '').trim();
+  const tokens = cleaned.split(/[\s　]+/).map(token => token.replace(/^[\s\-・:：/／|｜【】[\]（）()「」『』,、.]+|[\s\-・:：/／|｜【】[\]（）()「」『』,、.]+$/g, ''));
+  if (tokens.slice(0, 4).some(token => token.endsWith('様') || token.includes('リクエスト'))) return '';
+  for (const [index, token] of tokens.slice(0, 5).entries()) {
+    if (!token || shouldSkipResearchBrandCandidate(token)) continue;
+    if (/[A-Za-z]/.test(token) && token.replace(/[^A-Za-z0-9]/g, '').length >= 3) return combineResearchAlphaBrandTokens(tokens, index);
+    if (/^[ァ-ヴーA-Za-z0-9&'.-]{2,24}$/.test(token)) return token;
+  }
+  return '';
+}
+
+function combineResearchAlphaBrandTokens(tokens, startIndex) {
+  const parts = [];
+  for (const token of tokens.slice(startIndex, startIndex + 3)) {
+    const cleaned = token.replace(/^[\s\-・:：/／|｜【】[\]（）()「」『』,、.]+|[\s\-・:：/／|｜【】[\]（）()「」『』,、.]+$/g, '');
+    if (!cleaned || shouldSkipResearchBrandCandidate(cleaned)) break;
+    if (!/^[A-Za-z][A-Za-z0-9&'.-]*$/.test(cleaned)) break;
+    parts.push(cleaned.toUpperCase());
+  }
+  return parts.join(' ') || String(tokens[startIndex] || '').toUpperCase();
+}
+
+function shouldSkipResearchBrandCandidate(token) {
+  if (!normalizeResearchBrandText(token)) return true;
+  if ([...RESEARCH_BRAND_NOISE].some(noise => token.includes(noise))) return true;
+  if (token.endsWith('様') || token.includes('リクエスト')) return true;
+  return /^\d+[A-Za-z]*$/.test(token);
 }
 
 function extractBuyingNote(text) {
