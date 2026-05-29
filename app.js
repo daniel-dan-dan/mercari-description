@@ -3161,7 +3161,7 @@ function renderComposePreview(canvas) {
   }
 }
 
-async function addComposedImageToApp(dataUrl) {
+async function addComposedImageToApp(dataUrl, options = {}) {
   if (uploadedImages.length >= MAX_SELECT_PHOTOS) {
     alert(`写真選択は最大${MAX_SELECT_PHOTOS}枚までです`); return false;
   }
@@ -3178,11 +3178,16 @@ async function addComposedImageToApp(dataUrl) {
   cHQ.getContext('2d').drawImage(img, 0, 0, wHQ, hHQ);
   const base64HQ = cHQ.toDataURL('image/jpeg', 0.92).split(',')[1];
 
-  uploadedImages.push({
+  const composedImage = {
     dataUrl: smallDataUrl, mediaType: 'image/jpeg',
     base64: smallDataUrl.split(',')[1], base64HQ,
     originalDataUrl: smallDataUrl, adjust: { brightness: 0, temp: 0, contrast: 0 },
-  });
+  };
+  if (options.insertAt === 'front') {
+    uploadedImages.unshift(composedImage);
+  } else {
+    uploadedImages.push(composedImage);
+  }
   renderPreviews(); updateGenerateButton(); scheduleSave(); updateDraftChecklist();
   return true;
 }
@@ -3200,12 +3205,14 @@ async function applyCompose() {
     }
     deletedBaseBeforeAdd = removeUploadedImagesByIndices([composeState.baseIdx]);
   }
-  if (await addComposedImageToApp(dataUrl)) {
-    if (!deletedBaseBeforeAdd && Number.isInteger(composeState.baseIdx)) {
-      const baseNumber = composeState.baseIdx + 1;
-      if (confirm(`合成前の貼り付け先写真（${baseNumber}枚目）を一覧から削除しますか？`)) {
-        removeUploadedImagesByIndices([composeState.baseIdx]);
-      }
+  let shouldDeleteBaseAfterAdd = false;
+  if (!deletedBaseBeforeAdd && Number.isInteger(composeState.baseIdx)) {
+    const baseNumber = composeState.baseIdx + 1;
+    shouldDeleteBaseAfterAdd = confirm(`合成前の貼り付け先写真（${baseNumber}枚目）を一覧から削除しますか？`);
+  }
+  if (await addComposedImageToApp(dataUrl, { insertAt: 'front' })) {
+    if (shouldDeleteBaseAfterAdd) {
+      removeUploadedImagesByIndices([composeState.baseIdx + 1]);
     }
     closeImageCompose();
   }
