@@ -14,7 +14,7 @@ const MAX_DRAFT_PHOTOS = 20;         // メルカリ下書き保存に送れる�
 const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
 const DB_STORE = 'session';
-const CATEGORY_JP = { suit: 'スーツ', tops: 'アウター/トップス', bottoms: 'ボトムス', bag: 'バッグ', other: 'その他' };
+const CATEGORY_JP = { suit: 'スーツ', tops: 'アウター/トップス', bottoms: 'ボトムス', bag: 'バッグ', tie: 'ネクタイ', other: 'その他' };
 const RESEARCH_REQUESTS_KEY = 'mercari_research_requests';
 const RESEARCH_RESULTS_KEY = 'mercari_research_results';
 const RESEARCH_EMPTY_VALUES = new Set(['', '指定なし', 'すべて']);
@@ -599,6 +599,12 @@ const MEASUREMENT_SCHEMA = {
       { key: 'bag_handle', label: '持ち手' },
     ]},
   ],
+  tie: [
+    { section: '採寸', fields: [
+      { key: 'tie_length', label: '長さ' },
+      { key: 'tie_blade_width', label: '大剣幅' },
+    ]},
+  ],
   other: [
     { section: '採寸', fields: [
       { key: 'other_height', label: '縦' },
@@ -622,10 +628,13 @@ function renderMeasurements() {
   // 連続音声入力バー
   const voiceBar = document.createElement('div');
   voiceBar.className = 'multi-voice-bar';
+  const voiceHint = cat === 'tie'
+    ? '例:「長さ 145」「大剣幅 8」… 続けて話せます'
+    : '例:「肩幅 45」「袖丈 60.5」… 続けて話せます';
   voiceBar.innerHTML = `
     <button type="button" id="multi-voice-btn" class="multi-voice-btn">🎤 まとめて音声入力</button>
     <div id="multi-voice-status" class="multi-voice-status"></div>
-    <div class="multi-voice-hint">例:「肩幅 45」「袖丈 60.5」… 続けて話せます</div>
+    <div class="multi-voice-hint">${voiceHint}</div>
   `;
   container.appendChild(voiceBar);
 
@@ -756,6 +765,12 @@ function formatMeasurements(m) {
       line('横', v.bag_width),
       line('マチ', v.bag_depth),
       line('持ち手', v.bag_handle),
+    ].join('\n');
+  }
+  if (cat === 'tie') {
+    return [
+      line('長さ', v.tie_length),
+      line('大剣幅', v.tie_blade_width),
     ].join('\n');
   }
   if (cat === 'other') {
@@ -2165,6 +2180,12 @@ function normalizeMeasurementSpeech(text) {
 }
 
 function getMeasurementDict(cat) {
+  if (cat === 'tie') {
+    return [
+      { keys: ['長さ','ながさ','全長','ぜんちょう'], field: 'tie_length', label: '長さ' },
+      { keys: ['大剣幅','大剣巾','大剣','だいけん幅','だいけんはば'], field: 'tie_blade_width', label: '大剣幅' },
+    ];
+  }
   const suitPrefixed = [
     { keys: ['ジャケット肩幅','ジャケ肩幅'], field: 'j_shoulder', label: 'ジャケット肩幅' },
     { keys: ['ジャケット身幅','ジャケ身幅'], field: 'j_chest',    label: 'ジャケット身幅' },
@@ -2341,7 +2362,7 @@ function clampScore(s)    { return Math.max(0, Math.min(6, s)); }
 function computeMeasurementSize() {
   const cat = el('category').value;
   if (!cat) return null;
-  if (cat === 'other' || cat === 'bag') return null;  // その他・バッグはサイズ推定対象外
+  if (cat === 'other' || cat === 'bag' || cat === 'tie') return null;  // その他・バッグ・ネクタイはサイズ推定対象外
   const prefix = cat === 'suit' ? 'j_' : '';
   const isBottom = cat === 'bottoms';
   const read = (k) => {
