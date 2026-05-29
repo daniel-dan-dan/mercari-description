@@ -305,6 +305,19 @@ function renderPreviews() {
   updatePhotoSummary();
 }
 
+function removeUploadedImagesByIndices(indices) {
+  const targets = [...new Set(indices)]
+    .filter(idx => Number.isInteger(idx) && idx >= 0 && idx < uploadedImages.length)
+    .sort((a, b) => b - a);
+  if (!targets.length) return false;
+  targets.forEach(idx => uploadedImages.splice(idx, 1));
+  renderPreviews();
+  updateGenerateButton();
+  scheduleSave();
+  updateDraftChecklist();
+  return true;
+}
+
 function setupDragSort(grid) {
   let dragIdx = null;
   let autoScrollFrame = null;
@@ -3178,7 +3191,24 @@ async function applyCompose() {
   const canvas = el('compose-preview-canvas');
   if (!canvas) return;
   const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-  if (await addComposedImageToApp(dataUrl)) closeImageCompose();
+  let deletedBaseBeforeAdd = false;
+  if (uploadedImages.length >= MAX_SELECT_PHOTOS) {
+    const canDeleteBase = Number.isInteger(composeState.baseIdx);
+    if (!canDeleteBase || !confirm('写真が30枚あるため、このままでは合成画像を追加できません。貼り付け先の写真を削除して合成画像を追加しますか？')) {
+      alert(`写真選択は最大${MAX_SELECT_PHOTOS}枚までです`);
+      return;
+    }
+    deletedBaseBeforeAdd = removeUploadedImagesByIndices([composeState.baseIdx]);
+  }
+  if (await addComposedImageToApp(dataUrl)) {
+    if (!deletedBaseBeforeAdd && Number.isInteger(composeState.baseIdx)) {
+      const baseNumber = composeState.baseIdx + 1;
+      if (confirm(`合成前の貼り付け先写真（${baseNumber}枚目）を一覧から削除しますか？`)) {
+        removeUploadedImagesByIndices([composeState.baseIdx]);
+      }
+    }
+    closeImageCompose();
+  }
 }
 
 // ----- グリッド合成（2枚: 2160×2160 / 4枚: 2160×2160） -----
@@ -3320,7 +3350,19 @@ function renderGridPreviewStep() {
   applyBtn.textContent = '➕ アプリに追加';
   applyBtn.addEventListener('click', async () => {
     const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
+    const sourceIndices = [...gridComposeState.selected];
+    let deletedSourcesBeforeAdd = false;
+    if (uploadedImages.length >= MAX_SELECT_PHOTOS) {
+      if (!confirm(`写真が30枚あるため、このままでは合成画像を追加できません。合成前の${mode}枚を削除して合成画像を追加しますか？`)) {
+        alert(`写真選択は最大${MAX_SELECT_PHOTOS}枚までです`);
+        return;
+      }
+      deletedSourcesBeforeAdd = removeUploadedImagesByIndices(sourceIndices);
+    }
     if (await addComposedImageToApp(dataUrl)) {
+      if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
+        removeUploadedImagesByIndices(sourceIndices);
+      }
       el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v0429d</span>`;
       closeImageCompose();
     }
