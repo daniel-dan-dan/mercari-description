@@ -8,7 +8,8 @@ const LEGACY_API_KEY_STORAGE_KEY = 'mercari_desc_api_key';
 const SERVICE_URL_KEY = 'gasUrl';
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（AI分析用・コスト節約）
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
-const MAX_PHOTOS = 20;               // アップロード可能な写真枚数
+const MAX_SELECT_PHOTOS = 30;        // 編集素材として選べる写真枚数
+const MAX_DRAFT_PHOTOS = 20;         // メルカリ下書き保存に送れる写真枚数
 
 const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
@@ -104,8 +105,9 @@ function hideStatus(target) {
 function updatePhotoSummary() {
   const pill = el('photo-count-pill');
   if (!pill) return;
-  pill.textContent = `${uploadedImages.length}/${MAX_PHOTOS}`;
+  pill.textContent = `${uploadedImages.length}/${MAX_SELECT_PHOTOS}`;
   pill.classList.toggle('ready', uploadedImages.length >= 2);
+  pill.classList.toggle('over-limit', uploadedImages.length > MAX_DRAFT_PHOTOS);
 }
 
 // ----- 初期起動判定 -----
@@ -209,15 +211,15 @@ let uploadedImages = [];  // { dataUrl, mediaType, base64 }
 async function handlePhotoSelect(e) {
   const files = Array.from(e.target.files);
   if (!files.length) return;
-  const remaining = MAX_PHOTOS - uploadedImages.length;
+  const remaining = MAX_SELECT_PHOTOS - uploadedImages.length;
   if (remaining <= 0) {
-    alert(`写真は最大${MAX_PHOTOS}枚までです`);
+    alert(`写真選択は最大${MAX_SELECT_PHOTOS}枚までです`);
     e.target.value = '';
     return;
   }
   const toAdd = files.slice(0, remaining);
   if (files.length > remaining) {
-    alert(`最大${MAX_PHOTOS}枚までなので、先頭の${remaining}枚のみ追加します`);
+    alert(`最大${MAX_SELECT_PHOTOS}枚までなので、先頭の${remaining}枚のみ追加します`);
   }
   showStatus('status', '画像を処理中...', 'loading');
   for (const file of toAdd) {
@@ -234,6 +236,7 @@ async function handlePhotoSelect(e) {
   hideStatus('status');
   e.target.value = '';  // 同じファイル再選択可能に
   scheduleSave();
+  updateDraftChecklist();
 }
 
 function processImage(file) {
@@ -294,6 +297,7 @@ function renderPreviews() {
       renderPreviews();
       updateGenerateButton();
       scheduleSave();
+      updateDraftChecklist();
     });
   });
   const composeBtnRow = el('compose-btn-row');
@@ -3145,8 +3149,8 @@ function renderComposePreview(canvas) {
 }
 
 async function addComposedImageToApp(dataUrl) {
-  if (uploadedImages.length >= MAX_PHOTOS) {
-    alert(`写真は最大${MAX_PHOTOS}枚までです`); return false;
+  if (uploadedImages.length >= MAX_SELECT_PHOTOS) {
+    alert(`写真選択は最大${MAX_SELECT_PHOTOS}枚までです`); return false;
   }
   const img = await loadImage(dataUrl);
   const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
@@ -3166,7 +3170,7 @@ async function addComposedImageToApp(dataUrl) {
     base64: smallDataUrl.split(',')[1], base64HQ,
     originalDataUrl: smallDataUrl, adjust: { brightness: 0, temp: 0, contrast: 0 },
   });
-  renderPreviews(); updateGenerateButton(); scheduleSave();
+  renderPreviews(); updateGenerateButton(); scheduleSave(); updateDraftChecklist();
   return true;
 }
 
@@ -3389,13 +3393,20 @@ function updateDraftChecklist() {
   if (!checklist) return;
   const resultVisible = el('result-section') && !el('result-section').hidden;
   if (!resultVisible) { checklist.hidden = true; return; }
-  const hasPhotos = uploadedImages.length > 0;
+  const photoCount = uploadedImages.length;
+  const hasPhotos = photoCount > 0;
+  const hasDraftPhotoCount = hasPhotos && photoCount <= MAX_DRAFT_PHOTOS;
   const hasTitle = !!el('title-text').value.trim();
   const hasDesc = !!el('result-text').value.trim();
   const hasPrice = !!el('price-input').value.trim();
   const hasCondition = !el('mercari-settings').hidden && !!el('m-condition').value;
+  const photoLabel = !hasPhotos
+    ? '写真を選んでください'
+    : photoCount <= MAX_DRAFT_PHOTOS
+      ? `写真 ${photoCount}枚`
+      : `写真 ${photoCount}枚：下書き保存は${MAX_DRAFT_PHOTOS}枚までです`;
   const items = [
-    { ok: hasPhotos, label: hasPhotos ? `写真 ${uploadedImages.length}枚` : '写真を選んでください' },
+    { ok: hasDraftPhotoCount, label: photoLabel },
     { ok: hasTitle, label: hasTitle ? '商品名があります' : '商品名を確認してください' },
     { ok: hasDesc, label: hasDesc ? '説明文があります' : '先に説明文を生成してください' },
     { ok: hasPrice, label: hasPrice ? '価格が入力されています' : '販売価格を入力してください' },
@@ -3419,6 +3430,17 @@ async function saveDraft() {
   }
   if (!lastAiData) {
     alert('先に説明文を生成してください');
+    return;
+  }
+  if (uploadedImages.length > MAX_DRAFT_PHOTOS) {
+    const message = `メルカリ下書き保存は写真${MAX_DRAFT_PHOTOS}枚までです。現在${uploadedImages.length}枚あるため、画像合成や削除で${MAX_DRAFT_PHOTOS}枚以下にしてください。`;
+    alert(message);
+    const draftStatus = el('draft-status');
+    if (draftStatus) {
+      draftStatus.hidden = false;
+      draftStatus.textContent = '❌ ' + message;
+    }
+    updateDraftChecklist();
     return;
   }
   const price = el('price-input').value;

@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260527b">
+  <link rel="stylesheet" href="styles.css?v=20260529a">
 </head>
 <body>
   <div id="app">
@@ -22,7 +22,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260527b / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
+      <p class="settings-version" id="settings-version">v20260529a / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
     </section>
 
     <!-- メイン画面 -->
@@ -45,9 +45,9 @@
       <!-- Step 1: 写真アップロード -->
       <div class="step photo-step">
         <h2>① 写真をアップロード</h2>
-        <p class="note">全体写真・タグ写真・ディテール写真を複数枚選べます（最大20枚、最低: 全体1枚 + タグ1枚）</p>
+        <p class="note">全体写真・タグ写真・ディテール写真を最大30枚まで選べます。下書き保存は20枚までです。</p>
         <div class="photo-summary">
-          <span id="photo-count-pill" class="photo-count-pill">0/20</span>
+          <span id="photo-count-pill" class="photo-count-pill">0/30</span>
           <span>全体・タグ・詳細が揃うと精度が上がります</span>
         </div>
         <label class="file-label" for="photo-input">
@@ -348,6 +348,6 @@
 
   </div>
 
-  <script src="app.js?v=20260527b"></script>
+  <script src="app.js?v=20260529a"></script>
 </body>
 </html>

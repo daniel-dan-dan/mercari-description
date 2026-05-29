@@ -1746,6 +1746,12 @@ label {
   color: var(--brand-dark);
 }
 
+.photo-count-pill.over-limit {
+  background: #fff6f7;
+  border-color: #ff9daf;
+  color: #b9163b;
+}
+
 .file-label {
   width: 100%;
   min-height: 88px;
