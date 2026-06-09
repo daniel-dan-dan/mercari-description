@@ -2066,12 +2066,14 @@ function persistMarkdownRows() {
   writeJsonList(MARKDOWN_ROWS_KEY, markdownRows.slice(0, 300));
 }
 
-async function loadMarkdownPreview() {
+async function loadMarkdownPreview({ silent = false } = {}) {
   const btn = el('markdown-load-btn');
   btn.disabled = true;
-  setMarkdownStatus('Macから出品中商品を取得しています...');
+  if (!silent) setMarkdownStatus('Macから出品中商品を取得しています...');
   try {
-    const tunnelUrl = await getMercariServiceUrl((message) => setMarkdownStatus(message));
+    const tunnelUrl = await getMercariServiceUrl((message) => {
+      if (!silent) setMarkdownStatus(message);
+    });
     const resp = await fetchWithTimeout(`${tunnelUrl}/markdown/preview`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2082,10 +2084,10 @@ async function loadMarkdownPreview() {
     markdownRows = mergeMarkdownRows(data.listings || [], data.settings || []);
     persistMarkdownRows();
     renderMarkdownRows();
-    setMarkdownStatus(`出品中商品を取得しました（${markdownRows.length}件）`, 'success');
+    if (!silent) setMarkdownStatus(`出品中商品を取得しました（${markdownRows.length}件）`, 'success');
   } catch (e) {
     console.warn(e);
-    setMarkdownStatus(`取得に失敗しました: ${e.message}`, 'warn');
+    if (!silent) setMarkdownStatus(`取得に失敗しました: ${e.message}`, 'warn');
   } finally {
     btn.disabled = false;
   }
@@ -2161,21 +2163,64 @@ async function runMarkdownNow({ dryRun }) {
       setMarkdownStatus(statusData.message || '処理中...');
       if (statusData.status === 'done') {
         const summary = statusData.run?.summary || {};
-        setMarkdownStatus(
-          `${dryRun ? '値下げ対象の確認' : '100円値下げ'}が完了しました（更新${summary.updated || 0}件、確認のみ${summary.dryRun || 0}件、スキップ${summary.skipped || 0}件、エラー${summary.error || 0}件）`,
-          'success'
-        );
+        const finalStatus = buildMarkdownRunStatus({ dryRun, summary, run: statusData.run });
+        await loadMarkdownPreview({ silent: true });
+        setMarkdownStatus(finalStatus.message, finalStatus.kind);
         break;
       }
       if (statusData.status === 'error') throw new Error(statusData.message || '100円値下げに失敗しました');
     }
-    await loadMarkdownPreview();
   } catch (e) {
     console.warn(e);
     setMarkdownStatus(`実行に失敗しました: ${e.message}`, 'warn');
   } finally {
     btn.disabled = false;
   }
+}
+
+function buildMarkdownRunStatus({ dryRun, summary = {}, run = {} }) {
+  const updated = Number(summary.updated || 0);
+  const checked = Number(summary.dryRun || 0);
+  const skipped = Number(summary.skipped || 0);
+  const error = Number(summary.error || 0);
+  const hasProblem = skipped > 0 || error > 0;
+  const issueText = summarizeMarkdownIssues(run);
+
+  if (dryRun) {
+    if (!hasProblem) {
+      return {
+        kind: 'success',
+        message: `確認結果: 問題なし。${checked}件が100円値下げ可能です。価格は変更していません。`,
+      };
+    }
+    return {
+      kind: 'warn',
+      message: `確認結果: 要確認あり。値下げ可能${checked}件、スキップ${skipped}件、エラー${error}件。価格は変更していません。${issueText}`,
+    };
+  }
+
+  if (!hasProblem) {
+    return {
+      kind: 'success',
+      message: `100円値下げ完了: 問題なし。${updated}件を値下げしました。`,
+    };
+  }
+  return {
+    kind: 'warn',
+    message: `100円値下げ完了: 要確認あり。更新${updated}件、スキップ${skipped}件、エラー${error}件。${issueText}`,
+  };
+}
+
+function summarizeMarkdownIssues(run = {}) {
+  const issues = (run.results || [])
+    .filter(row => row.status === 'skipped' || row.status === 'error')
+    .slice(0, 3)
+    .map(row => {
+      const title = String(row.title || row.itemId || '対象不明').slice(0, 24);
+      const reason = row.message || (row.status === 'error' ? 'エラー' : 'スキップ');
+      return `${title}: ${reason}`;
+    });
+  return issues.length ? ` 主な理由: ${issues.join(' / ')}` : '';
 }
 
 function handleMarkdownFieldChange(event) {
