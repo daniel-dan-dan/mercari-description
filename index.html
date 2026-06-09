@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260529d">
+  <link rel="stylesheet" href="styles.css?v=20260609a">
 </head>
 <body>
   <div id="app">
@@ -22,7 +22,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260529d / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
+      <p class="settings-version" id="settings-version">v20260609a / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
     </section>
 
     <!-- メイン画面 -->
@@ -38,6 +38,7 @@
       <div class="app-tabs" role="tablist" aria-label="メルカリAI出品メニュー">
         <button id="description-tab-btn" class="app-tab active" type="button" role="tab" aria-selected="true" aria-controls="description-panel">説明文</button>
         <button id="research-tab-btn" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="research-panel">相場リサーチ</button>
+        <button id="markdown-tab-btn" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="markdown-panel">100円値下げ</button>
       </div>
 
       <div id="description-panel" class="tab-panel active" role="tabpanel" aria-labelledby="description-tab-btn">
@@ -332,6 +333,41 @@
           </details>
         </div>
       </div>
+
+      <div id="markdown-panel" class="tab-panel" role="tabpanel" aria-labelledby="markdown-tab-btn" hidden>
+        <div class="step markdown-step">
+          <div class="research-head">
+            <div>
+              <span class="research-kicker">毎日 20:00</span>
+              <h2>100円値下げ</h2>
+            </div>
+            <div class="research-head-badge">
+              <span>自動対象</span>
+              <strong id="markdown-enabled-count">0件</strong>
+            </div>
+          </div>
+          <p class="note">出品中の商品を取得し、下限価格を入れてONにした商品だけ毎日20:00に100円値下げします。</p>
+          <div class="research-actions">
+            <button id="markdown-load-btn" class="btn primary" type="button">出品中商品を取得</button>
+            <button id="markdown-save-btn" class="btn" type="button">設定を保存</button>
+            <button id="markdown-dry-run-btn" class="btn" type="button">dry-run確認</button>
+            <button id="markdown-run-btn" class="btn danger" type="button">今すぐ実行</button>
+          </div>
+          <p id="markdown-status" class="status" hidden></p>
+        </div>
+
+        <div class="step markdown-step">
+          <div class="research-list-head">
+            <div>
+              <span class="research-kicker">候補</span>
+              <h2>出品中商品</h2>
+            </div>
+          </div>
+          <div id="markdown-list" class="markdown-list">
+            <div class="research-empty">まだ取得していません</div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- 画像合成モーダル -->
@@ -349,6 +385,6 @@
 
   </div>
 
-  <script src="app.js?v=20260529d"></script>
+  <script src="app.js?v=20260609a"></script>
 </body>
 </html>

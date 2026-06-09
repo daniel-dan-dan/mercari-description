@@ -322,6 +322,12 @@ textarea.streaming {
 }
 .btn:active { transform: translateY(1px); }
 .btn:hover { background: #fff5f5; }
+.btn.danger {
+  color: #b22b38;
+  border-color: #f2b7bf;
+  background: #fff7f8;
+}
+.btn.danger:hover { background: #ffe8eb; }
 
 .btn.primary {
   background: linear-gradient(135deg, #ff4b55 0%, #ff7478 100%);
@@ -387,7 +393,7 @@ textarea.streaming {
 /* ========== メインタブ ========== */
 .app-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 0 0 14px;
   padding: 5px;
@@ -915,6 +921,99 @@ textarea.streaming {
   color: #8a7e99;
   font-size: 13px;
   text-align: center;
+}
+
+/* ========== 100円値下げ ========== */
+.markdown-list {
+  display: grid;
+  gap: 12px;
+}
+.markdown-card {
+  padding: 13px;
+  border: 1px solid #ecd2d7;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 4px 12px -10px rgba(30, 20, 80, 0.22);
+}
+.markdown-card.enabled {
+  border-color: #86d4bd;
+  background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
+}
+.markdown-card.disabled {
+  opacity: 0.82;
+}
+.markdown-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+.markdown-card h3 {
+  margin: 0 0 4px;
+  color: #2d1e4a;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.markdown-card a {
+  color: #0f7a69;
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.markdown-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: #f2fbf7;
+  color: #174837;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.markdown-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: #0f9b87;
+}
+.markdown-price-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+.markdown-price-grid > div,
+.markdown-price-grid > label {
+  display: grid;
+  gap: 3px;
+  min-height: 58px;
+  margin: 0;
+  padding: 8px;
+  border-radius: 12px;
+  background: #fffafa;
+  border: 1px solid #f3e4e7;
+  color: #6b5d7d;
+  font-size: 11px;
+  font-weight: 800;
+}
+.markdown-price-grid strong {
+  color: #2d1e4a;
+  font-size: 14px;
+}
+.markdown-price-grid input {
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+.markdown-card-note {
+  margin: 9px 0 0;
+  color: #8a5260;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 /* ========== 採寸 ========== */
@@ -2027,6 +2126,16 @@ select {
   }
   .research-sample {
     grid-template-columns: 1fr;
+  }
+  .markdown-card-header {
+    flex-direction: column;
+  }
+  .markdown-toggle {
+    width: 100%;
+    justify-content: center;
+  }
+  .markdown-price-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .measurement-row {
     grid-template-columns: minmax(72px, 1fr) 84px 20px 38px;

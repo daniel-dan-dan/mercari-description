@@ -17,6 +17,7 @@ const DB_STORE = 'session';
 const CATEGORY_JP = { suit: 'スーツ', tops: 'アウター/トップス', bottoms: 'ボトムス', bag: 'バッグ', tie: 'ネクタイ', other: 'その他' };
 const RESEARCH_REQUESTS_KEY = 'mercari_research_requests';
 const RESEARCH_RESULTS_KEY = 'mercari_research_results';
+const MARKDOWN_ROWS_KEY = 'mercari_markdown_rows';
 const RESEARCH_EMPTY_VALUES = new Set(['', '指定なし', 'すべて']);
 const RESEARCH_BRAND_ALIASES = [
   ['BURBERRY BLACK LABEL', ['burberry black label', 'black label crestbridge', 'ブラックレーベル']],
@@ -82,6 +83,7 @@ const MULTI_VOICE_COMPLETE_STOP_MS = 900;
 
 let lastAiData = null;
 let activeMultiVoiceSession = null;
+let markdownRows = [];
 
 // ----- 画面制御 -----
 const el = (id) => document.getElementById(id);
@@ -143,6 +145,7 @@ async function init() {
   el('price-input').addEventListener('input', updateDraftChecklist);
   el('description-tab-btn').addEventListener('click', () => switchMainTab('description'));
   el('research-tab-btn').addEventListener('click', () => switchMainTab('research'));
+  el('markdown-tab-btn').addEventListener('click', () => switchMainTab('markdown'));
   el('research-save-btn').addEventListener('click', saveResearchRequest);
   el('research-copy-btn').addEventListener('click', copyResearchRequestForNightWork);
   el('research-refresh-btn').addEventListener('click', () => refreshResearchResultsFromMac({ silent: false }));
@@ -150,6 +153,12 @@ async function init() {
   el('research-result-save-btn').addEventListener('click', saveResearchResultNote);
   el('research-request-list').addEventListener('click', handleResearchRequestAction);
   el('research-result-list').addEventListener('click', handleResearchResultAction);
+  el('markdown-load-btn').addEventListener('click', loadMarkdownPreview);
+  el('markdown-save-btn').addEventListener('click', saveMarkdownSettings);
+  el('markdown-dry-run-btn').addEventListener('click', () => runMarkdownNow({ dryRun: true }));
+  el('markdown-run-btn').addEventListener('click', () => runMarkdownNow({ dryRun: false }));
+  el('markdown-list').addEventListener('input', handleMarkdownFieldChange);
+  el('markdown-list').addEventListener('change', handleMarkdownFieldChange);
   ['research-title', 'research-keyword', 'research-category', 'research-brand', 'research-size', 'research-condition', 'research-gender', 'research-sale-status', 'research-min-price', 'research-max-price', 'research-sample-size', 'research-sort', 'research-period-months', 'research-excludes', 'research-note']
     .forEach(id => {
       const node = el(id);
@@ -181,7 +190,9 @@ async function init() {
       console.warn('セッション復元失敗:', e);
     }
   }
+  markdownRows = readJsonList(MARKDOWN_ROWS_KEY);
   renderResearchData();
+  renderMarkdownRows();
   if (serviceUrl) refreshResearchResultsFromMac({ silent: true }).catch(() => {});
   updateGenerateButton();
   updateResearchPreview();
@@ -1219,14 +1230,20 @@ function restoreState(s) {
 // ----- メインタブ / 相場リサーチ -----
 function switchMainTab(tab) {
   const description = tab === 'description';
+  const research = tab === 'research';
+  const markdown = tab === 'markdown';
   el('description-panel').hidden = !description;
-  el('research-panel').hidden = description;
+  el('research-panel').hidden = !research;
+  el('markdown-panel').hidden = !markdown;
   el('description-panel').classList.toggle('active', description);
-  el('research-panel').classList.toggle('active', !description);
+  el('research-panel').classList.toggle('active', research);
+  el('markdown-panel').classList.toggle('active', markdown);
   el('description-tab-btn').classList.toggle('active', description);
-  el('research-tab-btn').classList.toggle('active', !description);
+  el('research-tab-btn').classList.toggle('active', research);
+  el('markdown-tab-btn').classList.toggle('active', markdown);
   el('description-tab-btn').setAttribute('aria-selected', String(description));
-  el('research-tab-btn').setAttribute('aria-selected', String(!description));
+  el('research-tab-btn').setAttribute('aria-selected', String(research));
+  el('markdown-tab-btn').setAttribute('aria-selected', String(markdown));
 }
 
 function readJsonList(key) {
@@ -1987,6 +2004,249 @@ function escapeHtml(value) {
     '"': '&quot;',
     "'": '&#039;',
   }[c]));
+}
+
+// ----- 100円値下げ -----
+function setMarkdownStatus(message, kind = '') {
+  const node = el('markdown-status');
+  if (!node) return;
+  node.hidden = !message;
+  node.className = 'status ' + kind;
+  node.textContent = message || '';
+}
+
+function normalizeMarkdownItemId(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (text.includes('/item/')) {
+    return text.split('/item/')[1].split(/[?#/]/)[0];
+  }
+  return text;
+}
+
+function markdownFloor(row) {
+  const minPrice = Number(row.minPrice || 0);
+  return Math.max(300, minPrice);
+}
+
+function markdownNextPrice(row) {
+  return Math.max(0, Number(row.currentPrice || 0) - 100);
+}
+
+function markdownRemaining(row) {
+  const current = Number(row.currentPrice || 0);
+  const floor = markdownFloor(row);
+  if (!current || Number(row.minPrice || 0) < 300) return 0;
+  return Math.max(0, Math.floor((current - floor) / 100));
+}
+
+function markdownCanEnable(row) {
+  return Number(row.minPrice || 0) >= 300 && markdownNextPrice(row) >= markdownFloor(row);
+}
+
+function mergeMarkdownRows(listings, settings) {
+  const saved = new Map(markdownRows.map(row => [normalizeMarkdownItemId(row.itemId || row.url), row]));
+  const settingMap = new Map((settings || []).map(row => [normalizeMarkdownItemId(row.itemId || row.url), row]));
+  return (listings || []).map(item => {
+    const itemId = normalizeMarkdownItemId(item.itemId || item.url);
+    const old = saved.get(itemId) || {};
+    const setting = settingMap.get(itemId) || {};
+    return {
+      ...old,
+      ...setting,
+      ...item,
+      itemId,
+      minPrice: Number(setting.minPrice || old.minPrice || 0),
+      autoEnabled: Boolean(setting.autoEnabled || old.autoEnabled),
+    };
+  });
+}
+
+function persistMarkdownRows() {
+  writeJsonList(MARKDOWN_ROWS_KEY, markdownRows.slice(0, 300));
+}
+
+async function loadMarkdownPreview() {
+  const btn = el('markdown-load-btn');
+  btn.disabled = true;
+  setMarkdownStatus('Macから出品中商品を取得しています...');
+  try {
+    const tunnelUrl = await getMercariServiceUrl((message) => setMarkdownStatus(message));
+    const resp = await fetchWithTimeout(`${tunnelUrl}/markdown/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 200 }),
+    }, 90000);
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || '出品中商品の取得に失敗しました');
+    markdownRows = mergeMarkdownRows(data.listings || [], data.settings || []);
+    persistMarkdownRows();
+    renderMarkdownRows();
+    setMarkdownStatus(`出品中商品を取得しました（${markdownRows.length}件）`, 'success');
+  } catch (e) {
+    console.warn(e);
+    setMarkdownStatus(`取得に失敗しました: ${e.message}`, 'warn');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function collectMarkdownRowsFromDom() {
+  const next = markdownRows.map(row => ({ ...row }));
+  next.forEach(row => {
+    const id = CSS.escape(row.itemId);
+    const minInput = document.querySelector(`[data-markdown-min="${id}"]`);
+    const autoInput = document.querySelector(`[data-markdown-auto="${id}"]`);
+    if (minInput) row.minPrice = Number(minInput.value || 0);
+    row.autoEnabled = Boolean(autoInput?.checked) && markdownCanEnable(row);
+  });
+  markdownRows = next;
+  persistMarkdownRows();
+  return markdownRows;
+}
+
+async function saveMarkdownSettings({ silent = false } = {}) {
+  const rows = collectMarkdownRowsFromDom();
+  if (!silent) setMarkdownStatus('100円値下げ設定をMacへ保存しています...');
+  try {
+    const tunnelUrl = await getMercariServiceUrl((message) => {
+      if (!silent) setMarkdownStatus(message);
+    });
+    const resp = await fetchWithTimeout(`${tunnelUrl}/markdown/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: rows }),
+    }, 30000);
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || '設定保存に失敗しました');
+    if (!silent) setMarkdownStatus('100円値下げ設定を保存しました', 'success');
+    renderMarkdownRows();
+    return true;
+  } catch (e) {
+    console.warn(e);
+    if (!silent) setMarkdownStatus(`設定保存に失敗しました: ${e.message}`, 'warn');
+    return false;
+  }
+}
+
+async function runMarkdownNow({ dryRun }) {
+  collectMarkdownRowsFromDom();
+  const targets = markdownRows.filter(row => row.autoEnabled && markdownCanEnable(row));
+  if (!targets.length) {
+    setMarkdownStatus('実行対象がありません。下限価格を入力して自動ONにしてください。', 'warn');
+    return;
+  }
+  if (!dryRun) {
+    const ok = confirm(`${targets.length}件を今すぐ100円値下げします。実行しますか？`);
+    if (!ok) return;
+  }
+  const btn = dryRun ? el('markdown-dry-run-btn') : el('markdown-run-btn');
+  btn.disabled = true;
+  setMarkdownStatus(dryRun ? 'dry-runで対象を確認しています...' : 'Macで100円値下げを実行しています...');
+  try {
+    const saved = await saveMarkdownSettings({ silent: true });
+    if (!saved) throw new Error('設定保存に失敗したため実行を止めました');
+    const tunnelUrl = await getMercariServiceUrl((message) => setMarkdownStatus(message));
+    const resp = await fetchWithTimeout(`${tunnelUrl}/markdown/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: targets, dryRun, limit: 100 }),
+    }, 30000);
+    const data = await resp.json();
+    if (!data.ok || !data.job_id) throw new Error(data.error || '実行開始に失敗しました');
+    while (true) {
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      const statusResp = await fetchWithTimeout(`${tunnelUrl}/status/${data.job_id}`, {}, 10000);
+      const statusData = await statusResp.json();
+      setMarkdownStatus(statusData.message || '処理中...');
+      if (statusData.status === 'done') {
+        const summary = statusData.run?.summary || {};
+        setMarkdownStatus(
+          `${dryRun ? 'dry-run確認' : '100円値下げ'}が完了しました（更新${summary.updated || 0}件、dry-run${summary.dryRun || 0}件、スキップ${summary.skipped || 0}件、エラー${summary.error || 0}件）`,
+          'success'
+        );
+        break;
+      }
+      if (statusData.status === 'error') throw new Error(statusData.message || '100円値下げに失敗しました');
+    }
+    await loadMarkdownPreview();
+  } catch (e) {
+    console.warn(e);
+    setMarkdownStatus(`実行に失敗しました: ${e.message}`, 'warn');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function handleMarkdownFieldChange(event) {
+  const target = event.target;
+  const itemId = normalizeMarkdownItemId(target.dataset.markdownMin || target.dataset.markdownAuto || '');
+  if (!itemId) return;
+  const row = markdownRows.find(item => item.itemId === itemId);
+  if (!row) return;
+  if (target.dataset.markdownMin) {
+    row.minPrice = Number(target.value || 0);
+    if (!markdownCanEnable(row)) row.autoEnabled = false;
+  }
+  if (target.dataset.markdownAuto) {
+    row.autoEnabled = Boolean(target.checked) && markdownCanEnable(row);
+  }
+  persistMarkdownRows();
+  if (event.type === 'input' && target.dataset.markdownMin) {
+    const count = el('markdown-enabled-count');
+    if (count) {
+      count.textContent = `${markdownRows.filter(item => item.autoEnabled && markdownCanEnable(item)).length}件`;
+    }
+    return;
+  }
+  renderMarkdownRows();
+}
+
+function renderMarkdownRows() {
+  const list = el('markdown-list');
+  const count = el('markdown-enabled-count');
+  if (!list) return;
+  const enabledCount = markdownRows.filter(row => row.autoEnabled && markdownCanEnable(row)).length;
+  if (count) count.textContent = `${enabledCount}件`;
+  if (!markdownRows.length) {
+    list.innerHTML = '<div class="research-empty">まだ取得していません</div>';
+    return;
+  }
+  list.innerHTML = markdownRows.map(row => renderMarkdownCard(row)).join('');
+}
+
+function renderMarkdownCard(row) {
+  const itemId = row.itemId;
+  const minPrice = Number(row.minPrice || 0);
+  const canEnable = markdownCanEnable(row);
+  const autoChecked = Boolean(row.autoEnabled) && canEnable;
+  const nextPrice = markdownNextPrice(row);
+  const reason = minPrice < 300
+    ? '下限価格を入力してください'
+    : (!canEnable ? '次回値下げで下限を下回ります' : '20時の自動対象です');
+  return `
+    <article class="markdown-card ${autoChecked ? 'enabled' : ''} ${canEnable ? '' : 'disabled'}" data-markdown-id="${escapeHtml(itemId)}">
+      <div class="markdown-card-header">
+        <div>
+          <h3>${escapeHtml(row.title || 'タイトル未取得')}</h3>
+          <a href="${escapeHtml(row.url || '#')}" target="_blank" rel="noopener">${escapeHtml(itemId)}</a>
+        </div>
+        <label class="markdown-toggle">
+          <input type="checkbox" data-markdown-auto="${escapeHtml(itemId)}" ${autoChecked ? 'checked' : ''} ${canEnable ? '' : 'disabled'}>
+          <span>自動ON</span>
+        </label>
+      </div>
+      <div class="markdown-price-grid">
+        <div><span>現在</span><strong>${formatYen(row.currentPrice)}</strong></div>
+        <div><span>次回</span><strong>${nextPrice > 0 ? formatYen(nextPrice) : '-'}</strong></div>
+        <label>下限
+          <input type="number" min="300" step="100" inputmode="numeric" value="${minPrice || ''}" placeholder="例: 1200" data-markdown-min="${escapeHtml(itemId)}">
+        </label>
+        <div><span>残り</span><strong>${markdownRemaining(row)}回</strong></div>
+      </div>
+      <p class="markdown-card-note">${escapeHtml(reason)}</p>
+    </article>
+  `;
 }
 
 // ----- リセット -----
