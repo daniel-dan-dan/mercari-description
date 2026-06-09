@@ -2142,7 +2142,7 @@ async function runMarkdownNow({ dryRun }) {
   }
   const btn = dryRun ? el('markdown-dry-run-btn') : el('markdown-run-btn');
   btn.disabled = true;
-  setMarkdownStatus(dryRun ? 'dry-runで対象を確認しています...' : 'Macで100円値下げを実行しています...');
+  setMarkdownStatus(dryRun ? '値下げ対象だけ確認しています。価格は変更しません...' : 'Macで100円値下げを実行しています...');
   try {
     const saved = await saveMarkdownSettings({ silent: true });
     if (!saved) throw new Error('設定保存に失敗したため実行を止めました');
@@ -2162,7 +2162,7 @@ async function runMarkdownNow({ dryRun }) {
       if (statusData.status === 'done') {
         const summary = statusData.run?.summary || {};
         setMarkdownStatus(
-          `${dryRun ? 'dry-run確認' : '100円値下げ'}が完了しました（更新${summary.updated || 0}件、dry-run${summary.dryRun || 0}件、スキップ${summary.skipped || 0}件、エラー${summary.error || 0}件）`,
+          `${dryRun ? '値下げ対象の確認' : '100円値下げ'}が完了しました（更新${summary.updated || 0}件、確認のみ${summary.dryRun || 0}件、スキップ${summary.skipped || 0}件、エラー${summary.error || 0}件）`,
           'success'
         );
         break;

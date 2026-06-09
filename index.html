@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260609a">
+  <link rel="stylesheet" href="styles.css?v=20260609b">
 </head>
 <body>
   <div id="app">
@@ -22,7 +22,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260609a / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
+      <p class="settings-version" id="settings-version">v20260609b / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
     </section>
 
     <!-- メイン画面 -->
@@ -350,7 +350,7 @@
           <div class="research-actions">
             <button id="markdown-load-btn" class="btn primary" type="button">出品中商品を取得</button>
             <button id="markdown-save-btn" class="btn" type="button">設定を保存</button>
-            <button id="markdown-dry-run-btn" class="btn" type="button">dry-run確認</button>
+            <button id="markdown-dry-run-btn" class="btn" type="button">値下げ対象だけ確認（価格は変えない）</button>
             <button id="markdown-run-btn" class="btn danger" type="button">今すぐ実行</button>
           </div>
           <p id="markdown-status" class="status" hidden></p>
@@ -385,6 +385,6 @@
 
   </div>
 
-  <script src="app.js?v=20260609a"></script>
+  <script src="app.js?v=20260609b"></script>
 </body>
 </html>
