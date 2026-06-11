@@ -6,6 +6,7 @@
 
 const LEGACY_API_KEY_STORAGE_KEY = 'mercari_desc_api_key';
 const SERVICE_URL_KEY = 'gasUrl';
+const FALLBACK_GAS_URL = 'https://script.google.com/macros/s/AKfycbwYfwDG7Kqplk2oVeX7kF_gsAKTlK087ToE4LGp5R7PglTFMARP2lrA6ZV9m3MD0LEs/exec';
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（AI分析用・コスト節約）
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
 const MAX_SELECT_PHOTOS = 30;        // 編集素材として選べる写真枚数
@@ -114,7 +115,7 @@ function updatePhotoSummary() {
 
 // ----- 初期起動判定 -----
 async function init() {
-  const serviceUrl = localStorage.getItem(SERVICE_URL_KEY);
+  const serviceUrl = getPreferredGasUrl();
   if (localStorage.getItem(LEGACY_API_KEY_STORAGE_KEY)) {
     localStorage.removeItem(LEGACY_API_KEY_STORAGE_KEY);
   }
@@ -175,11 +176,8 @@ async function init() {
   setupDragSort(el('photo-preview'));
 
   // GAS URL読み込み
-  const savedGasUrl = localStorage.getItem(SERVICE_URL_KEY);
-  if (savedGasUrl) {
-    const gasUrlInput = el('gas-url-input');
-    if (gasUrlInput) gasUrlInput.value = savedGasUrl;
-  }
+  const gasUrlInput = el('gas-url-input');
+  if (gasUrlInput) gasUrlInput.value = serviceUrl || '';
 
   // 前回のセッションを復元
   if (serviceUrl) {
@@ -201,7 +199,7 @@ async function init() {
 // ----- 設定 -----
 function saveSettings() {
   const gasUrlInput = el('gas-url-input');
-  const gasUrl = gasUrlInput ? gasUrlInput.value.trim() : '';
+  const gasUrl = normalizeGasUrl(gasUrlInput ? gasUrlInput.value : '');
   if (!gasUrl) { alert('GAS URLを入力してください'); return; }
   localStorage.setItem(SERVICE_URL_KEY, gasUrl);
   if (localStorage.getItem(LEGACY_API_KEY_STORAGE_KEY)) {
@@ -212,7 +210,7 @@ function saveSettings() {
 
 function openSettings() {
   const gasUrlInput = el('gas-url-input');
-  if (gasUrlInput) gasUrlInput.value = localStorage.getItem(SERVICE_URL_KEY) || '';
+  if (gasUrlInput) gasUrlInput.value = getPreferredGasUrl();
   showScreen('setup-screen');
 }
 
@@ -910,11 +908,23 @@ function fetchWithTimeout(url, opts = {}, ms = 15000) {
   return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(tid));
 }
 
-async function getMercariServiceUrl(statusCallback) {
-  const gasUrl = localStorage.getItem(SERVICE_URL_KEY);
-  if (!gasUrl) throw new Error('設定画面でGAS URLを入力してください');
+function normalizeGasUrl(url) {
+  return String(url || '').trim().replace(/\/+$/, '');
+}
 
-  statusCallback?.('MacサービスURLを取得中...');
+function getPreferredGasUrl() {
+  return normalizeGasUrl(localStorage.getItem(SERVICE_URL_KEY)) || FALLBACK_GAS_URL;
+}
+
+function getGasUrlCandidates() {
+  const urls = [
+    normalizeGasUrl(localStorage.getItem(SERVICE_URL_KEY)),
+    FALLBACK_GAS_URL,
+  ].filter(Boolean);
+  return Array.from(new Set(urls));
+}
+
+async function fetchTunnelUrlFromGas(gasUrl) {
   const gasResp = await fetchWithTimeout(
     gasUrl,
     {
@@ -925,41 +935,64 @@ async function getMercariServiceUrl(statusCallback) {
     },
     15000
   );
-  const gasData = await gasResp.json();
-  let tunnelUrl = (gasData.data && gasData.data.url) || '';
+  const text = await gasResp.text();
+  let gasData;
+  try {
+    gasData = JSON.parse(text);
+  } catch (_) {
+    const preview = text.replace(/\s+/g, ' ').slice(0, 80);
+    throw new Error(`GAS URLの応答がJSONではありません（古いURLの可能性）: ${preview}`);
+  }
+  if (!gasResp.ok || gasData.success === false) {
+    throw new Error(gasData.error || `GAS URLエラー (${gasResp.status})`);
+  }
+  let tunnelUrl = (gasData.data && gasData.data.url) || gasData.url || '';
   if (!tunnelUrl) throw new Error('Macのメルカリ自動入力サービスが起動していません。Macでstart.pyを確認してください。');
-  tunnelUrl = tunnelUrl.replace(/\/+$/, '');
+  return normalizeGasUrl(tunnelUrl);
+}
 
-  statusCallback?.('Macサービスに接続確認中...');
-  const pingOk = async (url) => {
-    const resp = await fetchWithTimeout(`${url}/ping`, {}, 8000);
-    const json = await resp.json();
-    return !!json.ok;
-  };
+async function pingMacService(url) {
+  const resp = await fetchWithTimeout(`${url}/ping`, {}, 8000);
+  const json = await resp.json();
+  return !!json.ok;
+}
 
-  let passed = false;
-  try { passed = await pingOk(tunnelUrl); } catch (_) {}
-  if (!passed) {
-    statusCallback?.('トンネル再接続中... (3秒後に再試行)');
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    const retryResp = await fetchWithTimeout(
-      gasUrl,
-      {
-        method: 'POST',
-        mode: 'cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'getTunnelUrl' }),
-      },
-      15000
-    );
-    const retryData = await retryResp.json();
-    tunnelUrl = ((retryData.data && retryData.data.url) || tunnelUrl).replace(/\/+$/, '');
-    statusCallback?.('再接続確認中...');
-    try { passed = await pingOk(tunnelUrl); } catch (_) {}
+async function getMercariServiceUrl(statusCallback) {
+  const gasUrls = getGasUrlCandidates();
+  if (!gasUrls.length) throw new Error('設定画面でGAS URLを入力してください');
+
+  const errors = [];
+  for (let i = 0; i < gasUrls.length; i += 1) {
+    const gasUrl = gasUrls[i];
+    const label = i === 0 ? 'MacサービスURLを取得中...' : '予備GAS URLでMacサービスURLを取得中...';
+    try {
+      statusCallback?.(label);
+      let tunnelUrl = await fetchTunnelUrlFromGas(gasUrl);
+
+      statusCallback?.('Macサービスに接続確認中...');
+      let passed = false;
+      try { passed = await pingMacService(tunnelUrl); } catch (_) {}
+      if (!passed) {
+        statusCallback?.('トンネル再接続中... (3秒後に再試行)');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        tunnelUrl = await fetchTunnelUrlFromGas(gasUrl);
+        statusCallback?.('再接続確認中...');
+        try { passed = await pingMacService(tunnelUrl); } catch (_) {}
+      }
+
+      if (!passed) throw new Error('Macサービスに接続できません。Cloudflare tunnelの再起動が必要です。');
+      if (normalizeGasUrl(localStorage.getItem(SERVICE_URL_KEY)) !== gasUrl) {
+        localStorage.setItem(SERVICE_URL_KEY, gasUrl);
+        const gasUrlInput = el('gas-url-input');
+        if (gasUrlInput) gasUrlInput.value = gasUrl;
+      }
+      return tunnelUrl;
+    } catch (err) {
+      errors.push(err.message || String(err));
+    }
   }
 
-  if (!passed) throw new Error('Macサービスに接続できません。Cloudflare tunnelの再起動が必要です。');
-  return tunnelUrl;
+  throw new Error(`MacサービスURLを取得できませんでした。${errors.join(' / ')}`);
 }
 
 async function callDescriptionAi(images, onChunk) {
