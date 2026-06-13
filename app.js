@@ -1071,10 +1071,14 @@ async function callDescriptionAi(images, onChunk) {
 
   const data = await readJsonResponse(res, 'AI生成');
   if (!res.ok) {
-    throw new Error(data.error || `AI APIエラー (${res.status})`);
+    const requestId = data.requestId ? `（管理ID: ${String(data.requestId).slice(0, 8)}）` : '';
+    throw new Error((data.error || `AI APIエラー (${res.status})`) + requestId);
   }
   if (!data.text) {
     throw new Error('AI応答が空でした');
+  }
+  if (data.attempts > 1 && onChunk) {
+    onChunk(`AI生成が一時失敗したため、自動再試行して成功しました（${data.attempts}回目）。`);
   }
   if (onChunk) onChunk(data.text);
   return data.text;
