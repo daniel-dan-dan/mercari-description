@@ -11,6 +11,8 @@ const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（AI分�
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
 const MAX_SELECT_PHOTOS = 30;        // 編集素材として選べる写真枚数
 const MAX_DRAFT_PHOTOS = 20;         // メルカリ下書き保存に送れる写真枚数
+const MAX_AI_PHOTOS = 12;            // AI分析に送る写真枚数。通信安定のため下書き枚数より少なくする
+const MAX_AI_PAYLOAD_BYTES = 12 * 1024 * 1024;
 
 const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
@@ -908,6 +910,34 @@ function fetchWithTimeout(url, opts = {}, ms = 15000) {
   return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(tid));
 }
 
+function estimateJsonBytes(value) {
+  const text = JSON.stringify(value);
+  if (window.TextEncoder) return new TextEncoder().encode(text).length;
+  return text.length;
+}
+
+function formatNetworkError(err, label) {
+  const raw = (err && err.message) ? err.message : String(err || '');
+  if (err && err.name === 'AbortError') {
+    return `${label}がタイムアウトしました。写真枚数を減らすか、少し時間を置いて再実行してください。`;
+  }
+  if (/load failed|failed to fetch|networkerror/i.test(raw)) {
+    return `${label}に失敗しました。Macサービスまたはトンネルの通信が切れた可能性があります。写真が多い場合は、先頭12枚までに減らして再実行してください。`;
+  }
+  return `${label}に失敗しました: ${raw}`;
+}
+
+async function readJsonResponse(response, label) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    const preview = text.replace(/\s+/g, ' ').slice(0, 120);
+    throw new Error(`${label}の応答をJSONとして読めませんでした (${response.status}): ${preview}`);
+  }
+}
+
 function normalizeGasUrl(url) {
   return String(url || '').trim().replace(/\/+$/, '');
 }
@@ -952,8 +982,13 @@ async function fetchTunnelUrlFromGas(gasUrl) {
 }
 
 async function pingMacService(url) {
-  const resp = await fetchWithTimeout(`${url}/ping`, {}, 8000);
-  const json = await resp.json();
+  let resp;
+  try {
+    resp = await fetchWithTimeout(`${url}/ping`, {}, 8000);
+  } catch (err) {
+    throw new Error(formatNetworkError(err, 'Macサービス接続確認'));
+  }
+  const json = await readJsonResponse(resp, 'Macサービス接続確認');
   return !!json.ok;
 }
 
@@ -1000,21 +1035,41 @@ async function callDescriptionAi(images, onChunk) {
     if (onChunk) onChunk(message);
   });
 
-  if (onChunk) onChunk('AIが画像を分析中...');
-  const res = await fetchWithTimeout(
-    `${tunnelUrl}/describe`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        images: images.map(img => ({ mediaType: img.mediaType, base64: img.base64 })),
-        systemPrompt: SYSTEM_PROMPT,
-      }),
-    },
-    120000
-  );
+  const aiImages = images.slice(0, MAX_AI_PHOTOS).map(img => ({
+    mediaType: img.mediaType,
+    base64: img.base64,
+  }));
+  const omittedCount = Math.max(0, images.length - aiImages.length);
+  const payload = {
+    images: aiImages,
+    systemPrompt: SYSTEM_PROMPT,
+  };
+  const payloadBytes = estimateJsonBytes(payload);
+  if (payloadBytes > MAX_AI_PAYLOAD_BYTES) {
+    throw new Error(`写真データが大きすぎます。現在約${Math.ceil(payloadBytes / 1024 / 1024)}MBです。写真を減らすか、合成してから再実行してください。`);
+  }
 
-  const data = await res.json();
+  if (onChunk) {
+    const suffix = omittedCount ? `（AI分析は先頭${MAX_AI_PHOTOS}枚まで。残り${omittedCount}枚は下書き保存には残ります）` : '';
+    onChunk(`AIが画像を分析中...${suffix}`);
+  }
+
+  let res;
+  try {
+    res = await fetchWithTimeout(
+      `${tunnelUrl}/describe`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      120000
+    );
+  } catch (err) {
+    throw new Error(formatNetworkError(err, 'AI生成通信'));
+  }
+
+  const data = await readJsonResponse(res, 'AI生成');
   if (!res.ok) {
     throw new Error(data.error || `AI APIエラー (${res.status})`);
   }
