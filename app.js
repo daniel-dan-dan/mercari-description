@@ -57,6 +57,37 @@ const MERCARI_CATEGORY_OPTIONS = [
   { key: 'women_shoes', label: 'レディース > 靴 > ハイヒール/パンプス', path: ['レディース', '靴', 'ハイヒール/パンプス'] },
 ];
 const MERCARI_CATEGORY_OPTION_MAP = Object.fromEntries(MERCARI_CATEGORY_OPTIONS.map(option => [option.key, option]));
+const MERCARI_SIZE_OPTIONS = [
+  { value: '', label: '未選択（手動/不要）' },
+  { value: 'XXS', label: 'XXS' },
+  { value: 'XS', label: 'XS' },
+  { value: 'S', label: 'S' },
+  { value: 'M', label: 'M' },
+  { value: 'L', label: 'L' },
+  { value: 'XL', label: 'XL' },
+  { value: '2XL', label: '2XL' },
+  { value: '3XL', label: '3XL' },
+  { value: '4XL', label: '4XL' },
+  { value: 'FREE SIZE', label: 'FREE SIZE' },
+  { value: '22cm', label: '22cm' },
+  { value: '22.5cm', label: '22.5cm' },
+  { value: '23cm', label: '23cm' },
+  { value: '23.5cm', label: '23.5cm' },
+  { value: '24cm', label: '24cm' },
+  { value: '24.5cm', label: '24.5cm' },
+  { value: '25cm', label: '25cm' },
+  { value: '25.5cm', label: '25.5cm' },
+  { value: '26cm', label: '26cm' },
+  { value: '26.5cm', label: '26.5cm' },
+  { value: '27cm', label: '27cm' },
+  { value: '27.5cm', label: '27.5cm' },
+  { value: '28cm', label: '28cm' },
+  { value: '28.5cm', label: '28.5cm' },
+  { value: '29cm', label: '29cm' },
+  { value: '29.5cm', label: '29.5cm' },
+  { value: '30cm', label: '30cm' },
+];
+const MERCARI_SIZE_OPTION_VALUES = new Set(MERCARI_SIZE_OPTIONS.map(option => option.value));
 const RESEARCH_REQUESTS_KEY = 'mercari_research_requests';
 const RESEARCH_RESULTS_KEY = 'mercari_research_results';
 const MARKDOWN_ROWS_KEY = 'mercari_markdown_rows';
@@ -170,6 +201,107 @@ function formatMercariCategoryPrompt() {
     .join('\n');
 }
 
+function cleanAiText(value) {
+  const text = String(value || '').trim();
+  if (!text || text === '---' || text === '不明') return '';
+  return text;
+}
+
+function getPreferredMercariBrand(aiData) {
+  const en = cleanAiText(aiData?.brand_en);
+  const jp = cleanAiText(aiData?.brand);
+  return en || jp || '';
+}
+
+function renderMercariSizeOptions() {
+  const select = el('m-size');
+  if (!select) return;
+  select.innerHTML = MERCARI_SIZE_OPTIONS.map(option =>
+    `<option value="${option.value}">${option.label}</option>`
+  ).join('');
+}
+
+function getSelectedMercariSize() {
+  const node = el('m-size');
+  return node ? node.value : '';
+}
+
+function isShoeCategoryKey(categoryKey) {
+  return /_shoes$/.test(normalizeMercariCategoryKey(categoryKey));
+}
+
+function isMercariSizeRequiredForCategoryKey(categoryKey) {
+  const key = normalizeMercariCategoryKey(categoryKey);
+  if (key === 'unknown') return false;
+  return !/(bag|tie)$/.test(key);
+}
+
+function normalizeMercariSizeLabel(raw, categoryKey) {
+  if (!raw) return '';
+  const text = String(raw).trim();
+  if (!text || text === '---') return '';
+  const upper = text.toUpperCase().replace(/\s+/g, '');
+  if (/^(FREE|ONESIZE|FREESIZE|フリー|フリーサイズ)$/.test(upper)) return 'FREE SIZE';
+
+  if (isShoeCategoryKey(categoryKey)) {
+    const cm = upper.match(/(\d{2}(?:\.\d)?)(?:CM|センチ)?/);
+    if (cm) {
+      const value = `${String(Number(cm[1])).replace(/\.0$/, '')}cm`;
+      if (MERCARI_SIZE_OPTION_VALUES.has(value)) return value;
+    }
+  }
+
+  const normalized = normalizeTagSize(text);
+  if (!normalized) return '';
+  const map = { XXL: '2XL', XXXL: '3XL' };
+  const mercari = map[normalized] || normalized;
+  return MERCARI_SIZE_OPTION_VALUES.has(mercari) ? mercari : '';
+}
+
+function deriveMercariSize(aiData, categoryKey = getSelectedMercariCategoryKey()) {
+  const tagRaw = aiData?.tag_size || '';
+  const tagSize = normalizeMercariSizeLabel(tagRaw, categoryKey);
+  const measurement = computeMeasurementSize();
+  const measuredSize = normalizeMercariSizeLabel(measurement?.size || '', categoryKey);
+
+  if (tagSize && measurement) {
+    const measuredForDiff = normalizeTagSize(measurement.size);
+    const tagForDiff = normalizeTagSize(tagRaw) || normalizeTagSize(tagSize);
+    const tagIndex = tagForDiff ? SIZE_LABELS.indexOf(tagForDiff) : -1;
+    const measuredIndex = measuredForDiff ? SIZE_LABELS.indexOf(measuredForDiff) : -1;
+    const diff = (tagIndex >= 0 && measuredIndex >= 0)
+      ? Math.abs(tagIndex - measuredIndex)
+      : 0;
+    return {
+      value: tagSize,
+      source: 'tag',
+      note: diff >= 2
+        ? `タグ「${tagRaw}」を優先。採寸推定は${measurement.size}で差があります`
+        : `タグ「${tagRaw}」を優先。採寸推定は${measurement.size}`,
+    };
+  }
+  if (tagSize) {
+    return { value: tagSize, source: 'tag', note: `タグ「${tagRaw}」から自動判定` };
+  }
+  if (measuredSize) {
+    return { value: measuredSize, source: 'measurement', note: `採寸から自動判定: ${measurement.detail}` };
+  }
+  return { value: '', source: 'none', note: 'サイズを自動判定できませんでした' };
+}
+
+function updateMercariSizeNote(result) {
+  const note = el('m-size-note');
+  if (!note) return;
+  const selected = getSelectedMercariSize();
+  if (selected) {
+    note.textContent = result?.note || `選択サイズ: ${selected}`;
+    note.classList.remove('unknown');
+  } else {
+    note.textContent = result?.note || 'サイズなし、または手動で選んでください';
+    note.classList.add('unknown');
+  }
+}
+
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.hidden = true);
   el(id).hidden = false;
@@ -212,6 +344,7 @@ async function init() {
   el('reset-btn').addEventListener('click', resetAll);
   el('photo-input').addEventListener('change', handlePhotoSelect);
   renderMercariCategoryOptions();
+  renderMercariSizeOptions();
   el('category').addEventListener('change', () => {
     renderMeasurements();
     scheduleSave();
@@ -222,6 +355,21 @@ async function init() {
   el('result-text').addEventListener('input', () => { scheduleSave(); updateDraftChecklist(); });
   el('m-category').addEventListener('change', () => {
     updateMercariCategoryPath();
+    const sizeResult = deriveMercariSize(lastAiData, getSelectedMercariCategoryKey());
+    if (el('m-size') && !el('m-size').dataset.userEdited) {
+      el('m-size').value = sizeResult.value;
+    }
+    updateMercariSizeNote(sizeResult);
+    scheduleSave();
+    updateDraftChecklist();
+  });
+  el('m-brand').addEventListener('input', () => {
+    scheduleSave();
+    updateDraftChecklist();
+  });
+  el('m-size').addEventListener('change', () => {
+    el('m-size').dataset.userEdited = '1';
+    updateMercariSizeNote({ note: getSelectedMercariSize() ? `手動選択: ${getSelectedMercariSize()}` : 'サイズなし、または手動で選んでください' });
     scheduleSave();
     updateDraftChecklist();
   });
@@ -1262,6 +1410,8 @@ async function generateDescription() {
     const measurementText = formatMeasurements(measurements);
     const description = buildDescription(aiData, measurementText);
     const mercariCategoryKey = normalizeMercariCategoryKey(aiData.mercari_category_key);
+    const mercariBrand = getPreferredMercariBrand(aiData);
+    const mercariSizeResult = deriveMercariSize(aiData, mercariCategoryKey);
     textarea.value = description;
     // 商品名（タイトル）をセット
     const brand = aiData.brand || '';
@@ -1275,6 +1425,11 @@ async function generateDescription() {
       description: description,
       category: measurements.category,
       mercari_category_key: mercariCategoryKey,
+      brand: aiData.brand || '',
+      brand_en: aiData.brand_en || '',
+      tag_size: aiData.tag_size || '',
+      mercari_brand: mercariBrand,
+      mercari_size: mercariSizeResult.value,
       measurements: measurements,
       images: uploadedImages,
     };
@@ -1283,7 +1438,11 @@ async function generateDescription() {
     el('mercari-settings').hidden = false;
     if (aiData.mercari_condition) el('m-condition').value = aiData.mercari_condition;
     el('m-category').value = mercariCategoryKey;
+    el('m-brand').value = mercariBrand;
+    el('m-size').dataset.userEdited = '';
+    el('m-size').value = mercariSizeResult.value;
     updateMercariCategoryPath();
+    updateMercariSizeNote(mercariSizeResult);
     updateDraftChecklist();
     hideStatus('status');
   } catch (err) {
@@ -1366,6 +1525,8 @@ function collectState() {
     mercariSettingsVisible: !el('mercari-settings').hidden,
     mercariCondition: el('m-condition').value,
     mercariCategoryKey: getSelectedMercariCategoryKey(),
+    mercariBrand: el('m-brand').value,
+    mercariSize: getSelectedMercariSize(),
   };
 }
 
@@ -1412,7 +1573,10 @@ function restoreState(s) {
     el('mercari-settings').hidden = false;
     if (s.mercariCondition) el('m-condition').value = s.mercariCondition;
     if (s.mercariCategoryKey) el('m-category').value = normalizeMercariCategoryKey(s.mercariCategoryKey);
+    if (s.mercariBrand) el('m-brand').value = s.mercariBrand;
+    if (s.mercariSize) el('m-size').value = s.mercariSize;
     updateMercariCategoryPath();
+    updateMercariSizeNote({ note: s.mercariSize ? `保存済み: ${s.mercariSize}` : 'サイズなし、または手動で選んでください' });
   }
   updateGenerateButton();
   updatePhotoSummary();
@@ -2930,11 +3094,12 @@ function combineScores(parts) {
 function normalizeTagSize(raw) {
   if (!raw) return null;
   const t = String(raw).toUpperCase().trim();
-  if (t === '---' || t === '' || t === 'FREE' || t === 'ONE SIZE') return null;
+  if (t === '---' || t === '') return null;
 
   // 文字表記
-  if (/^(XXXL|LLL|3L)$/.test(t)) return 'XXXL';
-  if (/^(XXL|2L)$/.test(t))      return 'XXL';
+  if (/^(FREE|FREE SIZE|ONE SIZE|ONESIZE|フリー|フリーサイズ)$/.test(t)) return 'FREE SIZE';
+  if (/^(XXXL|3XL|LLL|3L)$/.test(t)) return 'XXXL';
+  if (/^(XXL|2XL|2L)$/.test(t))      return 'XXL';
   if (/^(XL|LL)$/.test(t))       return 'XL';
   if (/^L$/.test(t))             return 'L';
   if (/^M$/.test(t))             return 'M';
@@ -2986,7 +3151,8 @@ function renderFinalSize(aiData) {
   // タグが読めればタグを最終回答、採寸は整合チェック用
   let finalSize, note, warn = false;
   if (tagNorm && measurement) {
-    const diff = Math.abs(SIZE_LABELS.indexOf(tagNorm) - measurement.index);
+    const tagIndex = SIZE_LABELS.indexOf(tagNorm);
+    const diff = tagIndex >= 0 ? Math.abs(tagIndex - measurement.index) : 0;
     finalSize = tagNorm;
     if (diff >= 2) {
       warn = true;
@@ -3003,11 +3169,12 @@ function renderFinalSize(aiData) {
     finalSize = measurement.size;
     note = `採寸推定: ${measurement.detail}（タグ読取不可）`;
   }
+  const mercariFinalSize = normalizeMercariSizeLabel(finalSize, getSelectedMercariCategoryKey()) || finalSize;
 
   badge.className = 'final-size-badge' + (warn ? ' warn' : '');
   badge.innerHTML = `
     <div class="fs-head">🏷 メルカリのサイズ選択推奨</div>
-    <div class="fs-size">${finalSize}</div>
+    <div class="fs-size">${mercariFinalSize}</div>
     <div class="fs-note">${note}</div>
   `;
   badge.hidden = false;
@@ -3968,6 +4135,10 @@ function updateDraftChecklist() {
   const hasCondition = !el('mercari-settings').hidden && !!el('m-condition').value;
   const categoryOption = getMercariCategoryOption(getSelectedMercariCategoryKey());
   const hasMercariCategory = !el('mercari-settings').hidden && categoryOption.path.length > 0;
+  const mercariBrand = el('m-brand').value.trim();
+  const mercariSize = getSelectedMercariSize();
+  const sizeRequired = isMercariSizeRequiredForCategoryKey(getSelectedMercariCategoryKey());
+  const hasRequiredSize = !sizeRequired || !!mercariSize;
   const photoLabel = !hasPhotos
     ? '写真を選んでください'
     : photoCount <= MAX_DRAFT_PHOTOS
@@ -3980,6 +4151,8 @@ function updateDraftChecklist() {
     { ok: hasPrice, label: hasPrice ? '価格が入力されています' : '販売価格を入力してください' },
     { ok: hasCondition, label: hasCondition ? '状態が選択されています' : '商品の状態を確認してください' },
     { ok: hasMercariCategory, label: hasMercariCategory ? `カテゴリ: ${categoryOption.label}` : 'メルカリ詳細カテゴリを確認してください' },
+    { ok: true, label: mercariBrand ? `ブランド: ${mercariBrand}` : 'ブランド: 空欄（見つからない場合はOK）' },
+    { ok: hasRequiredSize, label: mercariSize ? `サイズ: ${mercariSize}` : (sizeRequired ? 'サイズを確認してください' : 'サイズ: 不要/手動') },
   ];
   checklist.hidden = false;
   checklist.innerHTML = items.map(item =>
@@ -4041,6 +4214,8 @@ async function saveDraft() {
       mercari_category_key: mercariCategoryKey,
       mercari_category_label: mercariCategoryOption.label,
       mercari_category: [...mercariCategoryOption.path],
+      mercari_brand: el('m-brand').value.trim(),
+      mercari_size: getSelectedMercariSize(),
       photos: uploadedImages.map(img => ({ base64: img.base64HQ || img.base64, mediaType: img.mediaType })),
       mercari_condition: el('m-condition').value,
       mercari_shipping: 'らくらくメルカリ便',

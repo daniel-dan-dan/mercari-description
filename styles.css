@@ -1353,6 +1353,22 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
   border-color: #f5d6a6;
   color: #855600;
 }
+.mercari-size-note {
+  margin: 6px 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f4fbf7;
+  border: 1px solid #ccebd8;
+  color: #176245;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+.mercari-size-note.unknown {
+  background: #fff8ec;
+  border-color: #f5d6a6;
+  color: #855600;
+}
 .draft-title {
   margin: 0 0 8px;
   font-size: 14px;
