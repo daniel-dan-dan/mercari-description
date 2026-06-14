@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260613b">
+  <link rel="stylesheet" href="styles.css?v=20260614a">
 </head>
 <body>
   <div id="app">
@@ -22,7 +22,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260613b / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
+      <p class="settings-version" id="settings-version">v20260614a / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
     </section>
 
     <!-- メイン画面 -->
@@ -121,6 +121,10 @@
               <option value="傷や汚れあり">傷や汚れあり</option>
               <option value="全体的に状態が悪い">全体的に状態が悪い</option>
             </select>
+
+            <label for="m-category">メルカリ詳細カテゴリ</label>
+            <select id="m-category"></select>
+            <p id="m-category-path" class="mercari-category-path">未判定</p>
 
             <label for="price-input">販売価格</label>
             <div class="price-row">

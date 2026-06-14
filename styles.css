@@ -1337,6 +1337,22 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
   color: #5f5f63;
   font-weight: 800;
 }
+.mercari-category-path {
+  margin: 6px 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f4fbf7;
+  border: 1px solid #ccebd8;
+  color: #176245;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+.mercari-category-path.unknown {
+  background: #fff8ec;
+  border-color: #f5d6a6;
+  color: #855600;
+}
 .draft-title {
   margin: 0 0 8px;
   font-size: 14px;
@@ -2059,6 +2075,10 @@ select {
 .yen-label {
   padding: 0 2px;
   color: #4d4548;
+}
+
+.mercari-category-path {
+  border-radius: 10px;
 }
 
 .draft-checklist {

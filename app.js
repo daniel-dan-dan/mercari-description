@@ -18,6 +18,45 @@ const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
 const DB_STORE = 'session';
 const CATEGORY_JP = { suit: 'スーツ', tops: 'アウター/トップス', bottoms: 'ボトムス', bag: 'バッグ', tie: 'ネクタイ', other: 'その他' };
+const MERCARI_CATEGORY_OPTIONS = [
+  { key: 'unknown', label: '未判定（手動で選ぶ）', path: [] },
+  { key: 'men_tailored_jacket', label: 'メンズ > ジャケット/アウター > テーラードジャケット', path: ['メンズ', 'ジャケット/アウター', 'テーラードジャケット'] },
+  { key: 'men_trench_coat', label: 'メンズ > ジャケット/アウター > トレンチコート', path: ['メンズ', 'ジャケット/アウター', 'トレンチコート'] },
+  { key: 'men_other_outer', label: 'メンズ > ジャケット/アウター > その他', path: ['メンズ', 'ジャケット/アウター', 'その他'] },
+  { key: 'men_shirt', label: 'メンズ > トップス > シャツ', path: ['メンズ', 'トップス', 'シャツ'] },
+  { key: 'men_tshirt', label: 'メンズ > トップス > Tシャツ/カットソー(半袖/袖なし)', path: ['メンズ', 'トップス', 'Tシャツ/カットソー(半袖/袖なし)'] },
+  { key: 'men_polo', label: 'メンズ > トップス > ポロシャツ', path: ['メンズ', 'トップス', 'ポロシャツ'] },
+  { key: 'men_knit', label: 'メンズ > トップス > ニット/セーター', path: ['メンズ', 'トップス', 'ニット/セーター'] },
+  { key: 'men_cardigan', label: 'メンズ > トップス > カーディガン', path: ['メンズ', 'トップス', 'カーディガン'] },
+  { key: 'men_suit', label: 'メンズ > スーツ > セットアップ', path: ['メンズ', 'スーツ', 'セットアップ'] },
+  { key: 'men_slacks', label: 'メンズ > パンツ > スラックス', path: ['メンズ', 'パンツ', 'スラックス'] },
+  { key: 'men_chino', label: 'メンズ > パンツ > チノパン', path: ['メンズ', 'パンツ', 'チノパン'] },
+  { key: 'men_denim', label: 'メンズ > パンツ > デニム/ジーンズ', path: ['メンズ', 'パンツ', 'デニム/ジーンズ'] },
+  { key: 'men_shorts', label: 'メンズ > パンツ > ショートパンツ', path: ['メンズ', 'パンツ', 'ショートパンツ'] },
+  { key: 'men_shoulder_bag', label: 'メンズ > バッグ > ショルダーバッグ', path: ['メンズ', 'バッグ', 'ショルダーバッグ'] },
+  { key: 'men_tote_bag', label: 'メンズ > バッグ > トートバッグ', path: ['メンズ', 'バッグ', 'トートバッグ'] },
+  { key: 'men_business_bag', label: 'メンズ > バッグ > ビジネスバッグ', path: ['メンズ', 'バッグ', 'ビジネスバッグ'] },
+  { key: 'men_backpack', label: 'メンズ > バッグ > リュック/バックパック', path: ['メンズ', 'バッグ', 'リュック/バックパック'] },
+  { key: 'men_tie', label: 'メンズ > 小物 > ネクタイ', path: ['メンズ', '小物', 'ネクタイ'] },
+  { key: 'men_shoes', label: 'メンズ > 靴 > ドレス/ビジネス', path: ['メンズ', '靴', 'ドレス/ビジネス'] },
+  { key: 'women_tailored_jacket', label: 'レディース > ジャケット/アウター > テーラードジャケット', path: ['レディース', 'ジャケット/アウター', 'テーラードジャケット'] },
+  { key: 'women_trench_coat', label: 'レディース > ジャケット/アウター > トレンチコート', path: ['レディース', 'ジャケット/アウター', 'トレンチコート'] },
+  { key: 'women_other_outer', label: 'レディース > ジャケット/アウター > その他', path: ['レディース', 'ジャケット/アウター', 'その他'] },
+  { key: 'women_shirt_blouse', label: 'レディース > トップス > シャツ/ブラウス(七分/長袖)', path: ['レディース', 'トップス', 'シャツ/ブラウス(七分/長袖)'] },
+  { key: 'women_tshirt', label: 'レディース > トップス > Tシャツ/カットソー(半袖/袖なし)', path: ['レディース', 'トップス', 'Tシャツ/カットソー(半袖/袖なし)'] },
+  { key: 'women_knit', label: 'レディース > トップス > ニット/セーター', path: ['レディース', 'トップス', 'ニット/セーター'] },
+  { key: 'women_cardigan', label: 'レディース > トップス > カーディガン/ボレロ', path: ['レディース', 'トップス', 'カーディガン/ボレロ'] },
+  { key: 'women_onepiece', label: 'レディース > ワンピース > その他', path: ['レディース', 'ワンピース', 'その他'] },
+  { key: 'women_suit', label: 'レディース > スーツ/フォーマル/ドレス > パンツスーツ上下', path: ['レディース', 'スーツ/フォーマル/ドレス', 'パンツスーツ上下'] },
+  { key: 'women_slacks', label: 'レディース > パンツ > カジュアルパンツ', path: ['レディース', 'パンツ', 'カジュアルパンツ'] },
+  { key: 'women_skirt', label: 'レディース > スカート > ロングスカート', path: ['レディース', 'スカート', 'ロングスカート'] },
+  { key: 'women_shoulder_bag', label: 'レディース > バッグ > ショルダーバッグ', path: ['レディース', 'バッグ', 'ショルダーバッグ'] },
+  { key: 'women_tote_bag', label: 'レディース > バッグ > トートバッグ', path: ['レディース', 'バッグ', 'トートバッグ'] },
+  { key: 'women_handbag', label: 'レディース > バッグ > ハンドバッグ', path: ['レディース', 'バッグ', 'ハンドバッグ'] },
+  { key: 'women_backpack', label: 'レディース > バッグ > リュック/バックパック', path: ['レディース', 'バッグ', 'リュック/バックパック'] },
+  { key: 'women_shoes', label: 'レディース > 靴 > ハイヒール/パンプス', path: ['レディース', '靴', 'ハイヒール/パンプス'] },
+];
+const MERCARI_CATEGORY_OPTION_MAP = Object.fromEntries(MERCARI_CATEGORY_OPTIONS.map(option => [option.key, option]));
 const RESEARCH_REQUESTS_KEY = 'mercari_research_requests';
 const RESEARCH_RESULTS_KEY = 'mercari_research_results';
 const MARKDOWN_ROWS_KEY = 'mercari_markdown_rows';
@@ -91,6 +130,46 @@ let markdownRows = [];
 // ----- 画面制御 -----
 const el = (id) => document.getElementById(id);
 
+function normalizeMercariCategoryKey(key) {
+  return MERCARI_CATEGORY_OPTION_MAP[key] ? key : 'unknown';
+}
+
+function getMercariCategoryOption(key) {
+  return MERCARI_CATEGORY_OPTION_MAP[normalizeMercariCategoryKey(key)];
+}
+
+function getSelectedMercariCategoryKey() {
+  const node = el('m-category');
+  return normalizeMercariCategoryKey(node ? node.value : 'unknown');
+}
+
+function getSelectedMercariCategoryPath() {
+  return [...getMercariCategoryOption(getSelectedMercariCategoryKey()).path];
+}
+
+function renderMercariCategoryOptions() {
+  const select = el('m-category');
+  if (!select) return;
+  select.innerHTML = MERCARI_CATEGORY_OPTIONS.map(option =>
+    `<option value="${option.key}">${option.label}</option>`
+  ).join('');
+  updateMercariCategoryPath();
+}
+
+function updateMercariCategoryPath() {
+  const path = el('m-category-path');
+  if (!path) return;
+  const option = getMercariCategoryOption(getSelectedMercariCategoryKey());
+  path.textContent = option.path.length ? option.path.join(' > ') : '未判定';
+  path.classList.toggle('unknown', !option.path.length);
+}
+
+function formatMercariCategoryPrompt() {
+  return MERCARI_CATEGORY_OPTIONS
+    .map(option => `- ${option.key}: ${option.label}`)
+    .join('\n');
+}
+
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.hidden = true);
   el(id).hidden = false;
@@ -132,6 +211,7 @@ async function init() {
   el('settings-btn').addEventListener('click', openSettings);
   el('reset-btn').addEventListener('click', resetAll);
   el('photo-input').addEventListener('change', handlePhotoSelect);
+  renderMercariCategoryOptions();
   el('category').addEventListener('change', () => {
     renderMeasurements();
     scheduleSave();
@@ -140,6 +220,15 @@ async function init() {
   el('retry-btn').addEventListener('click', retryGeneration);
   el('title-text').addEventListener('input', () => { scheduleSave(); updateDraftChecklist(); });
   el('result-text').addEventListener('input', () => { scheduleSave(); updateDraftChecklist(); });
+  el('m-category').addEventListener('change', () => {
+    updateMercariCategoryPath();
+    scheduleSave();
+    updateDraftChecklist();
+  });
+  el('m-condition').addEventListener('change', () => {
+    scheduleSave();
+    updateDraftChecklist();
+  });
   el('compose-open-btn').addEventListener('click', openImageCompose);
   el('grid2-btn').addEventListener('click', () => openGridCompose(2));
   el('grid4-btn').addEventListener('click', () => openGridCompose(4));
@@ -844,7 +933,6 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 5. material — 素材（タグから読み取る。表地/裏地がある場合は分ける。読み取れなければ "---"）
 6. condition — 状態。ダメージがなければ "目立った傷や汚れのない美品です。詳細は写真をご確認ください"。ダメージがあれば具体的に記載
 7. appeal — 商品の特徴・訴求ポイント2〜3文。以下を自然に含める:
-8. mercari_condition — 商品の状態（メルカリUI用）。以下の6択から1つ選ぶ: "新品、未使用" / "未使用に近い" / "目立った傷や汚れなし" / "やや傷や汚れあり" / "傷や汚れあり" / "全体的に状態が悪い"
    - デザインや素材の特徴
    - 季節感（春夏向き、秋冬向き、3シーズンなど）
    - 使えるシーン（ビジネス、カジュアル、セレモニーなど）
@@ -854,6 +942,10 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
    - 「なかなか出回らない」は商品・モデルの希少性に使う場合のみ。雰囲気・質感など抽象的なものにかけない
    - ブランド名・アイテム名は含めない（直後の【商品名】欄に記載されるため）
    - トレンチコートにライナー（取り外し可能な裏地）が付いている場合は必ず触れる（着回しの幅が広がる重要な訴求ポイントのため）
+8. mercari_condition — 商品の状態（メルカリUI用）。以下の6択から1つ選ぶ: "新品、未使用" / "未使用に近い" / "目立った傷や汚れなし" / "やや傷や汚れあり" / "傷や汚れあり" / "全体的に状態が悪い"
+9. mercari_category_key — メルカリ詳細カテゴリ。写真・タグ・商品種別から最も近いキーを1つだけ選ぶ。性別やアイテムが判断できない場合は "unknown" を選ぶ。
+   候補:
+${formatMercariCategoryPrompt()}
 
 ルール:
 - 写真から読み取れない情報は "---" と記載する（推測で埋めない）
@@ -862,7 +954,7 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 - **出力は JSON オブジェクト1つのみ**。前置きの文章・後置きの説明・「以下の通りです」のような挨拶・\`\`\`json などのコードフェンス・改行のみの行を一切含めない。最初の文字は { で、最後の文字は } とすること
 - JSON 内の文字列は二重引用符 " で囲む（' は使わない）。文字列中の改行は \\n でエスケープする
 
-{"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"...","mercari_condition":"目立った傷や汚れなし"}`;
+{"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"...","mercari_category_key":"men_shirt","mercari_condition":"目立った傷や汚れなし"}`;
 
 /**
  * AI応答からJSONオブジェクトを取り出す。
@@ -1169,6 +1261,7 @@ async function generateDescription() {
     }
     const measurementText = formatMeasurements(measurements);
     const description = buildDescription(aiData, measurementText);
+    const mercariCategoryKey = normalizeMercariCategoryKey(aiData.mercari_category_key);
     textarea.value = description;
     // 商品名（タイトル）をセット
     const brand = aiData.brand || '';
@@ -1181,6 +1274,7 @@ async function generateDescription() {
       title: title,
       description: description,
       category: measurements.category,
+      mercari_category_key: mercariCategoryKey,
       measurements: measurements,
       images: uploadedImages,
     };
@@ -1188,6 +1282,8 @@ async function generateDescription() {
     // メルカリ設定をAIデータで自動入力
     el('mercari-settings').hidden = false;
     if (aiData.mercari_condition) el('m-condition').value = aiData.mercari_condition;
+    el('m-category').value = mercariCategoryKey;
+    updateMercariCategoryPath();
     updateDraftChecklist();
     hideStatus('status');
   } catch (err) {
@@ -1269,6 +1365,7 @@ function collectState() {
     resultVisible: !el('result-section').hidden,
     mercariSettingsVisible: !el('mercari-settings').hidden,
     mercariCondition: el('m-condition').value,
+    mercariCategoryKey: getSelectedMercariCategoryKey(),
   };
 }
 
@@ -1314,6 +1411,8 @@ function restoreState(s) {
   if (s.mercariSettingsVisible) {
     el('mercari-settings').hidden = false;
     if (s.mercariCondition) el('m-condition').value = s.mercariCondition;
+    if (s.mercariCategoryKey) el('m-category').value = normalizeMercariCategoryKey(s.mercariCategoryKey);
+    updateMercariCategoryPath();
   }
   updateGenerateButton();
   updatePhotoSummary();
@@ -3867,6 +3966,8 @@ function updateDraftChecklist() {
   const hasDesc = !!el('result-text').value.trim();
   const hasPrice = !!el('price-input').value.trim();
   const hasCondition = !el('mercari-settings').hidden && !!el('m-condition').value;
+  const categoryOption = getMercariCategoryOption(getSelectedMercariCategoryKey());
+  const hasMercariCategory = !el('mercari-settings').hidden && categoryOption.path.length > 0;
   const photoLabel = !hasPhotos
     ? '写真を選んでください'
     : photoCount <= MAX_DRAFT_PHOTOS
@@ -3878,6 +3979,7 @@ function updateDraftChecklist() {
     { ok: hasDesc, label: hasDesc ? '説明文があります' : '先に説明文を生成してください' },
     { ok: hasPrice, label: hasPrice ? '価格が入力されています' : '販売価格を入力してください' },
     { ok: hasCondition, label: hasCondition ? '状態が選択されています' : '商品の状態を確認してください' },
+    { ok: hasMercariCategory, label: hasMercariCategory ? `カテゴリ: ${categoryOption.label}` : 'メルカリ詳細カテゴリを確認してください' },
   ];
   checklist.hidden = false;
   checklist.innerHTML = items.map(item =>
@@ -3929,11 +4031,16 @@ async function saveDraft() {
 
     // 下書きリクエスト送信
     draftStatus.textContent = '下書き情報を送信中...';
+    const mercariCategoryKey = getSelectedMercariCategoryKey();
+    const mercariCategoryOption = getMercariCategoryOption(mercariCategoryKey);
     const payload = {
       title: lastAiData.title || el('title-text').value,
       description: lastAiData.description || el('result-text').value,
       price: price,
       category: CATEGORY_JP[lastAiData.category] || lastAiData.category,
+      mercari_category_key: mercariCategoryKey,
+      mercari_category_label: mercariCategoryOption.label,
+      mercari_category: [...mercariCategoryOption.path],
       photos: uploadedImages.map(img => ({ base64: img.base64HQ || img.base64, mediaType: img.mediaType })),
       mercari_condition: el('m-condition').value,
       mercari_shipping: 'らくらくメルカリ便',
