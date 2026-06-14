@@ -28,7 +28,7 @@ const MERCARI_CATEGORY_OPTIONS = [
   { key: 'men_polo', label: 'メンズ > トップス > ポロシャツ', path: ['メンズ', 'トップス', 'ポロシャツ'] },
   { key: 'men_knit', label: 'メンズ > トップス > ニット/セーター', path: ['メンズ', 'トップス', 'ニット/セーター'] },
   { key: 'men_cardigan', label: 'メンズ > トップス > カーディガン', path: ['メンズ', 'トップス', 'カーディガン'] },
-  { key: 'men_suit', label: 'メンズ > スーツ > セットアップ', path: ['メンズ', 'スーツ', 'セットアップ'] },
+  { key: 'men_suit', label: 'メンズ > スーツ > ビジネススーツ', path: ['メンズ', 'スーツ', 'ビジネススーツ'] },
   { key: 'men_slacks', label: 'メンズ > パンツ > スラックス', path: ['メンズ', 'パンツ', 'スラックス'] },
   { key: 'men_chino', label: 'メンズ > パンツ > チノパン', path: ['メンズ', 'パンツ', 'チノパン'] },
   { key: 'men_denim', label: 'メンズ > パンツ > デニム/ジーンズ', path: ['メンズ', 'パンツ', 'デニム/ジーンズ'] },
