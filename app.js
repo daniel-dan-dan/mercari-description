@@ -3421,7 +3421,7 @@ const SIZE_PROFILES = {
     tagExamples: ['XS', 'S / 46', 'M / 48', 'L / 50', 'XL / 52', '2XL / 54', '3XL'],
   },
   menRelaxedTop: {
-    name: 'メンズゆったりトップス基準',
+    name: 'メンズ ニット・スウェット基準',
     summary: 'ニット・パーカー・スウェット用',
     sourceIds: ['mercari', 'uniqloShirt', 'gu', 'zozo'],
     sourceNote: 'ニット・スウェット系は元々ゆとりが出やすいため、標準トップスより身幅を少し大きめに見ます。',
