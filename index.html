@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260615e">
+  <link rel="stylesheet" href="styles.css?v=20260615f">
 </head>
 <body>
   <div id="app">
@@ -22,7 +22,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260615e / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
+      <p class="settings-version" id="settings-version">v20260615f / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
     </section>
 
     <!-- メイン画面 -->
@@ -100,7 +100,7 @@
         <div id="final-size-badge" class="final-size-badge" hidden></div>
 
         <label for="title-text">商品名（メルカリのタイトル欄用）</label>
-        <input type="text" id="title-text" spellcheck="false">
+        <input type="text" id="title-text" maxlength="40" spellcheck="false">
 
         <label for="result-text">説明文</label>
         <textarea id="result-text" rows="18" spellcheck="false"></textarea>
@@ -397,6 +397,6 @@
 
   </div>
 
-  <script src="app.js?v=20260615e"></script>
+  <script src="app.js?v=20260615f"></script>
 </body>
 </html>

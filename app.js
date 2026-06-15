@@ -13,6 +13,7 @@ const MAX_SELECT_PHOTOS = 30;        // 編集素材として選べる写真枚�
 const MAX_DRAFT_PHOTOS = 20;         // メルカリ下書き保存に送れる写真枚数
 const MAX_AI_PHOTOS = 12;            // AI分析に送る写真枚数。通信安定のため下書き枚数より少なくする
 const MAX_AI_PAYLOAD_BYTES = 12 * 1024 * 1024;
+const MAX_MERCARI_TITLE_LENGTH = 40; // メルカリの商品名上限
 
 const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
@@ -685,7 +686,13 @@ async function init() {
   });
   el('generate-btn').addEventListener('click', generateDescription);
   el('retry-btn').addEventListener('click', retryGeneration);
-  el('title-text').addEventListener('input', () => { scheduleSave(); updateDraftChecklist(); });
+  el('title-text').addEventListener('input', () => {
+    const titleInput = el('title-text');
+    const cappedTitle = capMercariTitleInput(titleInput.value);
+    if (titleInput.value !== cappedTitle) titleInput.value = cappedTitle;
+    scheduleSave();
+    updateDraftChecklist();
+  });
   el('result-text').addEventListener('input', () => { scheduleSave(); updateDraftChecklist(); });
   el('m-category').addEventListener('change', () => {
     updateMercariCategoryPath();
@@ -1705,6 +1712,145 @@ ${measurementText}
 質屋・古物市場`;
 }
 
+function mercariTitleLength(value) {
+  return Array.from(String(value || '').trim()).length;
+}
+
+function normalizeMercariTitle(value) {
+  const cleaned = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return Array.from(cleaned).slice(0, MAX_MERCARI_TITLE_LENGTH).join('').trim();
+}
+
+function capMercariTitleInput(value) {
+  const chars = Array.from(String(value || ''));
+  return chars.slice(0, MAX_MERCARI_TITLE_LENGTH).join('');
+}
+
+function cleanTitleSegment(value) {
+  const cleaned = String(value || '')
+    .replace(/---/g, '')
+    .replace(/[【】「」『』]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned;
+}
+
+function normalizeTitleComparable(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[✨★☆・.,、。／/\\\s]/g, '')
+    .trim();
+}
+
+function addUniqueTitleToken(tokens, token, existingTitle) {
+  const cleaned = cleanTitleSegment(token).replace(/[、。,.].*$/, '').trim();
+  if (!cleaned) return;
+  if (mercariTitleLength(cleaned) > 12) return;
+
+  const comparable = normalizeTitleComparable(cleaned);
+  if (!comparable) return;
+  const titleComparable = normalizeTitleComparable(existingTitle);
+  if (titleComparable.includes(comparable)) return;
+  if (cleaned === 'チェック柄' && tokens.some(t => String(t).includes('チェック'))) return;
+  if (tokens.some(t => normalizeTitleComparable(t) === comparable)) return;
+  tokens.push(cleaned);
+}
+
+function extractTitleAppealWords(aiData) {
+  const source = [
+    aiData.appeal,
+    aiData.material,
+    aiData.condition,
+    aiData.mercari_condition,
+    aiData.color,
+    aiData.tag_size,
+  ].filter(Boolean).join(' ');
+  const baseTitle = [aiData.brand, aiData.brand_en, aiData.item].filter(Boolean).join(' ');
+  const tokens = [];
+
+  if (/目立った傷や汚れ(のない|なし|無し)|未使用に近い|新品、未使用|新品|未使用|美品/.test(source)) {
+    addUniqueTitleToken(tokens, '✨美品✨', baseTitle);
+  }
+
+  const patterns = [
+    [/ノバチェック/i, 'ノバチェック'],
+    [/ホース(ロゴ|マーク)|騎士ロゴ/i, 'ホースロゴ'],
+    [/ロゴ刺繍|刺繍ロゴ/i, 'ロゴ刺繍'],
+    [/ワンポイント/i, 'ワンポイント'],
+    [/総柄/i, '総柄'],
+    [/チェック柄|チェック/i, 'チェック柄'],
+    [/ストライプ/i, 'ストライプ'],
+    [/(取り外し|取外し|着脱|着脱可能).*ライナー|ライナー.*(付き|付属|取り外し|取外し|着脱)/, 'ライナー付き'],
+    [/ベルト.*(付き|付属)|付属.*ベルト/, 'ベルト付き'],
+    [/フード.*(付き|付属|収納|取り外し|取外し)/, 'フード付き'],
+    [/裏地付き|裏地.*付き/, '裏地付き'],
+    [/リバーシブル/i, 'リバーシブル'],
+    [/2way|2WAY|２way|２WAY|二通り/, '2way'],
+    [/3way|3WAY|３way|３WAY|三通り/, '3way'],
+    [/カシミ[ヤア]/, 'カシミヤ'],
+    [/ウール|毛\s*[0-9０-９]/, 'ウール'],
+    [/リネン|麻/, 'リネン'],
+    [/シルク|絹/, 'シルク'],
+    [/レザー|本革/, 'レザー'],
+    [/コーデュロイ/i, 'コーデュロイ'],
+    [/ツイード/i, 'ツイード'],
+    [/デニム/i, 'デニム'],
+    [/綿\s*100\s*[%％]|コットン\s*100\s*[%％]/, '綿100%'],
+    [/春夏/, '春夏'],
+    [/秋冬/, '秋冬'],
+    [/3シーズン|３シーズン|三シーズン/, '3シーズン'],
+    [/ビジネス/, 'ビジネス'],
+    [/カジュアル/, 'カジュアル'],
+    [/セレモニー|フォーマル/, 'フォーマル'],
+    [/希少|なかなか出回らない/, '希少'],
+    [/上質|高級感|高級/, '上質'],
+    [/美シルエット|きれいなシルエット|綺麗なシルエット/, '美シルエット'],
+    [/オーバーサイズ|ゆったり/, 'オーバーサイズ'],
+    [/大きいサイズ|ビッグサイズ/, '大きいサイズ'],
+  ];
+
+  patterns.forEach(([pattern, word]) => {
+    if (pattern.test(source)) addUniqueTitleToken(tokens, word, baseTitle);
+  });
+
+  return tokens;
+}
+
+function buildMercariTitle(aiData = {}) {
+  const brand = cleanTitleSegment(aiData.brand || aiData.brand_en || '');
+  const item = cleanTitleSegment(aiData.item || '');
+  const appealWords = extractTitleAppealWords(aiData);
+  const hasGoodCondition = appealWords.includes('✨美品✨');
+  const coreParts = [hasGoodCondition ? '✨美品✨' : '', brand, item].filter(Boolean);
+  const coreTitle = coreParts.join(' ').trim();
+  let title = coreTitle;
+
+  if (mercariTitleLength(title) > MAX_MERCARI_TITLE_LENGTH) {
+    const titleWithoutCondition = [brand, item].filter(Boolean).join(' ').trim();
+    title = mercariTitleLength(titleWithoutCondition) <= MAX_MERCARI_TITLE_LENGTH
+      ? titleWithoutCondition
+      : normalizeMercariTitle(titleWithoutCondition);
+  }
+
+  appealWords
+    .filter(word => word !== '✨美品✨')
+    .forEach(word => {
+      if (!title) {
+        title = normalizeMercariTitle(word);
+        return;
+      }
+      if (normalizeTitleComparable(title).includes(normalizeTitleComparable(word))) return;
+      const candidate = `${title} ${word}`.trim();
+      if (mercariTitleLength(candidate) <= MAX_MERCARI_TITLE_LENGTH) {
+        title = candidate;
+      }
+    });
+
+  return normalizeMercariTitle(title);
+}
+
 // ----- 生成実行 -----
 async function generateDescription() {
   const measurements = collectMeasurements();
@@ -1748,10 +1894,7 @@ async function generateDescription() {
     const mercariSizeResult = deriveMercariSize(aiData, mercariCategoryKey);
     textarea.value = description;
     // 商品名（タイトル）をセット
-    const brand = aiData.brand || '';
-    const item = aiData.item || '';
-    const titleCore = [brand, item].filter(Boolean).join(' ').trim();
-    const title = titleCore ? '✨美品✨ ' + titleCore : '';
+    const title = buildMercariTitle(aiData);
     el('title-text').value = title;
     // 下書き機能用にAIデータを保存
     lastAiData = {
@@ -1853,7 +1996,7 @@ function collectState() {
     category,
     raglanChecked: raglanToggle ? raglanToggle.checked : false,
     measurements,
-    title: el('title-text').value,
+    title: normalizeMercariTitle(el('title-text').value),
     result: el('result-text').value,
     resultVisible: !el('result-section').hidden,
     mercariSettingsVisible: !el('mercari-settings').hidden,
@@ -1897,7 +2040,7 @@ function restoreState(s) {
     }
     updateSizeSuggestion();
   }
-  if (s.title) el('title-text').value = s.title;
+  if (s.title) el('title-text').value = normalizeMercariTitle(s.title);
   if (s.result) el('result-text').value = s.result;
   if (s.resultVisible && s.result) {
     el('result-section').hidden = false;
@@ -4864,7 +5007,7 @@ async function saveDraft() {
     const mercariCategoryKey = getSelectedMercariCategoryKey();
     const mercariCategoryOption = getMercariCategoryOption(mercariCategoryKey);
     const payload = {
-      title: lastAiData.title || el('title-text').value,
+      title: normalizeMercariTitle(el('title-text').value || lastAiData.title),
       description: lastAiData.description || el('result-text').value,
       price: price,
       category: CATEGORY_JP[lastAiData.category] || lastAiData.category,
