@@ -3653,30 +3653,6 @@ function computeMeasurementSize() {
   return estimateBySizeProfile(profileKey);
 }
 
-function renderSizeSourceBlock(profileKey) {
-  const profile = SIZE_PROFILES[profileKey] || SIZE_PROFILES.tops;
-  const refs = (profile.sourceIds || [])
-    .map(id => SIZE_SOURCE_REFERENCES[id])
-    .filter(Boolean);
-  if (!refs.length) return '';
-  const rows = refs.map(ref => `
-    <li>
-      <a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(ref.label)}</a>
-      <span>${escapeHtml(ref.role)}</span>
-    </li>
-  `).join('');
-  const note = profile.sourceNote
-    ? `<p class="size-source-foot">${escapeHtml(profile.sourceNote)}</p>`
-    : '';
-  return `
-    <div class="size-source">
-      <div class="size-source-title">基準元</div>
-      <ul>${rows}</ul>
-      ${note}
-    </div>
-  `;
-}
-
 function updateSizeSuggestion() {
   const panel = el('size-suggestion');
   if (!panel) return;
@@ -3692,7 +3668,6 @@ function updateSizeSuggestion() {
   panel.innerHTML = `
     <div class="size-main">📏 採寸からの推定: <strong>${result.size}サイズ相当</strong></div>
     <div class="size-hint">${result.detail}</div>
-    ${renderSizeSourceBlock(profileKey)}
     <details class="size-ref">
       <summary>サイズ目安表（${profile.name}）</summary>
       ${table}

@@ -1133,48 +1133,6 @@ textarea.streaming {
   font-size: 12px;
   margin-left: 6px;
 }
-.size-source {
-  margin-top: 10px;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.74);
-  border: 1px solid rgba(168, 85, 247, 0.13);
-  border-radius: 12px;
-}
-.size-source-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: #4a3570;
-  margin-bottom: 5px;
-}
-.size-source ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  gap: 4px;
-}
-.size-source li {
-  display: grid;
-  grid-template-columns: minmax(95px, auto) 1fr;
-  gap: 8px;
-  align-items: baseline;
-  font-size: 11px;
-  color: #6b5d7d;
-}
-.size-source a {
-  color: #0f766e;
-  font-weight: 700;
-  text-decoration: none;
-}
-.size-source a:hover {
-  text-decoration: underline;
-}
-.size-source-foot {
-  margin: 6px 0 0;
-  font-size: 11px;
-  color: #7c6b8b;
-  line-height: 1.45;
-}
 .size-ref {
   margin-top: 10px;
 }
