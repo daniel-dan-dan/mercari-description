@@ -3342,35 +3342,112 @@ function parseSpokenNumber(text) {
 
 // ----- サイズ推定（S/M/L相当） -----
 // スコア: XS=0, S=1, M=2, L=3, XL=4, XXL=5, XXXL=6
-// 閾値はユニクロメンズ公式サイズ表を基準: M=身幅52/肩幅45/着丈69/ウエスト75/股下75
 const SIZE_LABELS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
 
-function scoreChest(v)    { return clampScore((v - 46) / 3); }     // M中心=52
-function scoreShoulder(v) { return clampScore((v - 40) / 2.5); }   // M中心=45
-function scoreLength(v)   { return clampScore((v - 63) / 3); }     // M中心=69
-function scoreWaist(v)    { return clampScore((v - 67) / 4); }     // M中心=75
-function scoreInseam(v)   { return clampScore((v - 71) / 2); }     // M中心=75
-function clampScore(s)    { return Math.max(0, Math.min(6, s)); }
+const SIZE_PROFILES = {
+  tops: {
+    name: 'トップス基準',
+    summary: 'シャツ・ニット・カットソー用',
+    fields: {
+      chest:    { w: 0.55, label: '身幅', centers: [46, 49, 52, 55, 58, 61, 64] },
+      shoulder: { w: 0.25, label: '肩幅', centers: [40, 42.5, 45, 47.5, 50, 52, 54] },
+      sleeve:   { w: 0.10, label: '袖丈', centers: [56, 58, 60, 61.5, 63, 64.5, 66] },
+      length:   { w: 0.10, label: '着丈', centers: [63, 66.5, 69, 72, 75, 78, 81] },
+    },
+  },
+  outer: {
+    name: 'アウター基準',
+    summary: 'コート・ジャケット用',
+    fields: {
+      chest:    { w: 0.45, label: '身幅', centers: [48, 51, 54, 57, 60, 63, 66] },
+      shoulder: { w: 0.20, label: '肩幅', centers: [40, 42, 44, 46, 48, 50, 52] },
+      sleeve:   { w: 0.15, label: '袖丈', centers: [56, 58, 60, 62, 64, 66, 68] },
+      length:   { w: 0.20, label: '着丈', centers: [63, 67, 71, 75, 79, 83, 87] },
+    },
+    bias: 0.10,
+    liftFromLargeDimension: { gap: 1.4, rate: 0.25, max: 0.45 },
+  },
+  suit: {
+    name: 'スーツ基準',
+    summary: 'スーツ・テーラード・セットアップ用',
+    fields: {
+      j_chest:    { w: 0.35, label: '身幅', centers: [46, 49, 52, 55, 58, 61, 64] },
+      j_shoulder: { w: 0.18, label: '肩幅', centers: [39, 41, 43, 45, 47, 49, 51] },
+      j_sleeve:   { w: 0.10, label: '袖丈', centers: [56, 58, 60, 62, 64, 66, 68] },
+      j_length:   { w: 0.12, label: '着丈', centers: [67, 70, 73, 76, 79, 82, 85] },
+      p_waist:    { w: 0.20, label: 'パンツW', centers: [70, 74, 78, 82, 86, 90, 94] },
+      p_inseam:   { w: 0.05, label: '股下', centers: [70, 72, 74, 76, 78, 80, 82] },
+    },
+    bias: 0.25,
+    liftFromLargeDimension: { gap: 1.0, rate: 0.35, max: 0.60 },
+  },
+  bottoms: {
+    name: 'ボトムス基準',
+    summary: 'パンツ・スラックス用',
+    fields: {
+      waist:  { w: 0.80, label: 'ウエスト', centers: [66, 70, 74, 78, 82, 86, 90] },
+      inseam: { w: 0.20, label: '股下', centers: [72, 74, 76, 78, 80, 82, 84] },
+    },
+  },
+};
+
+function clampScore(s) {
+  return Math.max(0, Math.min(6, s));
+}
+
+function scoreByCenters(value, centers) {
+  const v = Number(value);
+  if (!Number.isFinite(v) || !centers?.length) return 0;
+  if (v <= centers[0]) {
+    const step = Math.max(1, centers[1] - centers[0]);
+    return clampScore((v - centers[0]) / step);
+  }
+  for (let i = 0; i < centers.length - 1; i += 1) {
+    const current = centers[i];
+    const next = centers[i + 1];
+    if (v <= next) {
+      const span = Math.max(1, next - current);
+      return clampScore(i + (v - current) / span);
+    }
+  }
+  const last = centers.length - 1;
+  const step = Math.max(1, centers[last] - centers[last - 1]);
+  return clampScore(last + (v - centers[last]) / step);
+}
+
+function scoreChest(v)    { return scoreByCenters(v, SIZE_PROFILES.tops.fields.chest.centers); }
+function scoreShoulder(v) { return scoreByCenters(v, SIZE_PROFILES.tops.fields.shoulder.centers); }
+function scoreLength(v)   { return scoreByCenters(v, SIZE_PROFILES.tops.fields.length.centers); }
+function scoreWaist(v)    { return scoreByCenters(v, SIZE_PROFILES.bottoms.fields.waist.centers); }
+function scoreInseam(v)   { return scoreByCenters(v, SIZE_PROFILES.bottoms.fields.inseam.centers); }
+
+function getSizeProfileKey(categoryKey = getSelectedMercariCategoryKey(), broadCat = el('category')?.value) {
+  if (!broadCat) return '';
+  if (broadCat === 'suit') return 'suit';
+  if (broadCat === 'bottoms') return 'bottoms';
+  if (broadCat !== 'tops') return '';
+
+  const option = getMercariCategoryOption(categoryKey);
+  const pathText = [...(option.path || []), option.label || ''].join(' ');
+  if (/ジャケット|アウター|コート|ブルゾン|ダウン|ライダース|スタジャン|ジャンパー|カバーオール|MA-1|フライトジャケット/.test(pathText)) {
+    return 'outer';
+  }
+  return 'tops';
+}
+
+function readMeasurementValue(key) {
+  const value = parseFloat((el('m-' + key) || {}).value);
+  return value > 0 ? value : null;
+}
 
 // 採寸値のみからサイズを推定（Step2のリアルタイム表示用）
 function computeMeasurementSize() {
   const cat = el('category').value;
   if (!cat) return null;
   if (cat === 'other' || cat === 'bag' || cat === 'tie') return null;  // その他・バッグ・ネクタイはサイズ推定対象外
-  const prefix = cat === 'suit' ? 'j_' : '';
-  const isBottom = cat === 'bottoms';
-  const read = (k) => {
-    const v = parseFloat((el('m-' + k) || {}).value);
-    return v > 0 ? v : null;
-  };
-  if (isBottom) {
-    return estimateBottomWeighted({ waist: read('waist'), inseam: read('inseam') });
-  }
-  return estimateTopWeighted({
-    chest:    read(prefix + 'chest'),
-    shoulder: read(prefix + 'shoulder'),
-    length:   read(prefix + 'length'),
-  });
+  const profileKey = getSizeProfileKey(getSelectedMercariCategoryKey(), cat);
+  if (!profileKey) return null;
+  return estimateBySizeProfile(profileKey);
 }
 
 function updateSizeSuggestion() {
@@ -3382,13 +3459,14 @@ function updateSizeSuggestion() {
   const result = computeMeasurementSize();
   if (!result) { panel.hidden = true; return; }
 
-  const isBottom = cat === 'bottoms';
-  const table = isBottom ? sizeReferenceBottoms() : sizeReferenceTops();
+  const profileKey = result.profileKey || getSizeProfileKey(getSelectedMercariCategoryKey(), cat);
+  const profile = SIZE_PROFILES[profileKey] || SIZE_PROFILES.tops;
+  const table = sizeReferenceTable(profileKey);
   panel.innerHTML = `
     <div class="size-main">📏 採寸からの推定: <strong>${result.size}サイズ相当</strong></div>
     <div class="size-hint">${result.detail}</div>
     <details class="size-ref">
-      <summary>サイズ目安表（ユニクロメンズ基準）</summary>
+      <summary>サイズ目安表（${profile.name}）</summary>
       ${table}
       <p class="note small">※ブランドにより±2〜3cm程度の差があります。タグ表記との併用をおすすめします。</p>
     </details>
@@ -3396,32 +3474,42 @@ function updateSizeSuggestion() {
   panel.hidden = false;
 }
 
-// 加重スコアリング: 身幅60% + 肩幅30% + 着丈10%（入力された寸法だけで再正規化）
-function estimateTopWeighted({ chest, shoulder, length }) {
+function estimateBySizeProfile(profileKey) {
+  const profile = SIZE_PROFILES[profileKey];
+  if (!profile) return null;
   const parts = [];
-  if (chest    != null) parts.push({ w: 0.60, s: scoreChest(chest),       label: `身幅${chest}`    });
-  if (shoulder != null) parts.push({ w: 0.30, s: scoreShoulder(shoulder), label: `肩幅${shoulder}` });
-  if (length   != null) parts.push({ w: 0.10, s: scoreLength(length),     label: `着丈${length}`   });
+  Object.entries(profile.fields).forEach(([key, def]) => {
+    const value = readMeasurementValue(key);
+    if (value == null) return;
+    parts.push({
+      w: def.w,
+      s: scoreByCenters(value, def.centers),
+      label: `${def.label}${value}`,
+    });
+  });
   if (parts.length === 0) return null;
-  return combineScores(parts);
+  return combineScores(parts, profile, profileKey);
 }
 
-// 加重スコアリング: ウエスト80% + 股下20%
-function estimateBottomWeighted({ waist, inseam }) {
-  const parts = [];
-  if (waist  != null) parts.push({ w: 0.80, s: scoreWaist(waist),   label: `ウエスト${waist}` });
-  if (inseam != null) parts.push({ w: 0.20, s: scoreInseam(inseam), label: `股下${inseam}`    });
-  if (parts.length === 0) return null;
-  return combineScores(parts);
-}
-
-function combineScores(parts) {
+function combineScores(parts, profile = {}, profileKey = '') {
   const totalW = parts.reduce((a, p) => a + p.w, 0);
-  const avg = parts.reduce((a, p) => a + p.w * p.s, 0) / totalW;
+  const rawAvg = parts.reduce((a, p) => a + p.w * p.s, 0) / totalW;
+  let avg = rawAvg + (profile.bias || 0);
+  const maxScore = Math.max(...parts.map(p => p.s));
+  if (profile.liftFromLargeDimension && maxScore - avg >= profile.liftFromLargeDimension.gap) {
+    const lift = Math.min(
+      profile.liftFromLargeDimension.max,
+      (maxScore - avg) * profile.liftFromLargeDimension.rate,
+    );
+    avg += lift;
+  }
+  avg = clampScore(avg);
   const idx = Math.max(0, Math.min(6, Math.round(avg)));
   const size = SIZE_LABELS[idx];
-  const detail = `${parts.map(p => p.label).join(' / ')} → 加重平均 ${avg.toFixed(2)}`;
-  return { size, detail, score: avg, index: idx };
+  const adjusted = Math.abs(avg - rawAvg) >= 0.05 ? ` / 補正後 ${avg.toFixed(2)}` : '';
+  const profileName = profile.name ? `${profile.name}: ` : '';
+  const detail = `${profileName}${parts.map(p => p.label).join(' / ')} → 加重平均 ${rawAvg.toFixed(2)}${adjusted}`;
+  return { size, detail, score: avg, rawScore: rawAvg, index: idx, profileKey };
 }
 
 // タグ表記をS/M/L/XL/XXL/XXXLへ正規化
@@ -3514,6 +3602,13 @@ function renderFinalSize(aiData) {
   badge.hidden = false;
 }
 
+function sizeReferenceTable(profileKey) {
+  if (profileKey === 'suit') return sizeReferenceSuit();
+  if (profileKey === 'outer') return sizeReferenceOuter();
+  if (profileKey === 'bottoms') return sizeReferenceBottoms();
+  return sizeReferenceTops();
+}
+
 function sizeReferenceTops() {
   return `<table class="size-table">
     <tr><th>サイズ</th><th>身幅(cm)</th><th>肩幅(cm)</th><th>着丈(cm)</th><th>タグ例</th></tr>
@@ -3526,15 +3621,39 @@ function sizeReferenceTops() {
   </table>`;
 }
 
+function sizeReferenceOuter() {
+  return `<table class="size-table">
+    <tr><th>サイズ</th><th>身幅(cm)</th><th>肩幅(cm)</th><th>着丈(cm)</th><th>タグ例</th></tr>
+    <tr><td>XS</td><td>〜49</td><td>〜41</td><td>〜65</td><td>44 / XS</td></tr>
+    <tr><td>S</td><td>50〜52</td><td>42〜43</td><td>66〜69</td><td>46 / S</td></tr>
+    <tr><td>M</td><td>53〜55</td><td>44〜45</td><td>70〜73</td><td>48 / M</td></tr>
+    <tr><td>L</td><td>56〜58</td><td>46〜47</td><td>74〜77</td><td>50 / L</td></tr>
+    <tr><td>XL</td><td>59〜61</td><td>48〜49</td><td>78〜81</td><td>52 / XL</td></tr>
+    <tr><td>XXL</td><td>62〜64</td><td>50〜51</td><td>82〜85</td><td>54 / XXL</td></tr>
+  </table>`;
+}
+
+function sizeReferenceSuit() {
+  return `<table class="size-table">
+    <tr><th>サイズ</th><th>J身幅(cm)</th><th>J肩幅(cm)</th><th>Pウエスト(cm)</th><th>タグ例</th></tr>
+    <tr><td>XS</td><td>〜47</td><td>〜40</td><td>〜72</td><td>42-44 / XS</td></tr>
+    <tr><td>S</td><td>48〜50</td><td>41〜42</td><td>73〜76</td><td>46 / S</td></tr>
+    <tr><td>M</td><td>51〜53</td><td>43〜44</td><td>77〜80</td><td>48 / M</td></tr>
+    <tr><td>L</td><td>54〜56</td><td>45〜46</td><td>81〜84</td><td>50 / L</td></tr>
+    <tr><td>XL</td><td>57〜59</td><td>47〜48</td><td>85〜88</td><td>52 / XL</td></tr>
+    <tr><td>XXL</td><td>60〜62</td><td>49〜50</td><td>89〜92</td><td>54 / XXL</td></tr>
+  </table>`;
+}
+
 function sizeReferenceBottoms() {
   return `<table class="size-table">
     <tr><th>サイズ</th><th>ウエスト(cm)</th><th>股下(cm)</th><th>タグ例</th></tr>
-    <tr><td>XS</td><td>〜68</td><td>〜72</td><td>W26 / 62</td></tr>
-    <tr><td>S</td><td>69〜72</td><td>73〜74</td><td>W28 / 70</td></tr>
-    <tr><td>M</td><td>73〜76</td><td>75〜76</td><td>W30 / 75</td></tr>
-    <tr><td>L</td><td>77〜80</td><td>77〜78</td><td>W32 / 79</td></tr>
-    <tr><td>XL</td><td>81〜84</td><td>79〜80</td><td>W34 / 83</td></tr>
-    <tr><td>XXL</td><td>85〜88</td><td>81〜82</td><td>W36 / 87</td></tr>
+    <tr><td>XS</td><td>〜68</td><td>〜73</td><td>W26 / 62</td></tr>
+    <tr><td>S</td><td>69〜72</td><td>74〜75</td><td>W28 / 70</td></tr>
+    <tr><td>M</td><td>73〜76</td><td>76〜77</td><td>W30 / 75</td></tr>
+    <tr><td>L</td><td>77〜80</td><td>78〜79</td><td>W32 / 79</td></tr>
+    <tr><td>XL</td><td>81〜84</td><td>80〜81</td><td>W34 / 83</td></tr>
+    <tr><td>XXL</td><td>85〜88</td><td>82〜83</td><td>W36 / 87</td></tr>
   </table>`;
 }
 
