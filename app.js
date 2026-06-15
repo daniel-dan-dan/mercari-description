@@ -3344,10 +3344,45 @@ function parseSpokenNumber(text) {
 // スコア: XS=0, S=1, M=2, L=3, XL=4, XXL=5, XXXL=6
 const SIZE_LABELS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
 
+const SIZE_SOURCE_REFERENCES = {
+  mercari: {
+    label: 'メルカリ公式ヘルプ',
+    url: 'https://help.jp.mercari.com/guide/categories/4/',
+    role: '下書きに入れるカテゴリ名・サイズ選択肢の最終合わせ先',
+  },
+  uniqlo: {
+    label: 'UNIQLO公式',
+    url: 'https://www.uniqlo.com/jp/ja/',
+    role: 'トップス・アウター・ボトムスの標準サイズ感',
+  },
+  gu: {
+    label: 'GU公式',
+    url: 'https://www.gu-global.com/jp/ja/',
+    role: '普段着系カテゴリの補助基準',
+  },
+  aoki: {
+    label: 'AOKI公式',
+    url: 'https://www.aoki-style.com/',
+    role: 'スーツ・セットアップ系のサイズ感',
+  },
+  suitSelect: {
+    label: 'SUIT SELECT公式',
+    url: 'https://www.suit-select.com/',
+    role: 'スーツ・セットアップ系の補助基準',
+  },
+  zozo: {
+    label: 'ZOZOTOWN',
+    url: 'https://zozo.jp/',
+    role: '身幅・肩幅・着丈など採寸項目の呼び方',
+  },
+};
+
 const SIZE_PROFILES = {
   tops: {
     name: 'トップス基準',
     summary: 'シャツ・ニット・カットソー用',
+    sourceIds: ['mercari', 'uniqlo', 'gu', 'zozo'],
+    sourceNote: '公式サイズ表の寸法をS/M/L換算し、古着の実測差を見込んだ目安として使います。タグ表記が読める場合はタグを優先します。',
     fields: {
       chest:    { w: 0.55, label: '身幅', centers: [46, 49, 52, 55, 58, 61, 64] },
       shoulder: { w: 0.25, label: '肩幅', centers: [40, 42.5, 45, 47.5, 50, 52, 54] },
@@ -3358,6 +3393,8 @@ const SIZE_PROFILES = {
   outer: {
     name: 'アウター基準',
     summary: 'コート・ジャケット用',
+    sourceIds: ['mercari', 'uniqlo', 'gu', 'zozo'],
+    sourceNote: 'アウターは中に着込む前提でトップスより少し大きめに補正します。タグ表記が読める場合はタグを優先します。',
     fields: {
       chest:    { w: 0.45, label: '身幅', centers: [48, 51, 54, 57, 60, 63, 66] },
       shoulder: { w: 0.20, label: '肩幅', centers: [40, 42, 44, 46, 48, 50, 52] },
@@ -3370,6 +3407,8 @@ const SIZE_PROFILES = {
   suit: {
     name: 'スーツ基準',
     summary: 'スーツ・テーラード・セットアップ用',
+    sourceIds: ['mercari', 'aoki', 'suitSelect', 'zozo'],
+    sourceNote: 'スーツはユニクロ系トップス基準ではなく、ジャケット寸法とパンツ寸法を合わせて判定します。タグ表記が読める場合はタグを優先します。',
     fields: {
       j_chest:    { w: 0.35, label: '身幅', centers: [46, 49, 52, 55, 58, 61, 64] },
       j_shoulder: { w: 0.18, label: '肩幅', centers: [39, 41, 43, 45, 47, 49, 51] },
@@ -3384,6 +3423,8 @@ const SIZE_PROFILES = {
   bottoms: {
     name: 'ボトムス基準',
     summary: 'パンツ・スラックス用',
+    sourceIds: ['mercari', 'uniqlo', 'gu', 'zozo'],
+    sourceNote: 'ボトムスはウエストを主軸にし、股下は補助として使います。タグ表記が読める場合はタグを優先します。',
     fields: {
       waist:  { w: 0.80, label: 'ウエスト', centers: [66, 70, 74, 78, 82, 86, 90] },
       inseam: { w: 0.20, label: '股下', centers: [72, 74, 76, 78, 80, 82, 84] },
@@ -3450,6 +3491,30 @@ function computeMeasurementSize() {
   return estimateBySizeProfile(profileKey);
 }
 
+function renderSizeSourceBlock(profileKey) {
+  const profile = SIZE_PROFILES[profileKey] || SIZE_PROFILES.tops;
+  const refs = (profile.sourceIds || [])
+    .map(id => SIZE_SOURCE_REFERENCES[id])
+    .filter(Boolean);
+  if (!refs.length) return '';
+  const rows = refs.map(ref => `
+    <li>
+      <a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(ref.label)}</a>
+      <span>${escapeHtml(ref.role)}</span>
+    </li>
+  `).join('');
+  const note = profile.sourceNote
+    ? `<p class="size-source-foot">${escapeHtml(profile.sourceNote)}</p>`
+    : '';
+  return `
+    <div class="size-source">
+      <div class="size-source-title">基準元</div>
+      <ul>${rows}</ul>
+      ${note}
+    </div>
+  `;
+}
+
 function updateSizeSuggestion() {
   const panel = el('size-suggestion');
   if (!panel) return;
@@ -3465,6 +3530,7 @@ function updateSizeSuggestion() {
   panel.innerHTML = `
     <div class="size-main">📏 採寸からの推定: <strong>${result.size}サイズ相当</strong></div>
     <div class="size-hint">${result.detail}</div>
+    ${renderSizeSourceBlock(profileKey)}
     <details class="size-ref">
       <summary>サイズ目安表（${profile.name}）</summary>
       ${table}
