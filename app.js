@@ -3350,10 +3350,20 @@ const SIZE_SOURCE_REFERENCES = {
     url: 'https://help.jp.mercari.com/guide/categories/4/',
     role: '下書きに入れるカテゴリ名・サイズ選択肢の最終合わせ先',
   },
-  uniqlo: {
-    label: 'UNIQLO公式',
-    url: 'https://www.uniqlo.com/jp/ja/',
-    role: 'トップス・アウター・ボトムスの標準サイズ感',
+  uniqloShirt: {
+    label: 'UNIQLO公式: シャツ代表商品',
+    url: 'https://www.uniqlo.com/jp/ja/products/E489138-000/00',
+    role: 'トップスの実商品ページとサイズ表リンク',
+  },
+  uniqloJacket: {
+    label: 'UNIQLO公式: ジャケット代表商品',
+    url: 'https://www.uniqlo.com/jp/ja/products/E448036-000/00',
+    role: 'ジャケット・アウターの実商品ページとサイズ表リンク',
+  },
+  uniqloPants: {
+    label: 'UNIQLO公式: パンツ代表商品',
+    url: 'https://www.uniqlo.com/jp/ja/products/E447780-000/00',
+    role: 'パンツの実商品ページとサイズ表リンク',
   },
   gu: {
     label: 'GU公式',
@@ -3379,56 +3389,192 @@ const SIZE_SOURCE_REFERENCES = {
 
 const SIZE_PROFILES = {
   tops: {
-    name: 'トップス基準',
-    summary: 'シャツ・ニット・カットソー用',
-    sourceIds: ['mercari', 'uniqlo', 'gu', 'zozo'],
-    sourceNote: '公式サイズ表の寸法をS/M/L換算し、古着の実測差を見込んだ目安として使います。タグ表記が読める場合はタグを優先します。',
+    name: 'メンズ標準トップス基準',
+    summary: 'シャツ・カットソー用',
+    sourceIds: ['mercari', 'uniqloShirt', 'gu', 'zozo'],
+    sourceNote: '公式商品ページのサイズ表リンクとメルカリのサイズ選択肢に合わせた実測目安です。タグ表記が読める場合はタグを優先します。',
     fields: {
-      chest:    { w: 0.55, label: '身幅', centers: [46, 49, 52, 55, 58, 61, 64] },
-      shoulder: { w: 0.25, label: '肩幅', centers: [40, 42.5, 45, 47.5, 50, 52, 54] },
-      sleeve:   { w: 0.10, label: '袖丈', centers: [56, 58, 60, 61.5, 63, 64.5, 66] },
-      length:   { w: 0.10, label: '着丈', centers: [63, 66.5, 69, 72, 75, 78, 81] },
-    },
-  },
-  outer: {
-    name: 'アウター基準',
-    summary: 'コート・ジャケット用',
-    sourceIds: ['mercari', 'uniqlo', 'gu', 'zozo'],
-    sourceNote: 'アウターは中に着込む前提でトップスより少し大きめに補正します。タグ表記が読める場合はタグを優先します。',
-    fields: {
-      chest:    { w: 0.45, label: '身幅', centers: [48, 51, 54, 57, 60, 63, 66] },
-      shoulder: { w: 0.20, label: '肩幅', centers: [40, 42, 44, 46, 48, 50, 52] },
-      sleeve:   { w: 0.15, label: '袖丈', centers: [56, 58, 60, 62, 64, 66, 68] },
-      length:   { w: 0.20, label: '着丈', centers: [63, 67, 71, 75, 79, 83, 87] },
+      chest:    { w: 0.50, label: '身幅', centers: [47, 50, 53, 56, 59, 62, 65] },
+      shoulder: { w: 0.25, label: '肩幅', centers: [40, 42, 44, 46, 48, 50, 52] },
+      sleeve:   { w: 0.10, label: '袖丈', centers: [56, 58, 60, 62, 64, 66, 68] },
+      length:   { w: 0.15, label: '着丈', centers: [64, 67, 70, 73, 76, 79, 82] },
     },
     bias: 0.10,
-    liftFromLargeDimension: { gap: 1.4, rate: 0.25, max: 0.45 },
+    liftFromLargeDimension: { gap: 1.2, rate: 0.25, max: 0.35 },
+    tableFields: ['chest', 'shoulder', 'length'],
+    tagExamples: ['XS', 'S / 46', 'M / 48', 'L / 50', 'XL / 52', '2XL / 54', '3XL'],
+  },
+  menShirt: {
+    name: 'メンズシャツ基準',
+    summary: 'ワイシャツ・ドレスシャツ・長袖シャツ用',
+    sourceIds: ['mercari', 'uniqloShirt', 'zozo'],
+    sourceNote: 'シャツは身幅と肩幅を重視し、着丈だけで大きいサイズへ倒れすぎないように補正します。',
+    fields: {
+      chest:    { w: 0.50, label: '身幅', centers: [47, 50, 53, 56, 59, 62, 65] },
+      shoulder: { w: 0.28, label: '肩幅', centers: [40, 42, 44, 46, 48, 50, 52] },
+      sleeve:   { w: 0.10, label: '袖丈', centers: [56, 58, 60, 62, 64, 66, 68] },
+      length:   { w: 0.12, label: '着丈', centers: [66, 69, 72, 75, 78, 81, 84] },
+    },
+    bias: 0.10,
+    liftFromLargeDimension: { gap: 1.2, rate: 0.25, max: 0.35 },
+    tableFields: ['chest', 'shoulder', 'length'],
+    tagExamples: ['XS', 'S / 46', 'M / 48', 'L / 50', 'XL / 52', '2XL / 54', '3XL'],
+  },
+  menRelaxedTop: {
+    name: 'メンズゆったりトップス基準',
+    summary: 'ニット・パーカー・スウェット用',
+    sourceIds: ['mercari', 'uniqloShirt', 'gu', 'zozo'],
+    sourceNote: 'ニット・スウェット系は元々ゆとりが出やすいため、標準トップスより身幅を少し大きめに見ます。',
+    fields: {
+      chest:    { w: 0.52, label: '身幅', centers: [49, 52, 55, 58, 61, 64, 67] },
+      shoulder: { w: 0.20, label: '肩幅', centers: [41, 43, 45, 47, 49, 51, 53] },
+      sleeve:   { w: 0.10, label: '袖丈', centers: [56, 58, 60, 62, 64, 66, 68] },
+      length:   { w: 0.18, label: '着丈', centers: [62, 65, 68, 71, 74, 77, 80] },
+    },
+    bias: 0.05,
+    liftFromLargeDimension: { gap: 1.3, rate: 0.20, max: 0.30 },
+    tableFields: ['chest', 'shoulder', 'length'],
+    tagExamples: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
+  },
+  womenTops: {
+    name: 'レディーストップス基準',
+    summary: 'ブラウス・カットソー・ニット用',
+    sourceIds: ['mercari', 'uniqloShirt', 'gu', 'zozo'],
+    sourceNote: 'レディースはメンズより小さめの実測レンジで判定します。ゆったりシルエットはタグ表記も併用してください。',
+    fields: {
+      chest:    { w: 0.52, label: '身幅', centers: [40, 43, 46, 49, 52, 55, 58] },
+      shoulder: { w: 0.22, label: '肩幅', centers: [34, 36, 38, 40, 42, 44, 46] },
+      sleeve:   { w: 0.08, label: '袖丈', centers: [53, 55, 57, 59, 61, 63, 65] },
+      length:   { w: 0.18, label: '着丈', centers: [54, 57, 60, 63, 66, 69, 72] },
+    },
+    bias: 0.05,
+    liftFromLargeDimension: { gap: 1.2, rate: 0.25, max: 0.35 },
+    tableFields: ['chest', 'shoulder', 'length'],
+    tagExamples: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
+  },
+  outer: {
+    name: 'メンズ通常アウター基準',
+    summary: 'ブルゾン・ジャケット用',
+    sourceIds: ['mercari', 'uniqloJacket', 'gu', 'zozo'],
+    sourceNote: 'アウターは中に着込む前提でトップスより少し大きめに見ます。丈だけで過大判定しないよう身幅を主軸にします。',
+    fields: {
+      chest:    { w: 0.46, label: '身幅', centers: [50, 53, 56, 59, 62, 65, 68] },
+      shoulder: { w: 0.20, label: '肩幅', centers: [41, 43, 45, 47, 49, 51, 53] },
+      sleeve:   { w: 0.14, label: '袖丈', centers: [57, 59, 61, 63, 65, 67, 69] },
+      length:   { w: 0.20, label: '着丈', centers: [65, 69, 73, 77, 81, 85, 89] },
+    },
+    bias: 0.20,
+    liftFromLargeDimension: { gap: 1.0, rate: 0.30, max: 0.50 },
+    tableFields: ['chest', 'shoulder', 'length'],
+    tagExamples: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
+  },
+  menTailoredOuter: {
+    name: 'メンズテーラードジャケット基準',
+    summary: '単品ジャケット用',
+    sourceIds: ['mercari', 'uniqloJacket', 'aoki', 'suitSelect', 'zozo'],
+    sourceNote: '単品ジャケットはスーツ寄りの基準で見ます。身幅だけで小さく倒れないよう、肩幅と着丈も強めに反映します。',
+    fields: {
+      chest:    { w: 0.42, label: '身幅', centers: [46, 49, 52, 55, 58, 61, 64] },
+      shoulder: { w: 0.24, label: '肩幅', centers: [39, 41, 43, 45, 47, 49, 51] },
+      sleeve:   { w: 0.10, label: '袖丈', centers: [56, 58, 60, 62, 64, 66, 68] },
+      length:   { w: 0.24, label: '着丈', centers: [66, 69, 72, 75, 78, 81, 84] },
+    },
+    bias: 0.40,
+    liftFromLargeDimension: { gap: 0.85, rate: 0.45, max: 0.75 },
+    tableFields: ['chest', 'shoulder', 'length'],
+    tagExamples: ['42 / XS', '44-46 / S', '48 / M', '50 / L', '52 / XL', '54 / 2XL', '56 / 3XL'],
+  },
+  menCoat: {
+    name: 'メンズコート基準',
+    summary: 'トレンチ・ステンカラー・チェスター用',
+    sourceIds: ['mercari', 'uniqloJacket', 'aoki', 'zozo'],
+    sourceNote: 'コートは着丈が長い前提のため、着丈の比重を下げ、身幅・肩幅を中心に判定します。',
+    fields: {
+      chest:    { w: 0.50, label: '身幅', centers: [49, 52, 55, 58, 61, 64, 67] },
+      shoulder: { w: 0.24, label: '肩幅', centers: [40, 42, 44, 46, 48, 50, 52] },
+      sleeve:   { w: 0.12, label: '袖丈', centers: [57, 59, 61, 63, 65, 67, 69] },
+      length:   { w: 0.14, label: '着丈', centers: [82, 90, 98, 106, 114, 122, 130] },
+    },
+    bias: 0.20,
+    liftFromLargeDimension: { gap: 1.1, rate: 0.25, max: 0.40 },
+    tableFields: ['chest', 'shoulder', 'length'],
+    tagExamples: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
+  },
+  womenOuter: {
+    name: 'レディースアウター基準',
+    summary: 'ジャケット・コート用',
+    sourceIds: ['mercari', 'uniqloJacket', 'gu', 'zozo'],
+    sourceNote: 'レディースアウターはメンズより小さめの実測レンジで判定し、コート丈は過大判定しすぎないよう補正します。',
+    fields: {
+      chest:    { w: 0.48, label: '身幅', centers: [43, 46, 49, 52, 55, 58, 61] },
+      shoulder: { w: 0.22, label: '肩幅', centers: [36, 38, 40, 42, 44, 46, 48] },
+      sleeve:   { w: 0.10, label: '袖丈', centers: [54, 56, 58, 60, 62, 64, 66] },
+      length:   { w: 0.20, label: '着丈', centers: [58, 63, 68, 73, 78, 83, 88] },
+    },
+    bias: 0.10,
+    liftFromLargeDimension: { gap: 1.1, rate: 0.25, max: 0.40 },
+    tableFields: ['chest', 'shoulder', 'length'],
+    tagExamples: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
   },
   suit: {
-    name: 'スーツ基準',
+    name: 'メンズスーツ基準',
     summary: 'スーツ・テーラード・セットアップ用',
     sourceIds: ['mercari', 'aoki', 'suitSelect', 'zozo'],
-    sourceNote: 'スーツはユニクロ系トップス基準ではなく、ジャケット寸法とパンツ寸法を合わせて判定します。タグ表記が読める場合はタグを優先します。',
+    sourceNote: 'スーツはトップス基準ではなく、ジャケット寸法とパンツ寸法を合わせます。細身スーツで小さく出すぎないよう着丈・肩幅の上振れも反映します。',
     fields: {
-      j_chest:    { w: 0.35, label: '身幅', centers: [46, 49, 52, 55, 58, 61, 64] },
-      j_shoulder: { w: 0.18, label: '肩幅', centers: [39, 41, 43, 45, 47, 49, 51] },
+      j_chest:    { w: 0.34, label: 'J身幅', centers: [45, 48, 51, 54, 57, 60, 63] },
+      j_shoulder: { w: 0.22, label: 'J肩幅', centers: [38.5, 40.5, 42.5, 44.5, 46.5, 48.5, 50.5] },
       j_sleeve:   { w: 0.10, label: '袖丈', centers: [56, 58, 60, 62, 64, 66, 68] },
-      j_length:   { w: 0.12, label: '着丈', centers: [67, 70, 73, 76, 79, 82, 85] },
-      p_waist:    { w: 0.20, label: 'パンツW', centers: [70, 74, 78, 82, 86, 90, 94] },
+      j_length:   { w: 0.16, label: 'J着丈', centers: [66, 69, 72, 75, 78, 81, 84] },
+      p_waist:    { w: 0.16, label: 'Pウエスト', centers: [70, 74, 78, 82, 86, 90, 94] },
       p_inseam:   { w: 0.05, label: '股下', centers: [70, 72, 74, 76, 78, 80, 82] },
     },
+    bias: 0.55,
+    liftFromLargeDimension: { gap: 0.85, rate: 0.45, max: 0.85 },
+    tableFields: ['j_chest', 'j_shoulder', 'j_length', 'p_waist'],
+    tagExamples: ['42 / XS', '44-46 / S', '48 / M', '50 / L', '52 / XL', '54 / 2XL', '56 / 3XL'],
+  },
+  womenSuit: {
+    name: 'レディーススーツ基準',
+    summary: 'レディーススーツ・フォーマル用',
+    sourceIds: ['mercari', 'aoki', 'suitSelect', 'zozo'],
+    sourceNote: 'レディーススーツはメンズスーツとは別の小さめレンジで見ます。パンツが未入力ならジャケット寸法中心で判定します。',
+    fields: {
+      j_chest:    { w: 0.36, label: 'J身幅', centers: [42, 44, 46, 48, 50, 52, 54] },
+      j_shoulder: { w: 0.22, label: 'J肩幅', centers: [35.5, 37, 38.5, 40, 41.5, 43, 44.5] },
+      j_sleeve:   { w: 0.08, label: '袖丈', centers: [54, 56, 58, 60, 62, 64, 66] },
+      j_length:   { w: 0.18, label: 'J着丈', centers: [55, 58, 61, 64, 67, 70, 73] },
+      p_waist:    { w: 0.14, label: 'Pウエスト', centers: [60, 64, 68, 72, 76, 80, 84] },
+      p_inseam:   { w: 0.04, label: '股下', centers: [62, 65, 68, 71, 74, 77, 80] },
+    },
     bias: 0.25,
-    liftFromLargeDimension: { gap: 1.0, rate: 0.35, max: 0.60 },
+    liftFromLargeDimension: { gap: 1.0, rate: 0.35, max: 0.55 },
+    tableFields: ['j_chest', 'j_shoulder', 'j_length', 'p_waist'],
+    tagExamples: ['XS / 5号', 'S / 7号', 'M / 9号', 'L / 11号', 'XL / 13号', '2XL / 15号', '3XL'],
   },
   bottoms: {
-    name: 'ボトムス基準',
+    name: 'メンズボトムス基準',
     summary: 'パンツ・スラックス用',
-    sourceIds: ['mercari', 'uniqlo', 'gu', 'zozo'],
-    sourceNote: 'ボトムスはウエストを主軸にし、股下は補助として使います。タグ表記が読める場合はタグを優先します。',
+    sourceIds: ['mercari', 'uniqloPants', 'gu', 'zozo'],
+    sourceNote: 'ボトムスはウエストを主軸にし、股下は補助に留めます。Wインチやcmタグが読める場合はタグを優先します。',
     fields: {
-      waist:  { w: 0.80, label: 'ウエスト', centers: [66, 70, 74, 78, 82, 86, 90] },
-      inseam: { w: 0.20, label: '股下', centers: [72, 74, 76, 78, 80, 82, 84] },
+      waist:  { w: 0.85, label: 'ウエスト', centers: [68, 72, 76, 80, 84, 88, 92] },
+      inseam: { w: 0.15, label: '股下', centers: [70, 72, 74, 76, 78, 80, 82] },
     },
+    tableFields: ['waist', 'inseam'],
+    tagExamples: ['W26 / XS', 'W28 / S', 'W30 / M', 'W32 / L', 'W34 / XL', 'W36 / 2XL', 'W38 / 3XL'],
+  },
+  womenBottoms: {
+    name: 'レディースボトムス基準',
+    summary: 'レディースパンツ・スラックス用',
+    sourceIds: ['mercari', 'uniqloPants', 'gu', 'zozo'],
+    sourceNote: 'レディースボトムスはメンズより小さめのウエストレンジで判定します。',
+    fields: {
+      waist:  { w: 0.86, label: 'ウエスト', centers: [58, 62, 66, 70, 74, 78, 82] },
+      inseam: { w: 0.14, label: '股下', centers: [64, 66, 68, 70, 72, 74, 76] },
+    },
+    tableFields: ['waist', 'inseam'],
+    tagExamples: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
   },
 };
 
@@ -3464,14 +3610,30 @@ function scoreInseam(v)   { return scoreByCenters(v, SIZE_PROFILES.bottoms.field
 
 function getSizeProfileKey(categoryKey = getSelectedMercariCategoryKey(), broadCat = el('category')?.value) {
   if (!broadCat) return '';
-  if (broadCat === 'suit') return 'suit';
-  if (broadCat === 'bottoms') return 'bottoms';
-  if (broadCat !== 'tops') return '';
-
   const option = getMercariCategoryOption(categoryKey);
   const pathText = [...(option.path || []), option.label || ''].join(' ');
-  if (/ジャケット|アウター|コート|ブルゾン|ダウン|ライダース|スタジャン|ジャンパー|カバーオール|MA-1|フライトジャケット/.test(pathText)) {
+  const isWomen = /レディース/.test(pathText);
+  if (broadCat === 'suit') return isWomen ? 'womenSuit' : 'suit';
+  if (broadCat === 'bottoms') return isWomen ? 'womenBottoms' : 'bottoms';
+  if (broadCat !== 'tops') return '';
+
+  const isOuter = /ジャケット|アウター|コート|ブルゾン|ダウン|ライダース|スタジャン|ジャンパー|カバーオール|MA-1|フライトジャケット|ポンチョ|ケープ/.test(pathText);
+  const isCoat = /コート|トレンチ|ステンカラー|チェスター|ダッフル|ピーコート|モッズ|ロングコート|スプリングコート/.test(pathText);
+  const isTailored = /テーラードジャケット|スーツジャケット|ノーカラージャケット/.test(pathText);
+  if (isWomen) {
+    if (isOuter) return 'womenOuter';
+    return 'womenTops';
+  }
+  if (isTailored) return 'menTailoredOuter';
+  if (isCoat) return 'menCoat';
+  if (isOuter) {
     return 'outer';
+  }
+  if (/ニット|セーター|カーディガン|パーカー|トレーナー|スウェット|ジャージ|ベスト|フリース/.test(pathText)) {
+    return 'menRelaxedTop';
+  }
+  if (/シャツ|ポロシャツ|Tシャツ|カットソー|タンクトップ|ノースリーブ/.test(pathText)) {
+    return 'menShirt';
   }
   return 'tops';
 }
@@ -3538,6 +3700,17 @@ function updateSizeSuggestion() {
     </details>
   `;
   panel.hidden = false;
+  syncMercariSizeFromMeasurements();
+}
+
+function syncMercariSizeFromMeasurements() {
+  const settings = el('mercari-settings');
+  const sizeSelect = el('m-size');
+  if (!settings || settings.hidden || !sizeSelect || sizeSelect.dataset.userEdited) return;
+  const sizeResult = deriveMercariSize(lastAiData, getSelectedMercariCategoryKey());
+  sizeSelect.value = sizeResult.value;
+  updateMercariSizeNote(sizeResult);
+  updateDraftChecklist();
 }
 
 function estimateBySizeProfile(profileKey) {
@@ -3669,58 +3842,48 @@ function renderFinalSize(aiData) {
 }
 
 function sizeReferenceTable(profileKey) {
-  if (profileKey === 'suit') return sizeReferenceSuit();
-  if (profileKey === 'outer') return sizeReferenceOuter();
-  if (profileKey === 'bottoms') return sizeReferenceBottoms();
-  return sizeReferenceTops();
+  const profile = SIZE_PROFILES[profileKey] || SIZE_PROFILES.tops;
+  const fields = (profile.tableFields || Object.keys(profile.fields || {}))
+    .map(key => [key, profile.fields[key]])
+    .filter(([, def]) => def?.centers?.length);
+  if (!fields.length) return '';
+  const header = [
+    '<th>サイズ</th>',
+    ...fields.map(([, def]) => `<th>${escapeHtml(def.label)}(cm)</th>`),
+    '<th>タグ例</th>',
+  ].join('');
+  const rows = SIZE_LABELS.map((label, idx) => {
+    const cells = fields
+      .map(([, def]) => `<td>${formatSizeRange(def.centers, idx)}</td>`)
+      .join('');
+    const tag = profile.tagExamples?.[idx] || label;
+    return `<tr><td>${label}</td>${cells}<td>${escapeHtml(tag)}</td></tr>`;
+  }).join('');
+  return `<table class="size-table"><tr>${header}</tr>${rows}</table>`;
 }
 
-function sizeReferenceTops() {
-  return `<table class="size-table">
-    <tr><th>サイズ</th><th>身幅(cm)</th><th>肩幅(cm)</th><th>着丈(cm)</th><th>タグ例</th></tr>
-    <tr><td>XS</td><td>〜47</td><td>〜41</td><td>〜65</td><td>44 / XS</td></tr>
-    <tr><td>S</td><td>48〜50</td><td>42〜43</td><td>66〜67</td><td>46 / S</td></tr>
-    <tr><td>M</td><td>51〜53</td><td>44〜46</td><td>68〜70</td><td>48 / M</td></tr>
-    <tr><td>L</td><td>54〜56</td><td>47〜48</td><td>71〜73</td><td>50 / L</td></tr>
-    <tr><td>XL</td><td>57〜59</td><td>49〜50</td><td>74〜76</td><td>52 / XL</td></tr>
-    <tr><td>XXL</td><td>60〜62</td><td>51〜53</td><td>77〜79</td><td>54 / XXL</td></tr>
-  </table>`;
+function formatSizeRange(centers, index) {
+  if (!Array.isArray(centers) || !centers.length) return '';
+  if (index <= 0) {
+    const upper = midpoint(centers[0], centers[1] ?? centers[0] + 2);
+    return `〜${formatCm(upper)}`;
+  }
+  if (index >= centers.length - 1) {
+    const lower = midpoint(centers[index - 1], centers[index]);
+    return `${formatCm(lower)}〜`;
+  }
+  const lower = midpoint(centers[index - 1], centers[index]);
+  const upper = midpoint(centers[index], centers[index + 1]);
+  return `${formatCm(lower)}〜${formatCm(upper)}`;
 }
 
-function sizeReferenceOuter() {
-  return `<table class="size-table">
-    <tr><th>サイズ</th><th>身幅(cm)</th><th>肩幅(cm)</th><th>着丈(cm)</th><th>タグ例</th></tr>
-    <tr><td>XS</td><td>〜49</td><td>〜41</td><td>〜65</td><td>44 / XS</td></tr>
-    <tr><td>S</td><td>50〜52</td><td>42〜43</td><td>66〜69</td><td>46 / S</td></tr>
-    <tr><td>M</td><td>53〜55</td><td>44〜45</td><td>70〜73</td><td>48 / M</td></tr>
-    <tr><td>L</td><td>56〜58</td><td>46〜47</td><td>74〜77</td><td>50 / L</td></tr>
-    <tr><td>XL</td><td>59〜61</td><td>48〜49</td><td>78〜81</td><td>52 / XL</td></tr>
-    <tr><td>XXL</td><td>62〜64</td><td>50〜51</td><td>82〜85</td><td>54 / XXL</td></tr>
-  </table>`;
+function midpoint(a, b) {
+  return (Number(a) + Number(b)) / 2;
 }
 
-function sizeReferenceSuit() {
-  return `<table class="size-table">
-    <tr><th>サイズ</th><th>J身幅(cm)</th><th>J肩幅(cm)</th><th>Pウエスト(cm)</th><th>タグ例</th></tr>
-    <tr><td>XS</td><td>〜47</td><td>〜40</td><td>〜72</td><td>42-44 / XS</td></tr>
-    <tr><td>S</td><td>48〜50</td><td>41〜42</td><td>73〜76</td><td>46 / S</td></tr>
-    <tr><td>M</td><td>51〜53</td><td>43〜44</td><td>77〜80</td><td>48 / M</td></tr>
-    <tr><td>L</td><td>54〜56</td><td>45〜46</td><td>81〜84</td><td>50 / L</td></tr>
-    <tr><td>XL</td><td>57〜59</td><td>47〜48</td><td>85〜88</td><td>52 / XL</td></tr>
-    <tr><td>XXL</td><td>60〜62</td><td>49〜50</td><td>89〜92</td><td>54 / XXL</td></tr>
-  </table>`;
-}
-
-function sizeReferenceBottoms() {
-  return `<table class="size-table">
-    <tr><th>サイズ</th><th>ウエスト(cm)</th><th>股下(cm)</th><th>タグ例</th></tr>
-    <tr><td>XS</td><td>〜68</td><td>〜73</td><td>W26 / 62</td></tr>
-    <tr><td>S</td><td>69〜72</td><td>74〜75</td><td>W28 / 70</td></tr>
-    <tr><td>M</td><td>73〜76</td><td>76〜77</td><td>W30 / 75</td></tr>
-    <tr><td>L</td><td>77〜80</td><td>78〜79</td><td>W32 / 79</td></tr>
-    <tr><td>XL</td><td>81〜84</td><td>80〜81</td><td>W34 / 83</td></tr>
-    <tr><td>XXL</td><td>85〜88</td><td>82〜83</td><td>W36 / 87</td></tr>
-  </table>`;
+function formatCm(value) {
+  const rounded = Math.round(Number(value) * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 // ----- 画像合成（✂️ 画像合成） -----
