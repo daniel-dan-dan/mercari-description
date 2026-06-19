@@ -124,6 +124,65 @@ label {
   letter-spacing: 0.02em;
 }
 
+.field-label {
+  display: block;
+  font-weight: 700;
+  font-size: 13px;
+  margin: 12px 0 6px;
+  color: #3d2a5c;
+  letter-spacing: 0.02em;
+}
+
+.product-gender-field {
+  margin-bottom: 12px;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1.5px solid #f0e6f5;
+  border-radius: 12px;
+  background: #f8f4fb;
+}
+
+.segmented-control label {
+  position: relative;
+  margin: 0;
+}
+
+.segmented-control input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented-control span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  color: #6b5d7d;
+  font-size: 14px;
+  font-weight: 800;
+  background: transparent;
+  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.segmented-control input:checked + span {
+  color: #b43142;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(100, 70, 120, 0.1);
+}
+
+.segmented-control input:focus-visible + span {
+  outline: 2px solid #ff6b7e;
+  outline-offset: 2px;
+}
+
 input[type="text"],
 input[type="password"],
 input[type="number"],

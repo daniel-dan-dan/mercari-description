@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260615f">
+  <link rel="stylesheet" href="styles.css?v=20260619a">
 </head>
 <body>
   <div id="app">
@@ -22,7 +22,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260615f / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
+      <p class="settings-version" id="settings-version">v20260619a / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
     </section>
 
     <!-- メイン画面 -->
@@ -72,6 +72,19 @@
       <!-- Step 2: カテゴリと採寸 -->
       <div class="step measure-step">
         <h2>② カテゴリと採寸を入力</h2>
+        <div class="product-gender-field">
+          <div class="field-label">対象</div>
+          <div class="segmented-control gender-segmented" role="radiogroup" aria-label="対象">
+            <label>
+              <input type="radio" name="product-gender" value="men" checked>
+              <span>メンズ</span>
+            </label>
+            <label>
+              <input type="radio" name="product-gender" value="women">
+              <span>レディース</span>
+            </label>
+          </div>
+        </div>
         <label for="category">カテゴリ</label>
         <select id="category">
           <option value="">選択してください</option>
@@ -397,6 +410,6 @@
 
   </div>
 
-  <script src="app.js?v=20260615f"></script>
+  <script src="app.js?v=20260619a"></script>
 </body>
 </html>

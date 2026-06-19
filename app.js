@@ -14,6 +14,8 @@ const MAX_DRAFT_PHOTOS = 20;         // メルカリ下書き保存に送れる�
 const MAX_AI_PHOTOS = 12;            // AI分析に送る写真枚数。通信安定のため下書き枚数より少なくする
 const MAX_AI_PAYLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_MERCARI_TITLE_LENGTH = 40; // メルカリの商品名上限
+const PRODUCT_GENDER_STORAGE_KEY = 'mercari_product_gender';
+const PRODUCT_GENDER_LABELS = { men: 'メンズ', women: 'レディース' };
 
 const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
@@ -421,6 +423,38 @@ const MERCARI_SIZE_OPTIONS = [
   { value: '30cm', label: '30cm' },
 ];
 const MERCARI_SIZE_OPTION_VALUES = new Set(MERCARI_SIZE_OPTIONS.map(option => option.value));
+const GENDERED_CATEGORY_FALLBACKS = {
+  men: {
+    suit: 'men_suit',
+    tops: 'men_mc_016',
+    bottoms: 'men_slacks',
+    shirt: 'men_shirt',
+    tshirt: 'men_tshirt',
+    polo: 'men_polo',
+    knit: 'men_knit',
+    cardigan: 'men_cardigan',
+    tailored: 'men_tailored_jacket',
+    trench: 'men_trench_coat',
+    outer: 'men_other_outer',
+    denim: 'men_denim',
+    shorts: 'men_shorts',
+  },
+  women: {
+    suit: 'women_suit',
+    tops: 'women_mc_157',
+    bottoms: 'women_slacks',
+    shirt: 'women_shirt_blouse',
+    tshirt: 'women_tshirt',
+    polo: 'women_mc_153',
+    knit: 'women_knit',
+    cardigan: 'women_cardigan',
+    tailored: 'women_tailored_jacket',
+    trench: 'women_trench_coat',
+    outer: 'women_other_outer',
+    denim: 'women_mc_184',
+    shorts: 'women_mc_185',
+  },
+};
 const RESEARCH_REQUESTS_KEY = 'mercari_research_requests';
 const RESEARCH_RESULTS_KEY = 'mercari_research_results';
 const MARKDOWN_ROWS_KEY = 'mercari_markdown_rows';
@@ -494,12 +528,97 @@ let markdownRows = [];
 // ----- 画面制御 -----
 const el = (id) => document.getElementById(id);
 
+function normalizeProductGender(value) {
+  return value === 'women' ? 'women' : 'men';
+}
+
+function getSelectedProductGender() {
+  const checked = document.querySelector('input[name="product-gender"]:checked');
+  return normalizeProductGender(checked ? checked.value : localStorage.getItem(PRODUCT_GENDER_STORAGE_KEY));
+}
+
+function getSelectedProductGenderLabel() {
+  return PRODUCT_GENDER_LABELS[getSelectedProductGender()] || PRODUCT_GENDER_LABELS.men;
+}
+
+function setSelectedProductGender(value, { persist = true } = {}) {
+  const gender = normalizeProductGender(value);
+  document.querySelectorAll('input[name="product-gender"]').forEach(input => {
+    input.checked = input.value === gender;
+  });
+  if (persist) localStorage.setItem(PRODUCT_GENDER_STORAGE_KEY, gender);
+}
+
 function normalizeMercariCategoryKey(key) {
   return MERCARI_CATEGORY_OPTION_MAP[key] ? key : 'unknown';
 }
 
 function getMercariCategoryOption(key) {
   return MERCARI_CATEGORY_OPTION_MAP[normalizeMercariCategoryKey(key)];
+}
+
+function getMercariCategoryGender(categoryKey) {
+  const option = getMercariCategoryOption(categoryKey);
+  const text = [...(option.path || []), option.label || ''].join(' ');
+  if (/レディース/.test(text) || /^women_/.test(option.key)) return 'women';
+  if (/メンズ/.test(text) || /^men_/.test(option.key)) return 'men';
+  return '';
+}
+
+function validMercariCategoryKeyOrFallback(key, fallback) {
+  const normalized = normalizeMercariCategoryKey(key);
+  return normalized === 'unknown' ? fallback : normalized;
+}
+
+function pickGenderedCategoryFallback(categoryKey, targetGender, broadCat = el('category')?.value) {
+  const fallbackMap = GENDERED_CATEGORY_FALLBACKS[targetGender] || GENDERED_CATEGORY_FALLBACKS.men;
+  const option = getMercariCategoryOption(categoryKey);
+  const text = [...(option.path || []), option.label || ''].join(' ');
+  let fallback = '';
+
+  if (broadCat === 'suit' || /スーツ|フォーマル/.test(text)) {
+    fallback = fallbackMap.suit;
+  } else if (broadCat === 'bottoms' || /パンツ|スラックス|デニム|ジーンズ|ショートパンツ|ハーフパンツ|チノ/.test(text)) {
+    if (/ショートパンツ|ハーフパンツ/.test(text)) fallback = fallbackMap.shorts;
+    else if (/デニム|ジーンズ/.test(text)) fallback = fallbackMap.denim;
+    else fallback = fallbackMap.bottoms;
+  } else if (broadCat === 'tops' || /トップス|ジャケット|アウター|コート|シャツ|ブラウス|ニット|カーディガン|ポロ|Tシャツ|カットソー/.test(text)) {
+    if (/テーラード|スーツジャケット|ノーカラージャケット/.test(text)) fallback = fallbackMap.tailored;
+    else if (/トレンチ/.test(text)) fallback = fallbackMap.trench;
+    else if (/コート|ジャケット|アウター|ブルゾン|ジャンパー|ダウン/.test(text)) fallback = fallbackMap.outer;
+    else if (/ニット|セーター/.test(text)) fallback = fallbackMap.knit;
+    else if (/カーディガン/.test(text)) fallback = fallbackMap.cardigan;
+    else if (/ポロ/.test(text)) fallback = fallbackMap.polo;
+    else if (/Tシャツ|カットソー/.test(text)) fallback = fallbackMap.tshirt;
+    else if (/シャツ|ブラウス/.test(text)) fallback = fallbackMap.shirt;
+    else fallback = fallbackMap.tops;
+  }
+
+  return fallback ? validMercariCategoryKeyOrFallback(fallback, categoryKey) : categoryKey;
+}
+
+function coerceMercariCategoryForProductGender(categoryKey, broadCat = el('category')?.value) {
+  const normalized = normalizeMercariCategoryKey(categoryKey);
+  const categoryGender = getMercariCategoryGender(normalized);
+  const selectedGender = getSelectedProductGender();
+  if (!categoryGender || categoryGender === selectedGender) return normalized;
+  return pickGenderedCategoryFallback(normalized, selectedGender, broadCat);
+}
+
+function syncMercariCategoryForProductGender() {
+  const select = el('m-category');
+  if (!select) return;
+  const current = getSelectedMercariCategoryKey();
+  const next = coerceMercariCategoryForProductGender(current);
+  if (next !== current) {
+    select.value = next;
+    updateMercariCategoryPath();
+  }
+}
+
+function syncProductGenderFromMercariCategory(categoryKey) {
+  const gender = getMercariCategoryGender(categoryKey);
+  if (gender) setSelectedProductGender(gender);
 }
 
 function getSelectedMercariCategoryKey() {
@@ -680,8 +799,28 @@ async function init() {
   el('photo-input').addEventListener('change', handlePhotoSelect);
   renderMercariCategoryOptions();
   renderMercariSizeOptions();
+  setSelectedProductGender(localStorage.getItem(PRODUCT_GENDER_STORAGE_KEY));
+  document.querySelectorAll('input[name="product-gender"]').forEach(input => {
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
+      setSelectedProductGender(input.value);
+      syncMercariCategoryForProductGender();
+      updateSizeSuggestion();
+      if (lastAiData && el('final-size-badge') && !el('final-size-badge').hidden) {
+        renderFinalSize(lastAiData);
+      }
+      const sizeResult = deriveMercariSize(lastAiData, getSelectedMercariCategoryKey());
+      if (el('m-size') && !el('m-size').dataset.userEdited) {
+        el('m-size').value = sizeResult.value;
+      }
+      updateMercariSizeNote(sizeResult);
+      scheduleSave();
+      updateDraftChecklist();
+    });
+  });
   el('category').addEventListener('change', () => {
     renderMeasurements();
+    syncMercariCategoryForProductGender();
     scheduleSave();
   });
   el('generate-btn').addEventListener('click', generateDescription);
@@ -695,6 +834,7 @@ async function init() {
   });
   el('result-text').addEventListener('input', () => { scheduleSave(); updateDraftChecklist(); });
   el('m-category').addEventListener('change', () => {
+    syncProductGenderFromMercariCategory(getSelectedMercariCategoryKey());
     updateMercariCategoryPath();
     const sizeResult = deriveMercariSize(lastAiData, getSelectedMercariCategoryKey());
     if (el('m-size') && !el('m-size').dataset.userEdited) {
@@ -1445,6 +1585,16 @@ ${formatMercariCategoryPrompt()}
 
 {"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"...","mercari_category_key":"men_shirt","mercari_condition":"目立った傷や汚れなし"}`;
 
+function buildDescriptionSystemPrompt() {
+  const genderLabel = getSelectedProductGenderLabel();
+  return `${SYSTEM_PROMPT}
+
+今回の商品対象:
+- 対象は「${genderLabel}」として扱う
+- mercari_category_key は、明らかに写真と矛盾しない限り「${genderLabel}」側のカテゴリから選ぶ
+- サイズ推定やタグサイズの解釈も「${genderLabel}」向けとして扱う`;
+}
+
 /**
  * AI応答からJSONオブジェクトを取り出す。
  * - 素直にパースできればそれを返す
@@ -1623,7 +1773,7 @@ async function callDescriptionAi(images, onChunk) {
   const omittedCount = Math.max(0, images.length - aiImages.length);
   const payload = {
     images: aiImages,
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: buildDescriptionSystemPrompt(),
   };
   const payloadBytes = estimateJsonBytes(payload);
   if (payloadBytes > MAX_AI_PAYLOAD_BYTES) {
@@ -1889,7 +2039,10 @@ async function generateDescription() {
     }
     const measurementText = formatMeasurements(measurements);
     const description = buildDescription(aiData, measurementText);
-    const mercariCategoryKey = normalizeMercariCategoryKey(aiData.mercari_category_key);
+    const mercariCategoryKey = coerceMercariCategoryForProductGender(
+      aiData.mercari_category_key,
+      measurements.category,
+    );
     const mercariBrand = getPreferredMercariBrand(aiData);
     const mercariSizeResult = deriveMercariSize(aiData, mercariCategoryKey);
     textarea.value = description;
@@ -1901,6 +2054,7 @@ async function generateDescription() {
       title: title,
       description: description,
       category: measurements.category,
+      product_gender: getSelectedProductGender(),
       mercari_category_key: mercariCategoryKey,
       brand: aiData.brand || '',
       brand_en: aiData.brand_en || '',
@@ -1994,6 +2148,7 @@ function collectState() {
   return {
     photos: uploadedImages,
     category,
+    productGender: getSelectedProductGender(),
     raglanChecked: raglanToggle ? raglanToggle.checked : false,
     measurements,
     title: normalizeMercariTitle(el('title-text').value),
@@ -2017,6 +2172,7 @@ function scheduleSave() {
 
 function restoreState(s) {
   if (!s) return;
+  setSelectedProductGender(s.productGender || localStorage.getItem(PRODUCT_GENDER_STORAGE_KEY));
   if (Array.isArray(s.photos) && s.photos.length) {
     uploadedImages = s.photos.map(p => ({
       ...p,
@@ -3755,7 +3911,7 @@ function getSizeProfileKey(categoryKey = getSelectedMercariCategoryKey(), broadC
   if (!broadCat) return '';
   const option = getMercariCategoryOption(categoryKey);
   const pathText = [...(option.path || []), option.label || ''].join(' ');
-  const isWomen = /レディース/.test(pathText);
+  const isWomen = getSelectedProductGender() === 'women';
   if (broadCat === 'suit') return isWomen ? 'womenSuit' : 'suit';
   if (broadCat === 'bottoms') return isWomen ? 'womenBottoms' : 'bottoms';
   if (broadCat !== 'tops') return '';
