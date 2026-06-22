@@ -1445,6 +1445,9 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
   margin-bottom: 8px;
 }
 #setup-screen h1::before { content: "🔑"; }
+#past-listing-style-input {
+  min-height: 160px;
+}
 
 /* ========== 画像合成モーダル ========== */
 /* 写真編集メニュー */

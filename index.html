@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260619a">
+  <link rel="stylesheet" href="styles.css?v=20260622a">
 </head>
 <body>
   <div id="app">
@@ -18,11 +18,14 @@
       <p class="note">Mac側サービスへ接続するためのGAS URLを入力してください。AI用のAPIキーはMac側に保存され、スマホ側には保存しません。</p>
       <label for="gas-url-input">GAS URL（AI生成・下書き機能用）</label>
       <input type="url" id="gas-url-input" placeholder="https://script.google.com/..." autocomplete="off">
+      <label for="past-listing-style-input">過去出品例（タイトル・説明文）</label>
+      <textarea id="past-listing-style-input" rows="8" spellcheck="false" placeholder="過去に出品した商品のタイトルと説明文を数件貼り付けてください。AIが文体や単語選びの参考にします。"></textarea>
+      <p class="note small">過去出品の商品情報はコピーせず、今回の写真・タグ・採寸を優先します。</p>
       <div class="button-row">
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260619a / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
+      <p class="settings-version" id="settings-version">v20260622a / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
     </section>
 
     <!-- メイン画面 -->
@@ -410,6 +413,6 @@
 
   </div>
 
-  <script src="app.js?v=20260619a"></script>
+  <script src="app.js?v=20260622a"></script>
 </body>
 </html>

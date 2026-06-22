@@ -16,6 +16,8 @@ const MAX_AI_PAYLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_MERCARI_TITLE_LENGTH = 40; // メルカリの商品名上限
 const PRODUCT_GENDER_STORAGE_KEY = 'mercari_product_gender';
 const PRODUCT_GENDER_LABELS = { men: 'メンズ', women: 'レディース' };
+const PAST_LISTING_STYLE_STORAGE_KEY = 'mercari_past_listing_style_examples';
+const MAX_PAST_LISTING_STYLE_CHARS = 6000;
 
 const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
@@ -898,6 +900,8 @@ async function init() {
   // GAS URL読み込み
   const gasUrlInput = el('gas-url-input');
   if (gasUrlInput) gasUrlInput.value = serviceUrl || '';
+  const pastListingStyleInput = el('past-listing-style-input');
+  if (pastListingStyleInput) pastListingStyleInput.value = getPastListingStyleExamples();
 
   // 前回のセッションを復元
   if (serviceUrl) {
@@ -922,6 +926,16 @@ function saveSettings() {
   const gasUrl = normalizeGasUrl(gasUrlInput ? gasUrlInput.value : '');
   if (!gasUrl) { alert('GAS URLを入力してください'); return; }
   localStorage.setItem(SERVICE_URL_KEY, gasUrl);
+  const pastListingStyleInput = el('past-listing-style-input');
+  if (pastListingStyleInput) {
+    const examples = normalizePastListingStyleInput(pastListingStyleInput.value);
+    pastListingStyleInput.value = examples;
+    if (examples) {
+      localStorage.setItem(PAST_LISTING_STYLE_STORAGE_KEY, examples);
+    } else {
+      localStorage.removeItem(PAST_LISTING_STYLE_STORAGE_KEY);
+    }
+  }
   if (localStorage.getItem(LEGACY_API_KEY_STORAGE_KEY)) {
     localStorage.removeItem(LEGACY_API_KEY_STORAGE_KEY);
   }
@@ -931,6 +945,8 @@ function saveSettings() {
 function openSettings() {
   const gasUrlInput = el('gas-url-input');
   if (gasUrlInput) gasUrlInput.value = getPreferredGasUrl();
+  const pastListingStyleInput = el('past-listing-style-input');
+  if (pastListingStyleInput) pastListingStyleInput.value = getPastListingStyleExamples();
   showScreen('setup-screen');
 }
 
@@ -1575,15 +1591,48 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 9. mercari_category_key — メルカリ詳細カテゴリ。写真・タグ・商品種別から最も近いキーを1つだけ選ぶ。性別やアイテムが判断できない場合は "unknown" を選ぶ。
    候補:
 ${formatMercariCategoryPrompt()}
+10. title_keywords — 商品名に入れる候補の短い単語を配列で2〜5個。メルカリ上限40文字に収めやすいよう、1語は12文字以内を目安にする。
+   - 過去出品例がある場合は、過去のタイトルでよく使う訴求語・語順・強調の癖を参考にする
+   - ただし、過去出品例の商品情報（ブランド、サイズ、色、状態、素材）は今回の商品へコピーしない
 
 ルール:
 - 写真から読み取れない情報は "---" と記載する（推測で埋めない）
 - 状態は正直に記載する（ダメージを隠さない）
 - appealの文章は丁寧だが簡潔に
+- 過去出品例がある場合、タイトル・説明文の文体、言い回し、訴求語の選び方だけを参考にする。商品事実は今回の写真・タグ・採寸を最優先する
 - **出力は JSON オブジェクト1つのみ**。前置きの文章・後置きの説明・「以下の通りです」のような挨拶・\`\`\`json などのコードフェンス・改行のみの行を一切含めない。最初の文字は { で、最後の文字は } とすること
 - JSON 内の文字列は二重引用符 " で囲む（' は使わない）。文字列中の改行は \\n でエスケープする
 
-{"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"...","mercari_category_key":"men_shirt","mercari_condition":"目立った傷や汚れなし"}`;
+{"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"...","mercari_category_key":"men_shirt","mercari_condition":"目立った傷や汚れなし","title_keywords":["美品","上質"]}`;
+
+function normalizePastListingStyleInput(value) {
+  return String(value || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{4,}/g, '\n\n\n')
+    .trim()
+    .slice(0, MAX_PAST_LISTING_STYLE_CHARS);
+}
+
+function getPastListingStyleExamples() {
+  return normalizePastListingStyleInput(localStorage.getItem(PAST_LISTING_STYLE_STORAGE_KEY));
+}
+
+function buildPastListingStylePrompt() {
+  const examples = getPastListingStyleExamples();
+  if (!examples) return '';
+  return `
+
+ユーザーの過去出品例:
+---
+${examples}
+---
+
+過去出品例の使い方:
+- タイトルの単語選び、語順、絵文字の使い方、説明文の丁寧さを参考にする
+- 説明文はユーザーの過去出品に近い自然な雰囲気に寄せる
+- 過去出品例にあるブランド名・サイズ・色・状態・素材・ダメージ情報は、今回の商品事実としてコピーしない
+- 今回の写真・タグ・採寸と矛盾する内容は絶対に入れない`;
+}
 
 function buildDescriptionSystemPrompt() {
   const genderLabel = getSelectedProductGenderLabel();
@@ -1592,7 +1641,7 @@ function buildDescriptionSystemPrompt() {
 今回の商品対象:
 - 対象は「${genderLabel}」として扱う
 - mercari_category_key は、明らかに写真と矛盾しない限り「${genderLabel}」側のカテゴリから選ぶ
-- サイズ推定やタグサイズの解釈も「${genderLabel}」向けとして扱う`;
+- サイズ推定やタグサイズの解釈も「${genderLabel}」向けとして扱う${buildPastListingStylePrompt()}`;
 }
 
 /**
@@ -1908,6 +1957,15 @@ function addUniqueTitleToken(tokens, token, existingTitle) {
   tokens.push(cleaned);
 }
 
+function getAiTitleKeywordList(aiData = {}) {
+  const raw = aiData.title_keywords || aiData.mercari_title_keywords || [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    return raw.split(/[,\n、，/／|｜]+/).map(v => v.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 function extractTitleAppealWords(aiData) {
   const source = [
     aiData.appeal,
@@ -1919,6 +1977,15 @@ function extractTitleAppealWords(aiData) {
   ].filter(Boolean).join(' ');
   const baseTitle = [aiData.brand, aiData.brand_en, aiData.item].filter(Boolean).join(' ');
   const tokens = [];
+
+  getAiTitleKeywordList(aiData).forEach(word => {
+    const cleaned = cleanTitleSegment(word);
+    if (/^(美品|良品|極美品)$/.test(cleaned)) {
+      addUniqueTitleToken(tokens, '✨美品✨', baseTitle);
+      return;
+    }
+    addUniqueTitleToken(tokens, cleaned, baseTitle);
+  });
 
   if (/目立った傷や汚れ(のない|なし|無し)|未使用に近い|新品、未使用|新品|未使用|美品/.test(source)) {
     addUniqueTitleToken(tokens, '✨美品✨', baseTitle);
@@ -2059,6 +2126,7 @@ async function generateDescription() {
       brand: aiData.brand || '',
       brand_en: aiData.brand_en || '',
       tag_size: aiData.tag_size || '',
+      title_keywords: getAiTitleKeywordList(aiData),
       mercari_brand: mercariBrand,
       mercari_size: mercariSizeResult.value,
       measurements: measurements,
