@@ -1876,13 +1876,13 @@ async function refreshListingStyleFromMac() {
     const tunnelUrl = await getMercariServiceUrl((message) => {
       if (status) status.textContent = message;
     });
-    if (status) status.textContent = 'メルカリの過去出品を読み込み中...';
+    if (status) status.textContent = 'メルカリの過去出品を全件読み込み中...';
     const resp = await fetchWithTimeout(
       `${tunnelUrl}/listing-style/refresh`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 12 }),
+        body: JSON.stringify({ all: true, limit: 0 }),
       },
       20000
     );
@@ -1891,8 +1891,8 @@ async function refreshListingStyleFromMac() {
       throw new Error(data.error || `過去出品文体更新エラー (${resp.status})`);
     }
     const job = await pollMacJob(tunnelUrl, data.job_id, {
-      intervalMs: 4000,
-      timeoutMs: 300000,
+      intervalMs: 5000,
+      timeoutMs: 1200000,
       onStatus: (statusData) => {
         if (status) status.textContent = statusData.message || '処理中...';
       },
