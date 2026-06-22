@@ -16,8 +16,7 @@ const MAX_AI_PAYLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_MERCARI_TITLE_LENGTH = 40; // メルカリの商品名上限
 const PRODUCT_GENDER_STORAGE_KEY = 'mercari_product_gender';
 const PRODUCT_GENDER_LABELS = { men: 'メンズ', women: 'レディース' };
-const PAST_LISTING_STYLE_STORAGE_KEY = 'mercari_past_listing_style_examples';
-const MAX_PAST_LISTING_STYLE_CHARS = 6000;
+const LISTING_STYLE_SUMMARY_STORAGE_KEY = 'mercari_listing_style_summary';
 
 const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
@@ -827,6 +826,8 @@ async function init() {
   });
   el('generate-btn').addEventListener('click', generateDescription);
   el('retry-btn').addEventListener('click', retryGeneration);
+  const listingStyleRefreshBtn = el('listing-style-refresh-btn');
+  if (listingStyleRefreshBtn) listingStyleRefreshBtn.addEventListener('click', refreshListingStyleFromMac);
   el('title-text').addEventListener('input', () => {
     const titleInput = el('title-text');
     const cappedTitle = capMercariTitleInput(titleInput.value);
@@ -900,8 +901,7 @@ async function init() {
   // GAS URL読み込み
   const gasUrlInput = el('gas-url-input');
   if (gasUrlInput) gasUrlInput.value = serviceUrl || '';
-  const pastListingStyleInput = el('past-listing-style-input');
-  if (pastListingStyleInput) pastListingStyleInput.value = getPastListingStyleExamples();
+  renderListingStyleStatus(readListingStyleSummary());
 
   // 前回のセッションを復元
   if (serviceUrl) {
@@ -916,6 +916,7 @@ async function init() {
   renderResearchData();
   renderMarkdownRows();
   if (serviceUrl) refreshResearchResultsFromMac({ silent: true }).catch(() => {});
+  if (serviceUrl) refreshListingStyleStatusFromMac({ silent: true }).catch(() => {});
   updateGenerateButton();
   updateResearchPreview();
 }
@@ -926,16 +927,6 @@ function saveSettings() {
   const gasUrl = normalizeGasUrl(gasUrlInput ? gasUrlInput.value : '');
   if (!gasUrl) { alert('GAS URLを入力してください'); return; }
   localStorage.setItem(SERVICE_URL_KEY, gasUrl);
-  const pastListingStyleInput = el('past-listing-style-input');
-  if (pastListingStyleInput) {
-    const examples = normalizePastListingStyleInput(pastListingStyleInput.value);
-    pastListingStyleInput.value = examples;
-    if (examples) {
-      localStorage.setItem(PAST_LISTING_STYLE_STORAGE_KEY, examples);
-    } else {
-      localStorage.removeItem(PAST_LISTING_STYLE_STORAGE_KEY);
-    }
-  }
   if (localStorage.getItem(LEGACY_API_KEY_STORAGE_KEY)) {
     localStorage.removeItem(LEGACY_API_KEY_STORAGE_KEY);
   }
@@ -945,8 +936,6 @@ function saveSettings() {
 function openSettings() {
   const gasUrlInput = el('gas-url-input');
   if (gasUrlInput) gasUrlInput.value = getPreferredGasUrl();
-  const pastListingStyleInput = el('past-listing-style-input');
-  if (pastListingStyleInput) pastListingStyleInput.value = getPastListingStyleExamples();
   showScreen('setup-screen');
 }
 
@@ -1605,43 +1594,19 @@ ${formatMercariCategoryPrompt()}
 
 {"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"...","mercari_category_key":"men_shirt","mercari_condition":"目立った傷や汚れなし","title_keywords":["美品","上質"]}`;
 
-function normalizePastListingStyleInput(value) {
-  return String(value || '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\n{4,}/g, '\n\n\n')
-    .trim()
-    .slice(0, MAX_PAST_LISTING_STYLE_CHARS);
+function buildPastListingStylePrompt(stylePrompt) {
+  const prompt = String(stylePrompt || '').trim();
+  return prompt ? `\n\n${prompt}` : '';
 }
 
-function getPastListingStyleExamples() {
-  return normalizePastListingStyleInput(localStorage.getItem(PAST_LISTING_STYLE_STORAGE_KEY));
-}
-
-function buildPastListingStylePrompt() {
-  const examples = getPastListingStyleExamples();
-  if (!examples) return '';
-  return `
-
-ユーザーの過去出品例:
----
-${examples}
----
-
-過去出品例の使い方:
-- タイトルの単語選び、語順、絵文字の使い方、説明文の丁寧さを参考にする
-- 説明文はユーザーの過去出品に近い自然な雰囲気に寄せる
-- 過去出品例にあるブランド名・サイズ・色・状態・素材・ダメージ情報は、今回の商品事実としてコピーしない
-- 今回の写真・タグ・採寸と矛盾する内容は絶対に入れない`;
-}
-
-function buildDescriptionSystemPrompt() {
+function buildDescriptionSystemPrompt(stylePrompt = '') {
   const genderLabel = getSelectedProductGenderLabel();
   return `${SYSTEM_PROMPT}
 
 今回の商品対象:
 - 対象は「${genderLabel}」として扱う
 - mercari_category_key は、明らかに写真と矛盾しない限り「${genderLabel}」側のカテゴリから選ぶ
-- サイズ推定やタグサイズの解釈も「${genderLabel}」向けとして扱う${buildPastListingStylePrompt()}`;
+- サイズ推定やタグサイズの解釈も「${genderLabel}」向けとして扱う${buildPastListingStylePrompt(stylePrompt)}`;
 }
 
 /**
@@ -1810,9 +1775,147 @@ async function getMercariServiceUrl(statusCallback) {
   throw new Error(`MacサービスURLを取得できませんでした。${errors.join(' / ')}`);
 }
 
+function readListingStyleSummary() {
+  try {
+    return JSON.parse(localStorage.getItem(LISTING_STYLE_SUMMARY_STORAGE_KEY) || '{}') || {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveListingStyleSummary(style) {
+  const summary = {
+    hasStyle: !!style?.hasStyle,
+    itemCount: Number(style?.itemCount || 0),
+    updatedAt: style?.updatedAt || '',
+    titleWordHints: Array.isArray(style?.titleWordHints) ? style.titleWordHints.slice(0, 12) : [],
+  };
+  localStorage.setItem(LISTING_STYLE_SUMMARY_STORAGE_KEY, JSON.stringify(summary));
+  renderListingStyleStatus(summary);
+  return summary;
+}
+
+function formatListingStyleDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString('ja-JP', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function renderListingStyleStatus(summary = {}) {
+  const node = el('listing-style-status');
+  if (!node) return;
+  if (summary.hasStyle && summary.itemCount) {
+    const updated = formatListingStyleDate(summary.updatedAt);
+    const hints = (summary.titleWordHints || []).slice(0, 6).join('、');
+    node.textContent = `過去出品${summary.itemCount}件を参考にします${updated ? `（更新: ${updated}）` : ''}${hints ? `。よく使う語: ${hints}` : ''}`;
+    node.classList.remove('unknown');
+  } else {
+    node.textContent = 'まだ過去出品の文体を取得していません。生成はできますが、文体は通常のAI文になります。';
+    node.classList.add('unknown');
+  }
+}
+
+async function fetchListingStyleFromMac(tunnelUrl, { silent = false, statusCallback } = {}) {
+  if (!silent) statusCallback?.('過去出品の文体を読み込み中...');
+  let resp;
+  try {
+    resp = await fetchWithTimeout(`${tunnelUrl}/listing-style`, {}, 12000);
+  } catch (err) {
+    if (!silent) statusCallback?.('過去出品の文体は読み込めませんでした。通常生成で続けます。');
+    return '';
+  }
+  const data = await readJsonResponse(resp, '過去出品文体');
+  if (!resp.ok || data.ok === false) {
+    if (!silent) statusCallback?.('過去出品の文体は読み込めませんでした。通常生成で続けます。');
+    return '';
+  }
+  saveListingStyleSummary(data);
+  if (data.hasStyle && data.prompt) {
+    if (!silent) statusCallback?.(`過去出品${data.itemCount || 0}件の文体を反映します...`);
+    return String(data.prompt || '');
+  }
+  if (!silent) statusCallback?.('過去出品の文体は未取得です。通常生成で続けます。');
+  return '';
+}
+
+async function refreshListingStyleStatusFromMac({ silent = false } = {}) {
+  const tunnelUrl = await getMercariServiceUrl((message) => {
+    if (!silent) renderListingStyleStatus({ hasStyle: false, itemCount: 0, updatedAt: '', titleWordHints: [message] });
+  });
+  await fetchListingStyleFromMac(tunnelUrl, { silent });
+}
+
+async function pollMacJob(tunnelUrl, jobId, { intervalMs = 3000, timeoutMs = 240000, onStatus } = {}) {
+  const started = Date.now();
+  while (true) {
+    if (Date.now() - started > timeoutMs) throw new Error('処理がタイムアウトしました');
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+    const statusResp = await fetchWithTimeout(`${tunnelUrl}/status/${jobId}`, {}, 12000);
+    const statusData = await readJsonResponse(statusResp, '処理状況');
+    onStatus?.(statusData);
+    if (statusData.status === 'done') return statusData;
+    if (statusData.status === 'error') throw new Error(statusData.message || 'Mac側処理でエラーが発生しました');
+  }
+}
+
+async function refreshListingStyleFromMac() {
+  const btn = el('listing-style-refresh-btn');
+  const status = el('listing-style-status');
+  if (btn) btn.disabled = true;
+  if (status) {
+    status.classList.remove('unknown');
+    status.textContent = 'MacサービスURLを取得中...';
+  }
+  try {
+    const tunnelUrl = await getMercariServiceUrl((message) => {
+      if (status) status.textContent = message;
+    });
+    if (status) status.textContent = 'メルカリの過去出品を読み込み中...';
+    const resp = await fetchWithTimeout(
+      `${tunnelUrl}/listing-style/refresh`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 12 }),
+      },
+      20000
+    );
+    const data = await readJsonResponse(resp, '過去出品文体更新');
+    if (!resp.ok || data.ok === false || !data.job_id) {
+      throw new Error(data.error || `過去出品文体更新エラー (${resp.status})`);
+    }
+    const job = await pollMacJob(tunnelUrl, data.job_id, {
+      intervalMs: 4000,
+      timeoutMs: 300000,
+      onStatus: (statusData) => {
+        if (status) status.textContent = statusData.message || '処理中...';
+      },
+    });
+    const style = job.style || {};
+    saveListingStyleSummary(style);
+  } catch (err) {
+    console.error(err);
+    if (status) {
+      status.textContent = `過去出品の文体取得に失敗しました: ${err.message}`;
+      status.classList.add('unknown');
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 async function callDescriptionAi(images, onChunk) {
   const tunnelUrl = await getMercariServiceUrl((message) => {
     if (onChunk) onChunk(message);
+  });
+  const listingStylePrompt = await fetchListingStyleFromMac(tunnelUrl, {
+    statusCallback: onChunk,
   });
 
   const aiImages = images.slice(0, MAX_AI_PHOTOS).map(img => ({
@@ -1822,7 +1925,7 @@ async function callDescriptionAi(images, onChunk) {
   const omittedCount = Math.max(0, images.length - aiImages.length);
   const payload = {
     images: aiImages,
-    systemPrompt: buildDescriptionSystemPrompt(),
+    systemPrompt: buildDescriptionSystemPrompt(listingStylePrompt),
   };
   const payloadBytes = estimateJsonBytes(payload);
   if (payloadBytes > MAX_AI_PAYLOAD_BYTES) {

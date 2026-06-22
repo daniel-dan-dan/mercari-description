@@ -1445,8 +1445,36 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
   margin-bottom: 8px;
 }
 #setup-screen h1::before { content: "🔑"; }
-#past-listing-style-input {
-  min-height: 160px;
+
+.btn.small {
+  width: auto;
+  min-height: 36px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.listing-style-box {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 71, 87, 0.14);
+  border-radius: 12px;
+  background: #fffafa;
+}
+.listing-style-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-weight: 800;
+}
+.listing-style-head span {
+  min-width: 0;
+}
+.listing-style-box .note {
+  margin: 0;
+}
+.listing-style-box .unknown {
+  color: #9c6168;
 }
 
 /* ========== 画像合成モーダル ========== */
