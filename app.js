@@ -1992,10 +1992,54 @@ async function callDescriptionAi(images, onChunk) {
 }
 
 // ----- テンプレート組み立て -----
-function buildDescription(aiData, measurementText) {
-  const brand = aiData.brand || '---';
-  const brandEn = (aiData.brand_en && aiData.brand_en !== '---') ? aiData.brand_en : '';
-  const item = aiData.item || '---';
+function isMissingProductValue(value, { removeCondition = false } = {}) {
+  const cleaned = cleanProductNamePart(value, { removeCondition });
+  return !cleaned || cleaned === '---';
+}
+
+function cleanProductNamePart(value, { removeCondition = false } = {}) {
+  let cleaned = cleanTitleSegment(value)
+    .replace(/[✨★☆]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (removeCondition) {
+    cleaned = cleaned
+      .replace(/(極美品|超美品|美品|良品)/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  return cleaned;
+}
+
+function addUniqueProductNamePart(parts, value, { removeCondition = false } = {}) {
+  const rawCleaned = cleanProductNamePart(value);
+  if (isMissingProductValue(rawCleaned)) return;
+  const rawComparable = normalizeTitleComparable(rawCleaned);
+  if (rawComparable && parts.some(part => normalizeTitleComparable(part) === rawComparable)) return;
+
+  const cleaned = cleanProductNamePart(value, { removeCondition });
+  if (isMissingProductValue(cleaned, { removeCondition })) return;
+  const comparable = normalizeTitleComparable(cleaned);
+  if (!comparable) return;
+  if (parts.some(part => normalizeTitleComparable(part) === comparable)) return;
+  parts.push(cleaned);
+}
+
+function buildDescriptionProductName(aiData, mercariTitle = '') {
+  const parts = [];
+  addUniqueProductNamePart(parts, aiData.brand);
+  addUniqueProductNamePart(parts, aiData.brand_en);
+  addUniqueProductNamePart(parts, aiData.item);
+
+  String(mercariTitle || '')
+    .split(/\s+/)
+    .forEach(word => addUniqueProductNamePart(parts, word, { removeCondition: true }));
+
+  return parts.length ? parts.join(' ') : '---';
+}
+
+function buildDescription(aiData, measurementText, mercariTitle = '') {
+  const productName = buildDescriptionProductName(aiData, mercariTitle);
   const tagSize = aiData.tag_size || '---';
   const color = aiData.color || '---';
   const material = aiData.material || '---';
@@ -2016,7 +2060,7 @@ function buildDescription(aiData, measurementText) {
 
 ${appeal}
 
-【商品名】${brand}${brandEn ? ' ' + brandEn : ''} ${item}
+【商品名】${productName}
 
 【サイズ】${tagSize}（平置き採寸）
 ${measurementText}
@@ -2232,7 +2276,8 @@ async function generateDescription() {
       return;
     }
     const measurementText = formatMeasurements(measurements);
-    const description = buildDescription(aiData, measurementText);
+    const title = buildMercariTitle(aiData);
+    const description = buildDescription(aiData, measurementText, title);
     const mercariCategoryKey = coerceMercariCategoryForProductGender(
       aiData.mercari_category_key,
       measurements.category,
@@ -2241,7 +2286,6 @@ async function generateDescription() {
     const mercariSizeResult = deriveMercariSize(aiData, mercariCategoryKey);
     textarea.value = description;
     // 商品名（タイトル）をセット
-    const title = buildMercariTitle(aiData);
     el('title-text').value = title;
     // 下書き機能用にAIデータを保存
     lastAiData = {
