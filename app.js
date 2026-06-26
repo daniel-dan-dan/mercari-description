@@ -17,6 +17,7 @@ const MAX_MERCARI_TITLE_LENGTH = 40; // メルカリの商品名上限
 const PRODUCT_GENDER_STORAGE_KEY = 'mercari_product_gender';
 const PRODUCT_GENDER_LABELS = { men: 'メンズ', women: 'レディース' };
 const LISTING_STYLE_SUMMARY_STORAGE_KEY = 'mercari_listing_style_summary';
+const LISTING_STYLE_PROMPT_STORAGE_KEY = 'mercari_listing_style_prompt';
 
 const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
@@ -1783,6 +1784,10 @@ function readListingStyleSummary() {
   }
 }
 
+function readListingStylePrompt() {
+  return String(localStorage.getItem(LISTING_STYLE_PROMPT_STORAGE_KEY) || '').trim();
+}
+
 function saveListingStyleSummary(style) {
   const summary = {
     hasStyle: !!style?.hasStyle,
@@ -1791,6 +1796,12 @@ function saveListingStyleSummary(style) {
     titleWordHints: Array.isArray(style?.titleWordHints) ? style.titleWordHints.slice(0, 12) : [],
   };
   localStorage.setItem(LISTING_STYLE_SUMMARY_STORAGE_KEY, JSON.stringify(summary));
+  const stylePrompt = String(style?.prompt || '').trim();
+  if (summary.hasStyle && stylePrompt) {
+    localStorage.setItem(LISTING_STYLE_PROMPT_STORAGE_KEY, stylePrompt);
+  } else if (!summary.hasStyle) {
+    localStorage.removeItem(LISTING_STYLE_PROMPT_STORAGE_KEY);
+  }
   renderListingStyleStatus(summary);
   return summary;
 }
@@ -1823,15 +1834,24 @@ function renderListingStyleStatus(summary = {}) {
 
 async function fetchListingStyleFromMac(tunnelUrl, { silent = false, statusCallback } = {}) {
   if (!silent) statusCallback?.('過去出品の文体を読み込み中...');
+  const cachedPrompt = readListingStylePrompt();
   let resp;
   try {
     resp = await fetchWithTimeout(`${tunnelUrl}/listing-style`, {}, 12000);
   } catch (err) {
+    if (cachedPrompt) {
+      if (!silent) statusCallback?.('保存済みの過去出品文体を反映します...');
+      return cachedPrompt;
+    }
     if (!silent) statusCallback?.('過去出品の文体は読み込めませんでした。通常生成で続けます。');
     return '';
   }
   const data = await readJsonResponse(resp, '過去出品文体');
   if (!resp.ok || data.ok === false) {
+    if (cachedPrompt) {
+      if (!silent) statusCallback?.('保存済みの過去出品文体を反映します...');
+      return cachedPrompt;
+    }
     if (!silent) statusCallback?.('過去出品の文体は読み込めませんでした。通常生成で続けます。');
     return '';
   }
@@ -1839,6 +1859,10 @@ async function fetchListingStyleFromMac(tunnelUrl, { silent = false, statusCallb
   if (data.hasStyle && data.prompt) {
     if (!silent) statusCallback?.(`過去出品${data.itemCount || 0}件の文体を反映します...`);
     return String(data.prompt || '');
+  }
+  if (cachedPrompt) {
+    if (!silent) statusCallback?.('保存済みの過去出品文体を反映します...');
+    return cachedPrompt;
   }
   if (!silent) statusCallback?.('過去出品の文体は未取得です。通常生成で続けます。');
   return '';
