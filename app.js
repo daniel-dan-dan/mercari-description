@@ -394,6 +394,7 @@ const MERCARI_CATEGORY_OPTIONS = [
   { key: "women_mc_332", label: "ファッション > レディース > スーツ・フォーマル・ドレス > その他", path: ["ファッション", "レディース", "スーツ・フォーマル・ドレス", "その他"] },
 ];
 const MERCARI_CATEGORY_OPTION_MAP = Object.fromEntries(MERCARI_CATEGORY_OPTIONS.map(option => [option.key, option]));
+const MERCARI_CATEGORY_LEVEL_LABELS = ['大分類', '対象', 'カテゴリ', '種類', '詳細', '詳細'];
 const MERCARI_SIZE_OPTIONS = [
   { value: '', label: '未選択（手動/不要）' },
   { value: 'XXS', label: 'XXS' },
@@ -559,6 +560,41 @@ function getMercariCategoryOption(key) {
   return MERCARI_CATEGORY_OPTION_MAP[normalizeMercariCategoryKey(key)];
 }
 
+function pathsMatch(path, targetPath) {
+  return Array.isArray(path)
+    && Array.isArray(targetPath)
+    && path.length === targetPath.length
+    && path.every((part, index) => part === targetPath[index]);
+}
+
+function pathStartsWith(path, prefix) {
+  return Array.isArray(path)
+    && Array.isArray(prefix)
+    && prefix.every((part, index) => path[index] === part);
+}
+
+function getMercariCategoryChildren(prefix = []) {
+  const seen = new Set();
+  const children = [];
+  MERCARI_CATEGORY_OPTIONS.forEach(option => {
+    if (!option.path.length || option.path.length <= prefix.length) return;
+    if (!pathStartsWith(option.path, prefix)) return;
+    const child = option.path[prefix.length];
+    if (!child || seen.has(child)) return;
+    seen.add(child);
+    children.push(child);
+  });
+  return children;
+}
+
+function findMercariCategoryByPath(path = []) {
+  return MERCARI_CATEGORY_OPTIONS.find(option => pathsMatch(option.path, path)) || null;
+}
+
+function getMercariCategoryPathByKey(key) {
+  return [...getMercariCategoryOption(key).path];
+}
+
 function getMercariCategoryGender(categoryKey) {
   const option = getMercariCategoryOption(categoryKey);
   const text = [...(option.path || []), option.label || ''].join(' ');
@@ -613,8 +649,7 @@ function syncMercariCategoryForProductGender() {
   const current = getSelectedMercariCategoryKey();
   const next = coerceMercariCategoryForProductGender(current);
   if (next !== current) {
-    select.value = next;
-    updateMercariCategoryPath();
+    setSelectedMercariCategoryKey(next);
   }
 }
 
@@ -629,22 +664,99 @@ function getSelectedMercariCategoryKey() {
 }
 
 function getSelectedMercariCategoryPath() {
-  return [...getMercariCategoryOption(getSelectedMercariCategoryKey()).path];
+  return getMercariCategoryPathByKey(getSelectedMercariCategoryKey());
 }
 
 function renderMercariCategoryOptions() {
   const select = el('m-category');
   if (!select) return;
   select.innerHTML = MERCARI_CATEGORY_OPTIONS.map(option =>
-    `<option value="${option.key}">${option.label}</option>`
+    `<option value="${escapeHtml(option.key)}">${escapeHtml(option.label)}</option>`
   ).join('');
+  renderMercariCategoryLevelSelects();
   updateMercariCategoryPath();
 }
 
-function updateMercariCategoryPath() {
+function renderMercariCategoryLevelSelects(selectedKey = getSelectedMercariCategoryKey(), pendingPath = null) {
+  const root = el('m-category-levels');
+  if (!root) return;
+  const selectedPath = Array.isArray(pendingPath) ? pendingPath : getMercariCategoryPathByKey(selectedKey);
+  const levels = [];
+  let prefix = [];
+
+  for (let depth = 0; depth < 8; depth += 1) {
+    const children = getMercariCategoryChildren(prefix);
+    if (!children.length) break;
+    const selectedValue = children.includes(selectedPath[depth]) ? selectedPath[depth] : '';
+    levels.push({
+      depth,
+      children,
+      selectedValue,
+      label: MERCARI_CATEGORY_LEVEL_LABELS[depth] || `階層${depth + 1}`,
+    });
+    if (!selectedValue) break;
+    prefix = [...prefix, selectedValue];
+  }
+
+  root.innerHTML = levels.map(level => `
+    <label class="mercari-category-level">
+      <span>${escapeHtml(level.label)}</span>
+      <select data-category-level="${level.depth}" id="m-category-level-${level.depth}">
+        <option value="">選択してください</option>
+        ${level.children.map(child =>
+          `<option value="${escapeHtml(child)}" ${child === level.selectedValue ? 'selected' : ''}>${escapeHtml(child)}</option>`
+        ).join('')}
+      </select>
+    </label>
+  `).join('');
+
+  root.querySelectorAll('select[data-category-level]').forEach(node => {
+    node.addEventListener('change', () => {
+      const changedLevel = Number(node.dataset.categoryLevel || 0);
+      const nextPath = [];
+      root.querySelectorAll('select[data-category-level]').forEach(levelSelect => {
+        const level = Number(levelSelect.dataset.categoryLevel || 0);
+        if (level > changedLevel) return;
+        const value = levelSelect.value;
+        if (value && nextPath.length === level) nextPath.push(value);
+      });
+
+      const exact = findMercariCategoryByPath(nextPath);
+      const finalSelect = el('m-category');
+      if (exact) {
+        setSelectedMercariCategoryKey(exact.key, { notify: true });
+        return;
+      }
+
+      if (finalSelect) finalSelect.value = 'unknown';
+      renderMercariCategoryLevelSelects('unknown', nextPath);
+      updateMercariCategoryPath(nextPath);
+      const pathGender = nextPath.includes('レディース') ? 'women' : (nextPath.includes('メンズ') ? 'men' : '');
+      if (pathGender) setSelectedProductGender(pathGender);
+      scheduleSave();
+      updateDraftChecklist();
+    });
+  });
+}
+
+function setSelectedMercariCategoryKey(key, { notify = false, pendingPath = null } = {}) {
+  const select = el('m-category');
+  if (!select) return;
+  select.value = normalizeMercariCategoryKey(key);
+  renderMercariCategoryLevelSelects(select.value, pendingPath);
+  updateMercariCategoryPath(pendingPath);
+  if (notify) select.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function updateMercariCategoryPath(pendingPath = null) {
   const path = el('m-category-path');
   if (!path) return;
   const option = getMercariCategoryOption(getSelectedMercariCategoryKey());
+  if (Array.isArray(pendingPath) && pendingPath.length && !option.path.length) {
+    path.textContent = `選択中: ${pendingPath.join(' > ')}`;
+    path.classList.add('unknown');
+    return;
+  }
   path.textContent = option.path.length ? option.path.join(' > ') : '未判定';
   path.classList.toggle('unknown', !option.path.length);
 }
@@ -839,6 +951,7 @@ async function init() {
   el('result-text').addEventListener('input', () => { scheduleSave(); updateDraftChecklist(); });
   el('m-category').addEventListener('change', () => {
     syncProductGenderFromMercariCategory(getSelectedMercariCategoryKey());
+    renderMercariCategoryLevelSelects();
     updateMercariCategoryPath();
     const sizeResult = deriveMercariSize(lastAiData, getSelectedMercariCategoryKey());
     if (el('m-size') && !el('m-size').dataset.userEdited) {
@@ -2307,11 +2420,10 @@ async function generateDescription() {
     // メルカリ設定をAIデータで自動入力
     el('mercari-settings').hidden = false;
     if (aiData.mercari_condition) el('m-condition').value = aiData.mercari_condition;
-    el('m-category').value = mercariCategoryKey;
+    setSelectedMercariCategoryKey(mercariCategoryKey);
     el('m-brand').value = mercariBrand;
     el('m-size').dataset.userEdited = '';
     el('m-size').value = mercariSizeResult.value;
-    updateMercariCategoryPath();
     updateMercariSizeNote(mercariSizeResult);
     updateDraftChecklist();
     hideStatus('status');
@@ -2444,10 +2556,9 @@ function restoreState(s) {
   if (s.mercariSettingsVisible) {
     el('mercari-settings').hidden = false;
     if (s.mercariCondition) el('m-condition').value = s.mercariCondition;
-    if (s.mercariCategoryKey) el('m-category').value = normalizeMercariCategoryKey(s.mercariCategoryKey);
+    if (s.mercariCategoryKey) setSelectedMercariCategoryKey(s.mercariCategoryKey);
     if (s.mercariBrand) el('m-brand').value = s.mercariBrand;
     if (s.mercariSize) el('m-size').value = s.mercariSize;
-    updateMercariCategoryPath();
     updateMercariSizeNote({ note: s.mercariSize ? `保存済み: ${s.mercariSize}` : 'サイズなし、または手動で選んでください' });
   }
   updateGenerateButton();

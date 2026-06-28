@@ -1396,6 +1396,32 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
   color: #5f5f63;
   font-weight: 800;
 }
+.mercari-category-label {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #2b2b2b;
+}
+.mercari-category-final-select[hidden] {
+  display: none !important;
+}
+.mercari-category-levels {
+  display: grid;
+  gap: 8px;
+}
+.mercari-category-level {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+.mercari-category-level span {
+  font-size: 12px;
+  font-weight: 800;
+  color: #6b6367;
+}
+.mercari-category-level select {
+  width: 100%;
+}
 .mercari-category-path {
   margin: 6px 0 12px;
   padding: 10px 12px;
