@@ -18,6 +18,30 @@ const PRODUCT_GENDER_STORAGE_KEY = 'mercari_product_gender';
 const PRODUCT_GENDER_LABELS = { men: 'メンズ', women: 'レディース' };
 const LISTING_STYLE_SUMMARY_STORAGE_KEY = 'mercari_listing_style_summary';
 const LISTING_STYLE_PROMPT_STORAGE_KEY = 'mercari_listing_style_prompt';
+const SEASON_MARKETING_RULES = {
+  spring_summer: {
+    label: '春夏',
+    allowedWords: ['春夏', '春物', '夏物', '春先', '初夏', '薄手', '軽やか', '涼しげ'],
+    disallowedWords: ['秋冬', '秋物', '冬物', '秋口', '冬場', '真冬', '防寒', '寒い季節', 'オータム', 'ウィンター', 'AW', 'A/W', 'FW', 'F/W'],
+    disallowedPatterns: [
+      /(?:A\/W|AW|F\/W|FW)(?:らしい|向きの?|用|シーズン)?/gi,
+      /(?:秋冬|秋物|冬物)(?:向きの?|物|用|シーズン|にも|まで|に|の)?/g,
+      /(?:秋口|冬場|真冬|寒い季節|防寒|オータム|ウィンター)/g,
+      /(?:秋|冬)(?:らしい|向きの?|用|物|にも|まで|に|の)/g,
+    ],
+  },
+  autumn_winter: {
+    label: '秋冬',
+    allowedWords: ['秋冬', '秋物', '冬物', '秋口', '冬場', '暖かみ', '防寒'],
+    disallowedWords: ['春夏', '春物', '夏物', '春先', '初夏', '盛夏', '涼感', '涼しげ', '暑い季節', 'サマー', 'SS', 'S/S'],
+    disallowedPatterns: [
+      /(?:S\/S|SS)(?:らしい|向きの?|用|シーズン)?/gi,
+      /(?:春夏|春物|夏物)(?:向きの?|物|用|シーズン|にも|まで|に|の)?/g,
+      /(?:春先|初夏|盛夏|暑い季節|涼感|涼しげ|サマー)/g,
+      /(?:春|夏)(?:らしい|向きの?|用|物|にも|まで|に|の)/g,
+    ],
+  },
+};
 
 const DB_NAME = 'mercari_desc_state';
 const DB_VERSION = 1;
@@ -550,6 +574,67 @@ function setSelectedProductGender(value, { persist = true } = {}) {
     input.checked = input.value === gender;
   });
   if (persist) localStorage.setItem(PRODUCT_GENDER_STORAGE_KEY, gender);
+}
+
+function getSeasonMarketingRule(date = new Date()) {
+  const month = date.getMonth() + 1;
+  return month >= 3 && month <= 8
+    ? SEASON_MARKETING_RULES.spring_summer
+    : SEASON_MARKETING_RULES.autumn_winter;
+}
+
+function formatSeasonRuleDate(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function isDisallowedSeasonMarketingText(value, rule = getSeasonMarketingRule()) {
+  const text = String(value || '');
+  return rule.disallowedPatterns.some(pattern => {
+    pattern.lastIndex = 0;
+    return pattern.test(text);
+  });
+}
+
+function cleanSeasonMarketingText(value, rule = getSeasonMarketingRule()) {
+  let text = String(value || '');
+  rule.disallowedPatterns.forEach(pattern => {
+    pattern.lastIndex = 0;
+    text = text.replace(pattern, '');
+  });
+  return text
+    .replace(/\s+([、。,.])/g, '$1')
+    .replace(/([、。,.]){2,}/g, '$1')
+    .replace(/^[\s、。,.・/／|｜-]+|[\s、。,.・/／|｜-]+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function cleanSeasonMarketingSentences(value, rule = getSeasonMarketingRule()) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const sentences = text.match(/[^。！？!?]+[。！？!?]?/g) || [text];
+  const kept = sentences
+    .map(sentence => sentence.trim())
+    .filter(Boolean)
+    .filter(sentence => !isDisallowedSeasonMarketingText(sentence, rule))
+    .map(sentence => cleanSeasonMarketingText(sentence, rule))
+    .filter(Boolean);
+  return kept.length ? kept.join('') : cleanSeasonMarketingText(text, rule);
+}
+
+function sanitizeAiDataForSeason(aiData = {}) {
+  const rule = getSeasonMarketingRule();
+  const sanitized = { ...aiData };
+  sanitized.appeal = cleanSeasonMarketingSentences(aiData.appeal, rule);
+  sanitized.condition = cleanSeasonMarketingText(aiData.condition, rule);
+  sanitized.title_keywords = getAiTitleKeywordList(aiData)
+    .map(word => cleanSeasonMarketingText(word, rule))
+    .filter(Boolean)
+    .filter(word => !isDisallowedSeasonMarketingText(word, rule));
+  return sanitized;
 }
 
 function normalizeMercariCategoryKey(key) {
@@ -1682,7 +1767,7 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 6. condition — 状態。ダメージがなければ "目立った傷や汚れのない美品です。詳細は写真をご確認ください"。ダメージがあれば具体的に記載
 7. appeal — 商品の特徴・訴求ポイント2〜3文。以下を自然に含める:
    - デザインや素材の特徴
-   - 季節感（春夏向き、秋冬向き、3シーズンなど）
+   - 季節感は、現在の販売時期に合う言葉だけを使う
    - 使えるシーン（ビジネス、カジュアル、セレモニーなど）
    - 商品の事実（素材・シルエット・カラー・シーン）を軸にしながら、「手に取った瞬間から違いがわかる」「着るだけで雰囲気が変わる」「なかなか出回らない」など感情に訴える一言を自然に散りばめる
    - ウール・カシミヤ・リネン・シルク・コーデュロイ・綿100％などアピールできる素材であれば、その質感や着心地にも触れる。素材の訴求力はアイテムや文脈で判断すること（例：綿100％はトレンチコートでは高品質の証として積極的に触れる）。ポリエステルが主体など訴求力の低い素材は触れなくてよい
@@ -1715,12 +1800,19 @@ function buildPastListingStylePrompt(stylePrompt) {
 
 function buildDescriptionSystemPrompt(stylePrompt = '') {
   const genderLabel = getSelectedProductGenderLabel();
+  const seasonRule = getSeasonMarketingRule();
   return `${SYSTEM_PROMPT}
 
 今回の商品対象:
 - 対象は「${genderLabel}」として扱う
 - mercari_category_key は、明らかに写真と矛盾しない限り「${genderLabel}」側のカテゴリから選ぶ
-- サイズ推定やタグサイズの解釈も「${genderLabel}」向けとして扱う${buildPastListingStylePrompt(stylePrompt)}`;
+- サイズ推定やタグサイズの解釈も「${genderLabel}」向けとして扱う
+
+今回の季節ワードルール:
+- 現在日付: ${formatSeasonRuleDate()}。販売訴求では「${seasonRule.label}」に合う季節ワードだけを使う
+- 使ってよい季節ワード例: ${seasonRule.allowedWords.join('、')}
+- 使わない季節外れワード: ${seasonRule.disallowedWords.join('、')}
+- title_keywords と appeal にも、季節外れワードを入れない${buildPastListingStylePrompt(stylePrompt)}`;
 }
 
 /**
@@ -2230,6 +2322,7 @@ function normalizeTitleComparable(value) {
 function addUniqueTitleToken(tokens, token, existingTitle) {
   const cleaned = cleanTitleSegment(token).replace(/[、。,.].*$/, '').trim();
   if (!cleaned) return;
+  if (isDisallowedSeasonMarketingText(cleaned)) return;
   if (mercariTitleLength(cleaned) > 12) return;
 
   const comparable = normalizeTitleComparable(cleaned);
@@ -2381,7 +2474,7 @@ async function generateDescription() {
 
     let aiData;
     try {
-      aiData = parseAiJson(rawText);
+      aiData = sanitizeAiDataForSeason(parseAiJson(rawText));
     } catch (e) {
       console.error('AI応答パース失敗:', e, 'rawText:', rawText);
       showStatus('status', '⚠️ AIの応答がJSON形式でなかったため、そのまま表示しました。ブラウザのコンソールで詳細を確認できます。', 'error');
