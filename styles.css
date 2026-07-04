@@ -998,6 +998,10 @@ textarea.streaming {
   border-color: #86d4bd;
   background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
 }
+.markdown-card.at-floor {
+  border-color: #f0a34c;
+  background: linear-gradient(180deg, #ffffff 0%, #fff6e8 100%);
+}
 .markdown-card.disabled {
   opacity: 0.82;
 }
@@ -1073,6 +1077,13 @@ textarea.streaming {
   color: #8a5260;
   font-size: 12px;
   font-weight: 700;
+}
+.markdown-card.at-floor .markdown-card-note {
+  color: #a05b00;
+}
+.markdown-card.at-floor .markdown-toggle {
+  background: #fff0d6;
+  color: #6b4300;
 }
 
 /* ========== 採寸 ========== */

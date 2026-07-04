@@ -3475,6 +3475,12 @@ function markdownCanEnable(row) {
   return Number(row.minPrice || 0) >= 300 && markdownNextPrice(row) >= markdownFloor(row);
 }
 
+function markdownAtFloor(row) {
+  const current = Number(row.currentPrice || 0);
+  if (!current || Number(row.minPrice || 0) < 300) return false;
+  return current <= markdownFloor(row) || markdownNextPrice(row) < markdownFloor(row);
+}
+
 function mergeMarkdownRows(listings, settings) {
   const saved = new Map(markdownRows.map(row => [normalizeMarkdownItemId(row.itemId || row.url), row]));
   const settingMap = new Map((settings || []).map(row => [normalizeMarkdownItemId(row.itemId || row.url), row]));
@@ -3695,13 +3701,14 @@ function renderMarkdownCard(row) {
   const itemId = row.itemId;
   const minPrice = Number(row.minPrice || 0);
   const canEnable = markdownCanEnable(row);
+  const atFloor = markdownAtFloor(row);
   const autoChecked = Boolean(row.autoEnabled) && canEnable;
   const nextPrice = markdownNextPrice(row);
   const reason = minPrice < 300
     ? '下限価格を入力してください'
-    : (!canEnable ? '次回値下げで下限を下回ります' : '20時の自動値下げ対象です');
+    : (atFloor ? '下限価格に到達しました' : (!canEnable ? '次回値下げで下限を下回ります' : '20時の自動値下げ対象です'));
   return `
-    <article class="markdown-card ${autoChecked ? 'enabled' : ''} ${canEnable ? '' : 'disabled'}" data-markdown-id="${escapeHtml(itemId)}">
+    <article class="markdown-card ${atFloor ? 'at-floor' : (autoChecked ? 'enabled' : '')} ${canEnable ? '' : 'disabled'}" data-markdown-id="${escapeHtml(itemId)}">
       <div class="markdown-card-header">
         <div>
           <h3>${escapeHtml(row.title || 'タイトル未取得')}</h3>
@@ -3716,7 +3723,7 @@ function renderMarkdownCard(row) {
         <div><span>現在</span><strong>${formatYen(row.currentPrice)}</strong></div>
         <div><span>次回</span><strong>${nextPrice > 0 ? formatYen(nextPrice) : '-'}</strong></div>
         <label>下限
-          <input type="number" min="300" step="100" inputmode="numeric" value="${minPrice || ''}" placeholder="例: 1200" data-markdown-min="${escapeHtml(itemId)}">
+          <input type="number" min="300" step="1" inputmode="numeric" value="${minPrice || ''}" placeholder="例: 1200" data-markdown-min="${escapeHtml(itemId)}">
         </label>
         <div><span>残り</span><strong>${markdownRemaining(row)}回</strong></div>
       </div>
