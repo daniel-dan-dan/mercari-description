@@ -3699,7 +3699,7 @@ function renderMarkdownCard(row) {
   const nextPrice = markdownNextPrice(row);
   const reason = minPrice < 300
     ? '下限価格を入力してください'
-    : (!canEnable ? '次回値下げで下限を下回ります' : '21時の自動対象です');
+    : (!canEnable ? '次回値下げで下限を下回ります' : '20時の自動値下げ対象です');
   return `
     <article class="markdown-card ${autoChecked ? 'enabled' : ''} ${canEnable ? '' : 'disabled'}" data-markdown-id="${escapeHtml(itemId)}">
       <div class="markdown-card-header">
