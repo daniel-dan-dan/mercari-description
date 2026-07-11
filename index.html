@@ -2,12 +2,13 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f23d4a">
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260704c">
+  <link rel="stylesheet" href="styles.css?v=20260711a">
+  <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
   <div id="app">
@@ -18,11 +19,13 @@
       <p class="note">Mac側サービスへ接続するためのGAS URLを入力してください。AI用のAPIキーはMac側に保存され、スマホ側には保存しません。</p>
       <label for="gas-url-input">GAS URL（AI生成・下書き機能用）</label>
       <input type="url" id="gas-url-input" placeholder="https://script.google.com/..." autocomplete="off">
+      <label for="auth-token-input">端末接続コード</label>
+      <input type="password" id="auth-token-input" autocomplete="off" placeholder="接続用QRコードから設定されます">
       <div class="button-row">
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260704c / AI: OpenAI gpt-4.1-mini via mercari-auto</p>
+      <p class="settings-version" id="settings-version">v20260711a / Mac接続保護対応</p>
     </section>
 
     <!-- メイン画面 -->
@@ -30,8 +33,8 @@
       <header>
         <h1>メルカリAI出品</h1>
         <div class="header-actions">
-          <button id="reset-btn" class="icon-btn" title="入力内容をリセット">🗑️</button>
-          <button id="settings-btn" class="icon-btn" title="設定">⚙️</button>
+          <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
+          <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
         </div>
       </header>
 
@@ -43,6 +46,10 @@
 
       <div id="description-panel" class="tab-panel active" role="tabpanel" aria-labelledby="description-tab-btn">
 
+      <details id="product-input-stage" class="workflow-stage" open>
+        <summary>1. 写真・基本情報</summary>
+        <div class="workflow-stage-body">
+
       <!-- Step 1: 写真アップロード -->
       <div class="step photo-step">
         <h2>① 写真をアップロード</h2>
@@ -52,7 +59,7 @@
           <span>全体・タグ・詳細が揃うと精度が上がります</span>
         </div>
         <label class="file-label" for="photo-input">
-          📷 写真を選ぶ / 撮影する
+          <i data-lucide="camera" aria-hidden="true"></i> 写真を選ぶ / 撮影する
         </label>
         <input type="file" id="photo-input" accept="image/*" multiple hidden>
         <div id="photo-preview" class="preview-grid"></div>
@@ -98,6 +105,8 @@
         <div id="measurement-fields"></div>
         <div id="size-suggestion" class="size-suggestion" hidden></div>
       </div>
+        </div>
+      </details>
 
       <!-- Step 3: 生成 -->
       <div class="step generate-step">
@@ -110,12 +119,13 @@
         </div>
         <button id="generate-btn" class="btn primary large" disabled>説明文を生成</button>
         <p id="generate-note" class="note small action-note">写真とカテゴリが揃うと生成できます。採寸を入れると説明文の精度が上がります。</p>
-        <p id="status" class="status" hidden></p>
+        <p id="status" class="status" role="status" aria-live="polite" hidden></p>
       </div>
 
       <!-- Step 4: 結果表示 -->
       <div id="result-section" class="step result-step" hidden>
-        <h2>✨ 生成結果</h2>
+        <h2>2. 生成結果</h2>
+        <div id="result-meta" class="result-meta" hidden></div>
 
         <div id="final-size-badge" class="final-size-badge" hidden></div>
 
@@ -129,7 +139,7 @@
         </div>
         <div class="draft-save-area">
           <div id="mercari-settings" class="draft-card mercari-settings-card" hidden>
-            <h3 class="mercari-settings-title">メルカリ設定（AIが自動判定）</h3>
+            <h3 class="mercari-settings-title">3. メルカリ設定（AIが自動判定）</h3>
             <p class="note small">変更が必要な場合は修正してください</p>
 
             <label for="m-condition">商品の状態</label>
@@ -163,11 +173,11 @@
           </div>
 
           <div class="draft-card draft-check-card">
-            <h3 class="draft-title">下書き保存前チェック</h3>
+            <h3 class="draft-title">4. 下書き保存前チェック</h3>
             <div id="draft-checklist" class="draft-checklist" hidden></div>
           </div>
           <button id="draft-btn" class="btn primary large" style="margin-top:8px">下書き保存（Mac自動入力）</button>
-          <p id="draft-status" class="status" hidden></p>
+          <p id="draft-status" class="status" role="status" aria-live="polite" hidden></p>
         </div>
       </div>
 
@@ -332,7 +342,7 @@
             <button id="research-save-btn" class="btn primary" type="button">調査依頼を保存</button>
             <button id="research-copy-btn" class="btn" type="button">依頼文をコピー</button>
           </div>
-          <p id="research-sync-status" class="status" hidden></p>
+          <p id="research-sync-status" class="status" role="status" aria-live="polite" hidden></p>
         </div>
 
         <div class="step research-step">
@@ -380,13 +390,19 @@
             </div>
           </div>
           <p class="note">毎日20:00に100円値下げします。毎日21:00に出品中商品を取得し、新規商品は下限価格を現在価格の7割にして自動ONにします。</p>
+          <div id="markdown-overview" class="markdown-overview" aria-live="polite">
+            <div><span>21時の商品取得</span><strong>確認中</strong></div>
+            <div><span>20時の値下げ</span><strong>確認中</strong></div>
+            <div><span>直近結果</span><strong>確認中</strong></div>
+            <div><span>Mac接続</span><strong>確認中</strong></div>
+          </div>
           <div class="research-actions">
-            <button id="markdown-load-btn" class="btn primary" type="button">出品中商品を取得</button>
+            <button id="markdown-load-btn" class="btn primary" type="button">最新保存データを表示</button>
             <button id="markdown-save-btn" class="btn" type="button">設定を保存</button>
             <button id="markdown-dry-run-btn" class="btn" type="button">値下げ対象だけ確認（価格は変えない）</button>
             <button id="markdown-run-btn" class="btn danger" type="button">今すぐ実行</button>
           </div>
-          <p id="markdown-status" class="status" hidden></p>
+          <p id="markdown-status" class="status" role="status" aria-live="polite" hidden></p>
         </div>
 
         <div class="step markdown-step">
@@ -408,7 +424,7 @@
       <div class="modal-content compose">
         <header class="modal-header">
           <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v0429d</span></h2>
-          <button id="compose-close" class="icon-btn" title="閉じる">✕</button>
+          <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
         <div id="compose-body"></div>
@@ -418,6 +434,13 @@
 
   </div>
 
-  <script src="app.js?v=20260704c"></script>
+  <script src="catalog-data.js?v=20260711a"></script>
+  <script src="app.js?v=20260711a"></script>
+  <script>
+    if (window.lucide) window.lucide.createIcons();
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(console.error);
+    }
+  </script>
 </body>
 </html>

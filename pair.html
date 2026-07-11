@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f23d4a">
+  <title>端末を接続</title>
+  <link rel="stylesheet" href="styles.css?v=20260711a">
+</head>
+<body>
+  <main id="app">
+    <section class="screen pairing-screen">
+      <h1>端末を接続</h1>
+      <p id="pair-status" class="status" role="status" aria-live="polite">接続コードを確認しています...</p>
+      <a id="pair-open" class="btn primary large" href="./" hidden>メルカリAI出品を開く</a>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const key = 'daniel_api_auth_token';
+      const status = document.getElementById('pair-status');
+      const open = document.getElementById('pair-open');
+      const params = new URLSearchParams(location.hash.slice(1));
+      const token = String(params.get('token') || '').trim();
+      if (token.length < 24) {
+        status.textContent = '接続コードが見つかりません。新しいQRコードを読み取ってください。';
+        status.className = 'status error';
+        return;
+      }
+      localStorage.setItem(key, token);
+      history.replaceState(null, '', location.pathname);
+      status.textContent = 'この端末を安全に接続しました。';
+      status.className = 'status success';
+      open.hidden = false;
+    })();
+  </script>
+</body>
+</html>
