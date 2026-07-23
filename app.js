@@ -84,6 +84,8 @@ const GENDERED_CATEGORY_FALLBACKS = {
 const RESEARCH_REQUESTS_KEY = 'mercari_research_requests';
 const RESEARCH_RESULTS_KEY = 'mercari_research_results';
 const MARKDOWN_ROWS_KEY = 'mercari_markdown_rows';
+const MARKDOWN_SORT_KEY = 'mercari_markdown_sort';
+const MARKDOWN_SORT_MODES = new Set(['default', 'enabled-first', 'disabled-first']);
 const RESEARCH_EMPTY_VALUES = new Set(['', '指定なし', 'すべて']);
 const RESEARCH_BRAND_ALIASES = [
   ['BURBERRY BLACK LABEL', ['burberry black label', 'black label crestbridge', 'ブラックレーベル']],
@@ -150,6 +152,7 @@ const MULTI_VOICE_COMPLETE_STOP_MS = 900;
 let lastAiData = null;
 let activeMultiVoiceSession = null;
 let markdownRows = [];
+let markdownSortMode = 'default';
 
 // ----- 画面制御 -----
 const el = (id) => document.getElementById(id);
@@ -688,6 +691,8 @@ async function init() {
   el('markdown-run-btn').addEventListener('click', () => runMarkdownNow({ dryRun: false }));
   el('markdown-list').addEventListener('input', handleMarkdownFieldChange);
   el('markdown-list').addEventListener('change', handleMarkdownFieldChange);
+  el('markdown-list').addEventListener('error', handleMarkdownImageError, true);
+  el('markdown-sort-select').addEventListener('change', handleMarkdownSortChange);
   ['research-title', 'research-keyword', 'research-category', 'research-brand', 'research-size', 'research-condition', 'research-gender', 'research-sale-status', 'research-min-price', 'research-max-price', 'research-sample-size', 'research-sort', 'research-period-months', 'research-excludes', 'research-note']
     .forEach(id => {
       const node = el(id);
@@ -719,6 +724,8 @@ async function init() {
       console.warn('セッション復元失敗:', e);
     }
   }
+  markdownSortMode = readMarkdownSortMode();
+  el('markdown-sort-select').value = markdownSortMode;
   markdownRows = readJsonList(MARKDOWN_ROWS_KEY);
   renderResearchData();
   renderMarkdownRows();
@@ -3206,6 +3213,10 @@ function markdownCanEnable(row) {
   return Number(row.minPrice || 0) >= 300 && markdownNextPrice(row) >= markdownFloor(row);
 }
 
+function markdownIsActive(row) {
+  return Boolean(row.autoEnabled) && markdownCanEnable(row);
+}
+
 function markdownAtFloor(row) {
   const current = Number(row.currentPrice || 0);
   if (!current || Number(row.minPrice || 0) < 300) return false;
@@ -3219,15 +3230,91 @@ function mergeMarkdownRows(listings, settings) {
     const itemId = normalizeMarkdownItemId(item.itemId || item.url);
     const old = saved.get(itemId) || {};
     const setting = settingMap.get(itemId) || {};
+    const settingHasMinPrice = Object.prototype.hasOwnProperty.call(setting, 'minPrice');
+    const itemHasMinPrice = Object.prototype.hasOwnProperty.call(item, 'minPrice');
+    const settingHasAuto = Object.prototype.hasOwnProperty.call(setting, 'autoEnabled');
+    const itemHasAuto = Object.prototype.hasOwnProperty.call(item, 'autoEnabled');
     return {
       ...old,
       ...setting,
       ...item,
       itemId,
-      minPrice: Number(setting.minPrice || old.minPrice || 0),
-      autoEnabled: Boolean(setting.autoEnabled || old.autoEnabled),
+      imageUrl: markdownImageUrl(item) || markdownImageUrl(setting) || markdownImageUrl(old),
+      minPrice: Number(
+        settingHasMinPrice ? setting.minPrice : (itemHasMinPrice ? item.minPrice : (old.minPrice || 0))
+      ),
+      autoEnabled: settingHasAuto
+        ? Boolean(setting.autoEnabled)
+        : (itemHasAuto ? Boolean(item.autoEnabled) : Boolean(old.autoEnabled)),
     };
   });
+}
+
+function readMarkdownSortMode() {
+  try {
+    const value = localStorage.getItem(MARKDOWN_SORT_KEY) || 'default';
+    return MARKDOWN_SORT_MODES.has(value) ? value : 'default';
+  } catch {
+    return 'default';
+  }
+}
+
+function handleMarkdownSortChange(event) {
+  const value = event.target.value;
+  markdownSortMode = MARKDOWN_SORT_MODES.has(value) ? value : 'default';
+  try {
+    localStorage.setItem(MARKDOWN_SORT_KEY, markdownSortMode);
+  } catch {
+    // Sorting still works for this session when storage is unavailable.
+  }
+  renderMarkdownRows();
+}
+
+function sortedMarkdownRows(rows) {
+  if (markdownSortMode === 'default') return [...rows];
+  const activeFirst = markdownSortMode === 'enabled-first';
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const leftRank = markdownIsActive(left.row) === activeFirst ? 0 : 1;
+      const rightRank = markdownIsActive(right.row) === activeFirst ? 0 : 1;
+      return leftRank - rightRank || left.index - right.index;
+    })
+    .map(entry => entry.row);
+}
+
+function markdownImageUrl(row) {
+  const value = String(row?.imageUrl || '').trim();
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    if (url.protocol !== 'https:' || url.username || url.password) return '';
+    if (host !== 'static.mercdn.net') return '';
+    return url.href;
+  } catch {
+    return '';
+  }
+}
+
+function markdownItemUrl(row) {
+  const itemId = normalizeMarkdownItemId(row?.itemId || row?.url);
+  const fallback = itemId ? `https://jp.mercari.com/item/${encodeURIComponent(itemId)}` : '#';
+  try {
+    const url = new URL(String(row?.url || fallback));
+    if (
+      url.protocol !== 'https:' ||
+      url.hostname !== 'jp.mercari.com' ||
+      !url.pathname.startsWith('/item/') ||
+      url.username ||
+      url.password
+    ) {
+      return fallback;
+    }
+    return url.href;
+  } catch {
+    return fallback;
+  }
 }
 
 function persistMarkdownRows() {
@@ -3318,7 +3405,7 @@ async function saveMarkdownSettings({ silent = false } = {}) {
 
 async function runMarkdownNow({ dryRun }) {
   collectMarkdownRowsFromDom();
-  const targets = markdownRows.filter(row => row.autoEnabled && markdownCanEnable(row));
+  const targets = markdownRows.filter(markdownIsActive);
   if (!targets.length) {
     setMarkdownStatus('実行対象がありません。下限価格を入力して自動ONにしてください。', 'warn');
     return;
@@ -3427,7 +3514,7 @@ function handleMarkdownFieldChange(event) {
   if (event.type === 'input' && target.dataset.markdownMin) {
     const count = el('markdown-enabled-count');
     if (count) {
-      count.textContent = `${markdownRows.filter(item => item.autoEnabled && markdownCanEnable(item)).length}件`;
+      count.textContent = `${markdownRows.filter(markdownIsActive).length}件`;
     }
     return;
   }
@@ -3437,49 +3524,82 @@ function handleMarkdownFieldChange(event) {
 function renderMarkdownRows() {
   const list = el('markdown-list');
   const count = el('markdown-enabled-count');
+  const summary = el('markdown-sort-summary');
   if (!list) return;
-  const enabledCount = markdownRows.filter(row => row.autoEnabled && markdownCanEnable(row)).length;
+  const enabledCount = markdownRows.filter(markdownIsActive).length;
+  const disabledCount = Math.max(0, markdownRows.length - enabledCount);
   if (count) count.textContent = `${enabledCount}件`;
+  if (summary) summary.textContent = `100円値下げ中 ${enabledCount}件・値下げなし ${disabledCount}件`;
   if (!markdownRows.length) {
     list.innerHTML = '<div class="research-empty">まだ取得していません</div>';
     return;
   }
-  list.innerHTML = markdownRows.map(row => renderMarkdownCard(row)).join('');
+  list.innerHTML = sortedMarkdownRows(markdownRows).map(row => renderMarkdownCard(row)).join('');
 }
 
 function renderMarkdownCard(row) {
   const itemId = row.itemId;
+  const title = row.title || 'タイトル未取得';
   const minPrice = Number(row.minPrice || 0);
   const canEnable = markdownCanEnable(row);
   const atFloor = markdownAtFloor(row);
-  const autoChecked = Boolean(row.autoEnabled) && canEnable;
+  const autoChecked = markdownIsActive(row);
   const nextPrice = markdownNextPrice(row);
+  const imageUrl = markdownImageUrl(row);
+  const itemUrl = markdownItemUrl(row);
+  const stateClass = autoChecked ? 'active' : (atFloor ? 'floor' : 'inactive');
+  const stateText = autoChecked ? '100円値下げ中' : (atFloor ? '下限到達' : '値下げなし');
+  const imageMarkup = imageUrl
+    ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}の1枚目の写真" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
+    : '<span class="markdown-card-image-empty" aria-hidden="true">写真なし</span>';
   const reason = minPrice < 300
     ? '下限価格を入力してください'
-    : (atFloor ? '下限価格に到達しました' : (!canEnable ? '次回値下げで下限を下回ります' : '20時の自動値下げ対象です'));
+    : (atFloor
+        ? '下限価格に到達しました'
+        : (!canEnable
+            ? '次回値下げで下限を下回ります'
+            : (autoChecked ? '20時の自動値下げ対象です' : '自動値下げはOFFです')));
   return `
     <article class="markdown-card ${atFloor ? 'at-floor' : (autoChecked ? 'enabled' : '')} ${canEnable ? '' : 'disabled'}" data-markdown-id="${escapeHtml(itemId)}">
-      <div class="markdown-card-header">
-        <div>
-          <h3>${escapeHtml(row.title || 'タイトル未取得')}</h3>
-          <a href="${escapeHtml(row.url || '#')}" target="_blank" rel="noopener">${escapeHtml(itemId)}</a>
+      <div class="markdown-card-layout">
+        <a class="markdown-card-media" href="${escapeHtml(itemUrl)}" target="_blank" rel="noopener" aria-label="${escapeHtml(title)}の商品ページを開く">
+          ${imageMarkup}
+        </a>
+        <div class="markdown-card-body">
+          <span class="markdown-card-state ${stateClass}">${stateText}</span>
+          <div class="markdown-card-header">
+            <div>
+              <h3>${escapeHtml(title)}</h3>
+              <a href="${escapeHtml(itemUrl)}" target="_blank" rel="noopener">${escapeHtml(itemId)}</a>
+            </div>
+            <label class="markdown-toggle">
+              <input type="checkbox" data-markdown-auto="${escapeHtml(itemId)}" ${autoChecked ? 'checked' : ''} ${canEnable ? '' : 'disabled'}>
+              <span>自動ON</span>
+            </label>
+          </div>
+          <div class="markdown-price-grid">
+            <div><span>現在</span><strong>${formatYen(row.currentPrice)}</strong></div>
+            <div><span>次回</span><strong>${nextPrice > 0 ? formatYen(nextPrice) : '-'}</strong></div>
+            <label>下限
+              <input type="number" min="300" step="1" inputmode="numeric" value="${minPrice || ''}" placeholder="例: 1200" data-markdown-min="${escapeHtml(itemId)}">
+            </label>
+            <div><span>残り</span><strong>${markdownRemaining(row)}回</strong></div>
+          </div>
+          <p class="markdown-card-note">${escapeHtml(reason)}</p>
         </div>
-        <label class="markdown-toggle">
-          <input type="checkbox" data-markdown-auto="${escapeHtml(itemId)}" ${autoChecked ? 'checked' : ''} ${canEnable ? '' : 'disabled'}>
-          <span>自動ON</span>
-        </label>
       </div>
-      <div class="markdown-price-grid">
-        <div><span>現在</span><strong>${formatYen(row.currentPrice)}</strong></div>
-        <div><span>次回</span><strong>${nextPrice > 0 ? formatYen(nextPrice) : '-'}</strong></div>
-        <label>下限
-          <input type="number" min="300" step="1" inputmode="numeric" value="${minPrice || ''}" placeholder="例: 1200" data-markdown-min="${escapeHtml(itemId)}">
-        </label>
-        <div><span>残り</span><strong>${markdownRemaining(row)}回</strong></div>
-      </div>
-      <p class="markdown-card-note">${escapeHtml(reason)}</p>
     </article>
   `;
+}
+
+function handleMarkdownImageError(event) {
+  const image = event.target;
+  if (!(image instanceof HTMLImageElement) || !image.closest('.markdown-card-media')) return;
+  const placeholder = document.createElement('span');
+  placeholder.className = 'markdown-card-image-empty';
+  placeholder.setAttribute('aria-hidden', 'true');
+  placeholder.textContent = '写真なし';
+  image.replaceWith(placeholder);
 }
 
 // ----- リセット -----

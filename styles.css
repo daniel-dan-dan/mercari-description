@@ -1053,6 +1053,44 @@ textarea.streaming {
 }
 
 /* ========== 100円値下げ ========== */
+.markdown-sort-tools {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0 14px;
+  padding: 11px 12px;
+  border: 1px solid #eed9dd;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fff8f9 0%, #f7fffc 100%);
+}
+.markdown-sort-summary {
+  margin: 0;
+  color: #6c596d;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+.markdown-sort-control {
+  display: grid;
+  flex: 0 0 min(250px, 52%);
+  gap: 4px;
+  margin: 0;
+  color: #6b5d7d;
+  font-size: 11px;
+  font-weight: 800;
+}
+.markdown-sort-control select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 34px 8px 10px;
+  border: 1px solid #dfc8cd;
+  border-radius: 11px;
+  background-color: #fff;
+  color: #2d1e4a;
+  font-size: 13px;
+  font-weight: 800;
+}
 .markdown-list {
   display: grid;
   gap: 12px;
@@ -1074,6 +1112,62 @@ textarea.streaming {
 }
 .markdown-card.disabled {
   opacity: 0.82;
+}
+.markdown-card-layout {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.markdown-card-media {
+  position: relative;
+  display: grid;
+  width: 96px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid #eadde0;
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(242, 61, 74, 0.07), rgba(15, 155, 135, 0.08)),
+    #fff;
+}
+.markdown-card-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.markdown-card-image-empty {
+  padding: 6px;
+  color: #8a7e99;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+}
+.markdown-card-body {
+  min-width: 0;
+}
+.markdown-card-state {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  margin: 0 0 7px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f2eff4;
+  color: #6c596d;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+.markdown-card-state.active {
+  background: #dff7ee;
+  color: #126b58;
+}
+.markdown-card-state.floor {
+  background: #fff0d6;
+  color: #8a5100;
 }
 .markdown-card-header {
   display: flex;
@@ -1106,6 +1200,7 @@ textarea.streaming {
   color: #174837;
   font-size: 12px;
   white-space: nowrap;
+  min-height: 44px;
 }
 .markdown-toggle input {
   width: 18px;
@@ -2370,6 +2465,21 @@ select {
   }
   .markdown-card-header {
     flex-direction: column;
+  }
+  .markdown-sort-tools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .markdown-sort-control {
+    flex-basis: auto;
+    width: 100%;
+  }
+  .markdown-card-layout {
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 10px;
+  }
+  .markdown-card-media {
+    width: 78px;
   }
   .markdown-toggle {
     width: 100%;

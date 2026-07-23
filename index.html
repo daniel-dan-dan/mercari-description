@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260711a">
+  <link rel="stylesheet" href="styles.css?v=20260723a">
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -25,7 +25,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260711a / Mac接続保護対応</p>
+      <p class="settings-version" id="settings-version">v20260723a / 値下げ写真・並べ替え対応</p>
     </section>
 
     <!-- メイン画面 -->
@@ -412,6 +412,17 @@
               <h2>出品中商品</h2>
             </div>
           </div>
+          <div class="markdown-sort-tools">
+            <p id="markdown-sort-summary" class="markdown-sort-summary" aria-live="polite">100円値下げ中 0件・値下げなし 0件</p>
+            <label class="markdown-sort-control" for="markdown-sort-select">
+              <span>並び順</span>
+              <select id="markdown-sort-select">
+                <option value="default">取得した順</option>
+                <option value="enabled-first">100円値下げ中を上</option>
+                <option value="disabled-first">値下げしていない商品を上</option>
+              </select>
+            </label>
+          </div>
           <div id="markdown-list" class="markdown-list">
             <div class="research-empty">まだ取得していません</div>
           </div>
@@ -434,8 +445,8 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260711a"></script>
-  <script src="app.js?v=20260711a"></script>
+  <script src="catalog-data.js?v=20260723a"></script>
+  <script src="app.js?v=20260723a"></script>
   <script>
     if (window.lucide) window.lucide.createIcons();
     if ('serviceWorker' in navigator) {
