@@ -85,7 +85,8 @@ const RESEARCH_REQUESTS_KEY = 'mercari_research_requests';
 const RESEARCH_RESULTS_KEY = 'mercari_research_results';
 const MARKDOWN_ROWS_KEY = 'mercari_markdown_rows';
 const MARKDOWN_SORT_KEY = 'mercari_markdown_sort';
-const MARKDOWN_SORT_MODES = new Set(['default', 'enabled-first', 'disabled-first']);
+const MARKDOWN_FILTER_KEY = 'mercari_markdown_filter';
+const MARKDOWN_FILTER_MODES = new Set(['all', 'enabled-only', 'disabled-only']);
 const RESEARCH_EMPTY_VALUES = new Set(['', '指定なし', 'すべて']);
 const RESEARCH_BRAND_ALIASES = [
   ['BURBERRY BLACK LABEL', ['burberry black label', 'black label crestbridge', 'ブラックレーベル']],
@@ -152,7 +153,7 @@ const MULTI_VOICE_COMPLETE_STOP_MS = 900;
 let lastAiData = null;
 let activeMultiVoiceSession = null;
 let markdownRows = [];
-let markdownSortMode = 'default';
+let markdownFilterMode = 'all';
 
 // ----- 画面制御 -----
 const el = (id) => document.getElementById(id);
@@ -692,7 +693,7 @@ async function init() {
   el('markdown-list').addEventListener('input', handleMarkdownFieldChange);
   el('markdown-list').addEventListener('change', handleMarkdownFieldChange);
   el('markdown-list').addEventListener('error', handleMarkdownImageError, true);
-  el('markdown-sort-select').addEventListener('change', handleMarkdownSortChange);
+  el('markdown-filter-select').addEventListener('change', handleMarkdownFilterChange);
   ['research-title', 'research-keyword', 'research-category', 'research-brand', 'research-size', 'research-condition', 'research-gender', 'research-sale-status', 'research-min-price', 'research-max-price', 'research-sample-size', 'research-sort', 'research-period-months', 'research-excludes', 'research-note']
     .forEach(id => {
       const node = el(id);
@@ -724,8 +725,8 @@ async function init() {
       console.warn('セッション復元失敗:', e);
     }
   }
-  markdownSortMode = readMarkdownSortMode();
-  el('markdown-sort-select').value = markdownSortMode;
+  markdownFilterMode = readMarkdownFilterMode();
+  el('markdown-filter-select').value = markdownFilterMode;
   markdownRows = readJsonList(MARKDOWN_ROWS_KEY);
   renderResearchData();
   renderMarkdownRows();
@@ -3202,13 +3203,6 @@ function markdownNextPrice(row) {
   return Math.max(0, Number(row.currentPrice || 0) - 100);
 }
 
-function markdownRemaining(row) {
-  const current = Number(row.currentPrice || 0);
-  const floor = markdownFloor(row);
-  if (!current || Number(row.minPrice || 0) < 300) return 0;
-  return Math.max(0, Math.floor((current - floor) / 100));
-}
-
 function markdownCanEnable(row) {
   return Number(row.minPrice || 0) >= 300 && markdownNextPrice(row) >= markdownFloor(row);
 }
@@ -3250,37 +3244,37 @@ function mergeMarkdownRows(listings, settings) {
   });
 }
 
-function readMarkdownSortMode() {
+function readMarkdownFilterMode() {
   try {
-    const value = localStorage.getItem(MARKDOWN_SORT_KEY) || 'default';
-    return MARKDOWN_SORT_MODES.has(value) ? value : 'default';
+    const value = localStorage.getItem(MARKDOWN_FILTER_KEY);
+    if (MARKDOWN_FILTER_MODES.has(value)) return value;
+
+    const legacySortMode = localStorage.getItem(MARKDOWN_SORT_KEY);
+    const migratedMode = legacySortMode === 'enabled-first'
+      ? 'enabled-only'
+      : (legacySortMode === 'disabled-first' ? 'disabled-only' : 'all');
+    localStorage.setItem(MARKDOWN_FILTER_KEY, migratedMode);
+    return migratedMode;
   } catch {
-    return 'default';
+    return 'all';
   }
 }
 
-function handleMarkdownSortChange(event) {
+function handleMarkdownFilterChange(event) {
   const value = event.target.value;
-  markdownSortMode = MARKDOWN_SORT_MODES.has(value) ? value : 'default';
+  markdownFilterMode = MARKDOWN_FILTER_MODES.has(value) ? value : 'all';
   try {
-    localStorage.setItem(MARKDOWN_SORT_KEY, markdownSortMode);
+    localStorage.setItem(MARKDOWN_FILTER_KEY, markdownFilterMode);
   } catch {
-    // Sorting still works for this session when storage is unavailable.
+    // Filtering still works for this session when storage is unavailable.
   }
   renderMarkdownRows();
 }
 
-function sortedMarkdownRows(rows) {
-  if (markdownSortMode === 'default') return [...rows];
-  const activeFirst = markdownSortMode === 'enabled-first';
-  return rows
-    .map((row, index) => ({ row, index }))
-    .sort((left, right) => {
-      const leftRank = markdownIsActive(left.row) === activeFirst ? 0 : 1;
-      const rightRank = markdownIsActive(right.row) === activeFirst ? 0 : 1;
-      return leftRank - rightRank || left.index - right.index;
-    })
-    .map(entry => entry.row);
+function filteredMarkdownRows(rows) {
+  if (markdownFilterMode === 'enabled-only') return rows.filter(markdownIsActive);
+  if (markdownFilterMode === 'disabled-only') return rows.filter(row => !markdownIsActive(row));
+  return [...rows];
 }
 
 function markdownImageUrl(row) {
@@ -3524,17 +3518,27 @@ function handleMarkdownFieldChange(event) {
 function renderMarkdownRows() {
   const list = el('markdown-list');
   const count = el('markdown-enabled-count');
-  const summary = el('markdown-sort-summary');
+  const summary = el('markdown-filter-summary');
   if (!list) return;
   const enabledCount = markdownRows.filter(markdownIsActive).length;
   const disabledCount = Math.max(0, markdownRows.length - enabledCount);
+  const visibleRows = filteredMarkdownRows(markdownRows);
   if (count) count.textContent = `${enabledCount}件`;
-  if (summary) summary.textContent = `100円値下げ中 ${enabledCount}件・値下げなし ${disabledCount}件`;
+  if (summary) {
+    summary.textContent = `表示 ${visibleRows.length}件 / 100円値下げ中 ${enabledCount}件・値下げなし ${disabledCount}件`;
+  }
   if (!markdownRows.length) {
     list.innerHTML = '<div class="research-empty">まだ取得していません</div>';
     return;
   }
-  list.innerHTML = sortedMarkdownRows(markdownRows).map(row => renderMarkdownCard(row)).join('');
+  if (!visibleRows.length) {
+    const emptyText = markdownFilterMode === 'enabled-only'
+      ? '100円値下げ中の商品はありません'
+      : '値下げしていない商品はありません';
+    list.innerHTML = `<div class="research-empty">${emptyText}</div>`;
+    return;
+  }
+  list.innerHTML = visibleRows.map(row => renderMarkdownCard(row)).join('');
 }
 
 function renderMarkdownCard(row) {
@@ -3544,7 +3548,6 @@ function renderMarkdownCard(row) {
   const canEnable = markdownCanEnable(row);
   const atFloor = markdownAtFloor(row);
   const autoChecked = markdownIsActive(row);
-  const nextPrice = markdownNextPrice(row);
   const imageUrl = markdownImageUrl(row);
   const itemUrl = markdownItemUrl(row);
   const stateClass = autoChecked ? 'active' : (atFloor ? 'floor' : 'inactive');
@@ -3579,11 +3582,9 @@ function renderMarkdownCard(row) {
           </div>
           <div class="markdown-price-grid">
             <div><span>現在</span><strong>${formatYen(row.currentPrice)}</strong></div>
-            <div><span>次回</span><strong>${nextPrice > 0 ? formatYen(nextPrice) : '-'}</strong></div>
             <label>下限
               <input type="number" min="300" step="1" inputmode="numeric" value="${minPrice || ''}" placeholder="例: 1200" data-markdown-min="${escapeHtml(itemId)}">
             </label>
-            <div><span>残り</span><strong>${markdownRemaining(row)}回</strong></div>
           </div>
           <p class="markdown-card-note">${escapeHtml(reason)}</p>
         </div>

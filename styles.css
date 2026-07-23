@@ -1053,7 +1053,7 @@ textarea.streaming {
 }
 
 /* ========== 100円値下げ ========== */
-.markdown-sort-tools {
+.markdown-filter-tools {
   display: flex;
   align-items: end;
   justify-content: space-between;
@@ -1064,14 +1064,14 @@ textarea.streaming {
   border-radius: 14px;
   background: linear-gradient(135deg, #fff8f9 0%, #f7fffc 100%);
 }
-.markdown-sort-summary {
+.markdown-filter-summary {
   margin: 0;
   color: #6c596d;
   font-size: 12px;
   font-weight: 800;
   line-height: 1.45;
 }
-.markdown-sort-control {
+.markdown-filter-control {
   display: grid;
   flex: 0 0 min(250px, 52%);
   gap: 4px;
@@ -1080,7 +1080,7 @@ textarea.streaming {
   font-size: 11px;
   font-weight: 800;
 }
-.markdown-sort-control select {
+.markdown-filter-control select {
   width: 100%;
   min-height: 44px;
   padding: 8px 34px 8px 10px;
@@ -1209,7 +1209,7 @@ textarea.streaming {
 }
 .markdown-price-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   align-items: end;
 }
@@ -2466,11 +2466,11 @@ select {
   .markdown-card-header {
     flex-direction: column;
   }
-  .markdown-sort-tools {
+  .markdown-filter-tools {
     align-items: stretch;
     flex-direction: column;
   }
-  .markdown-sort-control {
+  .markdown-filter-control {
     flex-basis: auto;
     width: 100%;
   }
