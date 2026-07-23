@@ -88,6 +88,11 @@ const MARKDOWN_SORT_KEY = 'mercari_markdown_sort';
 const MARKDOWN_FILTER_KEY = 'mercari_markdown_filter';
 const MARKDOWN_FILTER_MODES = new Set(['all', 'enabled-only', 'disabled-only']);
 const RESEARCH_EMPTY_VALUES = new Set(['', '指定なし', 'すべて']);
+const RESEARCH_WIZARD_STEPS = {
+  1: '検索対象',
+  2: '絞り込み',
+  3: '確認・保存',
+};
 const RESEARCH_BRAND_ALIASES = [
   ['BURBERRY BLACK LABEL', ['burberry black label', 'black label crestbridge', 'ブラックレーベル']],
   ['BURBERRY', ['burberry', 'burberrys', 'バーバリー', 'バーバリーズ']],
@@ -154,6 +159,7 @@ let lastAiData = null;
 let activeMultiVoiceSession = null;
 let markdownRows = [];
 let markdownFilterMode = 'all';
+let researchWizardStep = 1;
 
 // ----- 画面制御 -----
 const el = (id) => document.getElementById(id);
@@ -684,6 +690,7 @@ async function init() {
   el('research-refresh-btn').addEventListener('click', () => refreshResearchResultsFromMac({ silent: false }));
   el('research-run-btn').addEventListener('click', runResearchNow);
   el('research-result-save-btn').addEventListener('click', saveResearchResultNote);
+  el('research-wizard').addEventListener('click', handleResearchWizardAction);
   el('research-request-list').addEventListener('click', handleResearchRequestAction);
   el('research-result-list').addEventListener('click', handleResearchResultAction);
   el('markdown-load-btn').addEventListener('click', () => loadMarkdownSnapshot({ silent: false }));
@@ -729,6 +736,7 @@ async function init() {
   markdownRows = readJsonList(MARKDOWN_ROWS_KEY);
   renderResearchData();
   renderMarkdownRows();
+  setResearchWizardStep(1, { scroll: false });
   if (serviceUrl && authToken) refreshResearchResultsFromMac({ silent: true }).catch(() => {});
   if (serviceUrl && authToken) refreshListingStyleStatusFromMac({ silent: true }).catch(() => {});
   if (serviceUrl && authToken) loadMarkdownSnapshot({ silent: true }).catch(() => {});
@@ -2414,6 +2422,78 @@ function switchMainTab(tab) {
   el('markdown-tab-btn').setAttribute('aria-selected', String(markdown));
 }
 
+function normalizeResearchWizardStep(value) {
+  const step = Number(value);
+  return Number.isInteger(step) && RESEARCH_WIZARD_STEPS[step] ? step : 1;
+}
+
+function isResearchPriceRangeValid(minPrice, maxPrice) {
+  const min = Number(minPrice || 0);
+  const max = Number(maxPrice || 0);
+  return !min || !max || min <= max;
+}
+
+function validateResearchWizardStep(step) {
+  if (step === 1 && !hasResearchSearchAxis(collectResearchForm())) {
+    alert('カテゴリー、ブランド、検索キーワードのいずれかを指定してください');
+    return false;
+  }
+  if (step === 2 && !isResearchPriceRangeValid(
+    el('research-min-price')?.value,
+    el('research-max-price')?.value
+  )) {
+    alert('最低価格は最高価格以下にしてください');
+    return false;
+  }
+  return true;
+}
+
+function canMoveToResearchWizardStep(targetStep) {
+  const target = normalizeResearchWizardStep(targetStep);
+  if (target <= researchWizardStep) return true;
+  for (let step = researchWizardStep; step < target; step += 1) {
+    if (!validateResearchWizardStep(step)) return false;
+  }
+  return true;
+}
+
+function setResearchWizardStep(value, { scroll = true } = {}) {
+  const step = normalizeResearchWizardStep(value);
+  researchWizardStep = step;
+  document.querySelectorAll('[data-research-step-panel]').forEach(panel => {
+    const selected = Number(panel.dataset.researchStepPanel) === step;
+    panel.hidden = !selected;
+    panel.classList.toggle('active', selected);
+  });
+  document.querySelectorAll('#research-wizard-progress [data-research-step]').forEach(button => {
+    const selected = Number(button.dataset.researchStep) === step;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-selected', String(selected));
+  });
+  const heading = el('research-wizard-heading');
+  const count = el('research-wizard-count');
+  if (heading) heading.textContent = RESEARCH_WIZARD_STEPS[step];
+  if (count) count.textContent = `${step}/3`;
+  if (scroll) {
+    el('research-wizard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function handleResearchWizardAction(event) {
+  const button = event.target.closest?.('[data-research-wizard-action]');
+  if (!button) return;
+  const action = button.dataset.researchWizardAction;
+  if (action === 'show-saved') {
+    el('research-saved-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  const nextStep = normalizeResearchWizardStep(button.dataset.researchStep);
+  if ((action === 'next' || action === 'goto') && !canMoveToResearchWizardStep(nextStep)) return;
+  if (action === 'next' || action === 'back' || action === 'goto') {
+    setResearchWizardStep(nextStep);
+  }
+}
+
 function readJsonList(key) {
   try {
     const value = JSON.parse(localStorage.getItem(key) || '[]');
@@ -2528,7 +2608,8 @@ function renderResearchChipRow(values) {
 
 function updateResearchPreview() {
   const node = el('research-condition-preview');
-  if (!node) return;
+  const reviewNode = el('research-review-summary');
+  if (!node && !reviewNode) return;
   const request = {
     keywordInput: el('research-keyword')?.value || '',
     category: el('research-category')?.value || '',
@@ -2546,11 +2627,27 @@ function updateResearchPreview() {
   const sort = el('research-sort')?.value || '新しい順';
   const periodMonths = Number(el('research-period-months')?.value || 0);
   const priceText = formatResearchPriceRange({ minPrice, maxPrice });
-  node.innerHTML = `
+  const categoryLabel = getSelectedOptionLabel('research-category');
+  const quickValues = [
+    request.brand,
+    categoryLabel,
+    request.saleStatus,
+  ];
+  const quickDescription = request.saleStatus === '販売中'
+    ? '上記の条件で、現在の販売価格を調べます。'
+    : request.saleStatus === '売り切れ'
+      ? '上記の条件で、直近の売り切れ情報を調べます。'
+      : '上記の条件で、販売中・売り切れ情報を調べます。';
+  if (node) node.innerHTML = `
     <span>現在の条件</span>
+    ${renderResearchChipRow(quickValues)}
+    <small>${escapeHtml(condition ? quickDescription : '検索条件を入力してください')}</small>
+  `;
+  if (reviewNode) reviewNode.innerHTML = `
+    <span>調査する条件</span>
     <strong>${escapeHtml(condition || '検索条件を入力してください')}</strong>
     ${renderResearchChipRow([
-      getSelectedOptionLabel('research-category'),
+      categoryLabel,
       request.gender,
       request.size,
       request.condition,
@@ -2611,15 +2708,20 @@ function collectResearchForm() {
 }
 
 async function saveResearchRequest() {
-  const request = collectResearchForm();
-  if (!hasResearchSearchAxis(request)) {
-    alert('カテゴリー、ブランド、検索キーワードのいずれかを指定してください');
+  if (!validateResearchWizardStep(1)) {
+    setResearchWizardStep(1);
     return;
   }
+  if (!validateResearchWizardStep(2)) {
+    setResearchWizardStep(2);
+    return;
+  }
+  const request = collectResearchForm();
   const list = readJsonList(RESEARCH_REQUESTS_KEY);
   list.unshift(request);
   writeJsonList(RESEARCH_REQUESTS_KEY, list.slice(0, 50));
   clearResearchForm(false);
+  setResearchWizardStep(1, { scroll: false });
   renderResearchData();
   await syncResearchRequestToMac(request);
 }
@@ -5575,5 +5677,8 @@ globalThis.MercariAppTestHooks = {
   buildDescriptionProductName,
   normalizeMercariTitle,
   defaultNewMinPrice: price => Math.max(300, Math.floor(Number(price || 0) * 0.7)),
+  normalizeResearchWizardStep,
+  isResearchPriceRangeValid,
+  setResearchWizardStep,
 };
 if (!globalThis.__MERCARI_TEST__) init();

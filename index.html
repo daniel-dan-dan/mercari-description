@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260723c">
+  <link rel="stylesheet" href="styles.css?v=20260723d">
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -25,7 +25,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260723c / 値下げ一覧コンパクト表示</p>
+      <p class="settings-version" id="settings-version">v20260723d / 相場リサーチ3段階入力</p>
     </section>
 
     <!-- メイン画面 -->
@@ -184,168 +184,225 @@
       </div>
 
       <div id="research-panel" class="tab-panel" role="tabpanel" aria-labelledby="research-tab-btn" hidden>
-        <div class="step research-step research-form-card">
-          <div class="research-head">
+        <div id="research-wizard" class="step research-step research-form-card research-wizard-card">
+          <div class="research-wizard-top">
             <div>
-              <span class="research-kicker">夜間自動リサーチ</span>
-              <h2>相場リサーチ</h2>
+              <span class="research-kicker">条件を作る</span>
+              <h2><span id="research-wizard-heading">検索対象</span><strong id="research-wizard-count">1/3</strong></h2>
             </div>
-            <div class="research-head-badge">
-              <span>毎日 3:20</span>
-              <strong>売り切れ中心</strong>
-            </div>
-          </div>
-
-          <div class="research-form-section">
-            <div class="research-section-label">検索の軸</div>
-            <label for="research-brand">ブランド</label>
-            <input type="text" id="research-brand" placeholder="例: BURBERRY">
-
-            <label for="research-category">カテゴリー</label>
-            <select id="research-category">
-              <option value="シャツ" data-label="メンズ > トップス > シャツ" selected>メンズ > トップス > シャツ</option>
-              <option value="シャツ" data-label="レディース > トップス > シャツ・ブラウス">レディース > トップス > シャツ・ブラウス</option>
-              <option value="ポロシャツ" data-label="メンズ > トップス > ポロシャツ">メンズ > トップス > ポロシャツ</option>
-              <option value="ワンピース" data-label="レディース > ワンピース">レディース > ワンピース</option>
-              <option value="スーツ" data-label="メンズ > スーツ">メンズ > スーツ</option>
-              <option value="スーツ" data-label="レディース > スーツ・フォーマル・ドレス">レディース > スーツ・フォーマル・ドレス</option>
-              <option value="ジャケット" data-label="ジャケット・アウター">ジャケット・アウター</option>
-              <option value="パンツ" data-label="パンツ">パンツ</option>
-              <option value="スカート" data-label="スカート">スカート</option>
-              <option value="バッグ" data-label="バッグ">バッグ</option>
-              <option value="靴" data-label="靴">靴</option>
-              <option value="その他" data-label="その他">その他</option>
-            </select>
-
-            <label for="research-keyword">キーワード</label>
-            <input type="text" id="research-keyword" placeholder="例: 長袖 ノバチェック">
-          </div>
-
-          <div class="research-form-section">
-            <div class="research-section-label">絞り込み</div>
-            <div class="research-grid">
-              <label for="research-size">サイズ
-                <select id="research-size">
-                  <option value="指定なし" selected>指定なし</option>
-                  <option value="XS">XS</option>
-                  <option value="S">S</option>
-                  <option value="M">M</option>
-                  <option value="L">L</option>
-                  <option value="XL">XL</option>
-                  <option value="2XL">2XL</option>
-                  <option value="3XL">3XL</option>
-                  <option value="FREE SIZE">FREE SIZE</option>
-                  <option value="80cm">80cm</option>
-                  <option value="90cm">90cm</option>
-                  <option value="100cm">100cm</option>
-                  <option value="110cm">110cm</option>
-                  <option value="120cm">120cm</option>
-                  <option value="130cm">130cm</option>
-                  <option value="140cm">140cm</option>
-                  <option value="150cm">150cm</option>
-                  <option value="160cm">160cm</option>
-                </select>
-              </label>
-              <label for="research-condition">商品の状態
-                <select id="research-condition">
-                  <option value="すべて" selected>すべて</option>
-                  <option value="新品、未使用">新品、未使用</option>
-                  <option value="未使用に近い">未使用に近い</option>
-                  <option value="目立った傷や汚れなし">目立った傷や汚れなし</option>
-                  <option value="やや傷や汚れあり">やや傷や汚れあり</option>
-                  <option value="傷や汚れあり">傷や汚れあり</option>
-                  <option value="全体的に状態が悪い">全体的に状態が悪い</option>
-                </select>
-              </label>
-            </div>
-
-            <div class="research-grid">
-              <label for="research-gender">対象
-                <select id="research-gender">
-                  <option value="指定なし">指定なし</option>
-                  <option value="メンズ">メンズ</option>
-                  <option value="レディース">レディース</option>
-                  <option value="キッズ・ベビー">キッズ・ベビー</option>
-                </select>
-              </label>
-              <label for="research-sale-status">販売状況
-                <select id="research-sale-status">
-                  <option value="すべて">すべて</option>
-                  <option value="販売中">販売中</option>
-                  <option value="売り切れ" selected>売り切れ</option>
-                </select>
-              </label>
+            <div class="research-auto-note">
+              <i data-lucide="clock" aria-hidden="true"></i>
+              <span>夜間3:20に自動実行</span>
             </div>
           </div>
 
-          <div class="research-form-section">
-            <div class="research-section-label">価格・並び順</div>
-            <div class="research-grid">
-              <label for="research-min-price">最低価格
-                <input type="number" id="research-min-price" value="5000" min="0" step="500">
+          <div id="research-wizard-progress" class="research-wizard-progress" role="tablist" aria-label="相場リサーチ入力手順">
+            <button id="research-wizard-tab-1" class="active" type="button" role="tab" aria-selected="true" aria-controls="research-wizard-step-1" data-research-wizard-action="goto" data-research-step="1">
+              <span>1</span><strong>検索対象</strong>
+            </button>
+            <button id="research-wizard-tab-2" type="button" role="tab" aria-selected="false" aria-controls="research-wizard-step-2" data-research-wizard-action="goto" data-research-step="2">
+              <span>2</span><strong>絞り込み</strong>
+            </button>
+            <button id="research-wizard-tab-3" type="button" role="tab" aria-selected="false" aria-controls="research-wizard-step-3" data-research-wizard-action="goto" data-research-step="3">
+              <span>3</span><strong>確認・保存</strong>
+            </button>
+          </div>
+
+          <section id="research-wizard-step-1" class="research-wizard-pane active" role="tabpanel" aria-labelledby="research-wizard-tab-1" data-research-step-panel="1">
+            <div class="research-wizard-intro">
+              <h3>1. 何を調べますか？</h3>
+              <p>ブランドやカテゴリー、キーワードを入力して検索対象を設定します。</p>
+            </div>
+
+            <div class="research-axis-list">
+              <label class="research-axis-field" for="research-brand">
+                <i data-lucide="tag" aria-hidden="true"></i>
+                <span><small>ブランド</small><input type="text" id="research-brand" placeholder="例: BURBERRY"></span>
               </label>
-              <label for="research-max-price">最高価格
-                <input type="number" id="research-max-price" value="20000" min="0" step="500">
+
+              <label class="research-axis-field" for="research-category">
+                <i data-lucide="shirt" aria-hidden="true"></i>
+                <span><small>カテゴリー</small>
+                  <select id="research-category">
+                    <option value="シャツ" data-label="メンズ > トップス > シャツ" selected>メンズ > トップス > シャツ</option>
+                    <option value="シャツ" data-label="レディース > トップス > シャツ・ブラウス">レディース > トップス > シャツ・ブラウス</option>
+                    <option value="ポロシャツ" data-label="メンズ > トップス > ポロシャツ">メンズ > トップス > ポロシャツ</option>
+                    <option value="ワンピース" data-label="レディース > ワンピース">レディース > ワンピース</option>
+                    <option value="スーツ" data-label="メンズ > スーツ">メンズ > スーツ</option>
+                    <option value="スーツ" data-label="レディース > スーツ・フォーマル・ドレス">レディース > スーツ・フォーマル・ドレス</option>
+                    <option value="ジャケット" data-label="ジャケット・アウター">ジャケット・アウター</option>
+                    <option value="パンツ" data-label="パンツ">パンツ</option>
+                    <option value="スカート" data-label="スカート">スカート</option>
+                    <option value="バッグ" data-label="バッグ">バッグ</option>
+                    <option value="靴" data-label="靴">靴</option>
+                    <option value="その他" data-label="その他">その他</option>
+                  </select>
+                </span>
+              </label>
+
+              <label class="research-axis-field" for="research-keyword">
+                <i data-lucide="search" aria-hidden="true"></i>
+                <span><small>キーワード</small><input type="text" id="research-keyword" placeholder="例: 長袖 ノバチェック"></span>
               </label>
             </div>
 
-            <div class="research-grid">
-              <label for="research-sample-size">サンプル数
-                <select id="research-sample-size">
-                  <option value="50">50件</option>
-                  <option value="100">100件</option>
-                  <option value="200" selected>200件</option>
-                  <option value="300">300件</option>
-                </select>
-              </label>
-              <label for="research-sort">並び順
-                <select id="research-sort">
-                  <option value="おすすめ順">おすすめ順</option>
-                  <option value="新しい順" selected>新しい順</option>
-                  <option value="価格の安い順">価格の安い順</option>
-                  <option value="価格の高い順">価格の高い順</option>
-                </select>
-              </label>
-              <label for="research-period-months">対象期間
-                <select id="research-period-months">
-                  <option value="0" selected>指定なし</option>
-                  <option value="1">直近1ヶ月</option>
-                  <option value="3">直近3ヶ月</option>
-                  <option value="6">直近6ヶ月</option>
-                  <option value="12">直近12ヶ月</option>
-                </select>
-              </label>
+            <div id="research-condition-preview" class="research-condition-preview research-wizard-preview" aria-live="polite">
+              <span>現在の条件</span>
+              <strong>ブランド / カテゴリー / 対象を入力してください</strong>
             </div>
-          </div>
 
-          <div id="research-condition-preview" class="research-condition-preview" aria-live="polite">
-            <span>現在の条件</span>
-            <strong>ブランド / カテゴリー / 対象を入力してください</strong>
-          </div>
+            <div class="research-wizard-actions">
+              <button class="btn primary research-wizard-next" type="button" data-research-wizard-action="next" data-research-step="2">
+                <span>次へ：絞り込み</span><i data-lucide="arrow-right" aria-hidden="true"></i>
+              </button>
+              <button class="research-wizard-link" type="button" data-research-wizard-action="show-saved">
+                <span>保存済みの依頼を見る</span><i data-lucide="chevron-down" aria-hidden="true"></i>
+              </button>
+            </div>
+          </section>
 
-          <details class="research-extra">
-            <summary>除外ワード・補足メモ</summary>
-            <label for="research-excludes">除外ワード</label>
-            <input type="text" id="research-excludes" value="専用, 業者, 公式, ショップ, まとめ売り">
+          <section id="research-wizard-step-2" class="research-wizard-pane" role="tabpanel" aria-labelledby="research-wizard-tab-2" data-research-step-panel="2" hidden>
+            <div class="research-wizard-intro">
+              <h3>2. 条件を絞り込みます</h3>
+              <p>必要な項目だけ選べます。初期値のままでも調査できます。</p>
+            </div>
 
-            <label for="research-note">補足メモ</label>
-            <textarea id="research-note" rows="4" placeholder="状態の見方、除外したい条件、セラーURLなど"></textarea>
-          </details>
+            <div class="research-form-section">
+              <div class="research-section-label">商品条件</div>
+              <div class="research-grid">
+                <label for="research-size">サイズ
+                  <select id="research-size">
+                    <option value="指定なし" selected>指定なし</option>
+                    <option value="XS">XS</option>
+                    <option value="S">S</option>
+                    <option value="M">M</option>
+                    <option value="L">L</option>
+                    <option value="XL">XL</option>
+                    <option value="2XL">2XL</option>
+                    <option value="3XL">3XL</option>
+                    <option value="FREE SIZE">FREE SIZE</option>
+                    <option value="80cm">80cm</option>
+                    <option value="90cm">90cm</option>
+                    <option value="100cm">100cm</option>
+                    <option value="110cm">110cm</option>
+                    <option value="120cm">120cm</option>
+                    <option value="130cm">130cm</option>
+                    <option value="140cm">140cm</option>
+                    <option value="150cm">150cm</option>
+                    <option value="160cm">160cm</option>
+                  </select>
+                </label>
+                <label for="research-condition">商品の状態
+                  <select id="research-condition">
+                    <option value="すべて" selected>すべて</option>
+                    <option value="新品、未使用">新品、未使用</option>
+                    <option value="未使用に近い">未使用に近い</option>
+                    <option value="目立った傷や汚れなし">目立った傷や汚れなし</option>
+                    <option value="やや傷や汚れあり">やや傷や汚れあり</option>
+                    <option value="傷や汚れあり">傷や汚れあり</option>
+                    <option value="全体的に状態が悪い">全体的に状態が悪い</option>
+                  </select>
+                </label>
+              </div>
+              <div class="research-grid">
+                <label for="research-gender">対象
+                  <select id="research-gender">
+                    <option value="指定なし">指定なし</option>
+                    <option value="メンズ">メンズ</option>
+                    <option value="レディース">レディース</option>
+                    <option value="キッズ・ベビー">キッズ・ベビー</option>
+                  </select>
+                </label>
+                <label for="research-sale-status">販売状況
+                  <select id="research-sale-status">
+                    <option value="すべて">すべて</option>
+                    <option value="販売中">販売中</option>
+                    <option value="売り切れ" selected>売り切れ</option>
+                  </select>
+                </label>
+              </div>
+            </div>
 
-          <div class="research-form-section">
-            <div class="research-section-label">保存</div>
-            <label for="research-title">保存名</label>
-            <input type="text" id="research-title" placeholder="例: BURBERRY メンズ シャツ">
-          </div>
+            <div class="research-form-section">
+              <div class="research-section-label">価格・取得方法</div>
+              <div class="research-grid">
+                <label for="research-min-price">最低価格
+                  <input type="number" id="research-min-price" value="5000" min="0" step="500">
+                </label>
+                <label for="research-max-price">最高価格
+                  <input type="number" id="research-max-price" value="20000" min="0" step="500">
+                </label>
+              </div>
+              <div class="research-grid">
+                <label for="research-sample-size">サンプル数
+                  <select id="research-sample-size">
+                    <option value="50">50件</option>
+                    <option value="100">100件</option>
+                    <option value="200" selected>200件</option>
+                    <option value="300">300件</option>
+                  </select>
+                </label>
+                <label for="research-sort">並び順
+                  <select id="research-sort">
+                    <option value="おすすめ順">おすすめ順</option>
+                    <option value="新しい順" selected>新しい順</option>
+                    <option value="価格の安い順">価格の安い順</option>
+                    <option value="価格の高い順">価格の高い順</option>
+                  </select>
+                </label>
+                <label for="research-period-months">対象期間
+                  <select id="research-period-months">
+                    <option value="0" selected>指定なし</option>
+                    <option value="1">直近1ヶ月</option>
+                    <option value="3">直近3ヶ月</option>
+                    <option value="6">直近6ヶ月</option>
+                    <option value="12">直近12ヶ月</option>
+                  </select>
+                </label>
+              </div>
+            </div>
 
-          <div class="research-actions">
-            <button id="research-save-btn" class="btn primary" type="button">調査依頼を保存</button>
-            <button id="research-copy-btn" class="btn" type="button">依頼文をコピー</button>
-          </div>
+            <div class="research-wizard-actions split">
+              <button class="btn" type="button" data-research-wizard-action="back" data-research-step="1">戻る</button>
+              <button class="btn primary" type="button" data-research-wizard-action="next" data-research-step="3">次へ：確認</button>
+            </div>
+          </section>
+
+          <section id="research-wizard-step-3" class="research-wizard-pane" role="tabpanel" aria-labelledby="research-wizard-tab-3" data-research-step-panel="3" hidden>
+            <div class="research-wizard-intro">
+              <h3>3. 内容を確認して保存</h3>
+              <p>保存後はMacへ送られ、夜間3:20に自動で調査します。</p>
+            </div>
+
+            <div id="research-review-summary" class="research-condition-preview research-review-summary" aria-live="polite"></div>
+
+            <details class="research-extra">
+              <summary>除外ワード・補足メモ</summary>
+              <label for="research-excludes">除外ワード</label>
+              <input type="text" id="research-excludes" value="専用, 業者, 公式, ショップ, まとめ売り">
+
+              <label for="research-note">補足メモ</label>
+              <textarea id="research-note" rows="4" placeholder="状態の見方、除外したい条件、セラーURLなど"></textarea>
+            </details>
+
+            <div class="research-form-section research-save-section">
+              <div class="research-section-label">保存名</div>
+              <label class="sr-only" for="research-title">保存名</label>
+              <input type="text" id="research-title" placeholder="例: BURBERRY メンズ シャツ">
+              <small>空欄ならブランドやカテゴリーから自動で付けます。</small>
+            </div>
+
+            <div class="research-wizard-actions split">
+              <button class="btn" type="button" data-research-wizard-action="back" data-research-step="2">戻る</button>
+              <button id="research-save-btn" class="btn primary" type="button">調査依頼を保存</button>
+            </div>
+            <button id="research-copy-btn" class="research-wizard-link" type="button">依頼文をコピー</button>
+          </section>
+
           <p id="research-sync-status" class="status" role="status" aria-live="polite" hidden></p>
         </div>
 
-        <div class="step research-step">
+        <div id="research-saved-section" class="step research-step">
           <div class="research-list-head">
             <div>
               <span class="research-kicker">待機中</span>
@@ -449,8 +506,8 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260723c"></script>
-  <script src="app.js?v=20260723c"></script>
+  <script src="catalog-data.js?v=20260723d"></script>
+  <script src="app.js?v=20260723d"></script>
   <script>
     if (window.lucide) window.lucide.createIcons();
     if ('serviceWorker' in navigator) {
