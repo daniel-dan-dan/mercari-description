@@ -39,6 +39,8 @@ const testSource = `
       currentPrice: 2500,
       minPrice: 1000,
       autoEnabled: true,
+      imageUrl: 'https://static.mercdn.net/item/detail/orig/photos/m00000000002_1.jpg',
+      url: 'https://jp.mercari.com/item/m00000000002',
     },
     {
       itemId: 'm00000000003',
@@ -71,8 +73,21 @@ assert.match(context.__cardHtml, />現在</);
 assert.match(context.__cardHtml, />下限/);
 assert.doesNotMatch(context.__cardHtml, />次回</);
 assert.doesNotMatch(context.__cardHtml, />残り</);
+assert.match(
+  context.__cardHtml,
+  /class="markdown-card-media"[\s\S]*<img[\s\S]*class="markdown-card-state active">100円値下げ中<\/span>[\s\S]*<\/a>/
+);
 assert.equal(context.__migratedMode, 'disabled-only');
 assert.equal(context.__storedMode, 'disabled-only');
+
+const indexHtml = fs.readFileSync('index.html', 'utf8');
+assert.match(indexHtml, /data-markdown-filter="all"[^>]*>すべて<\/button>/);
+assert.match(indexHtml, /data-markdown-filter="enabled-only"[^>]*>値下げ中のみ<\/button>/);
+assert.match(indexHtml, /data-markdown-filter="disabled-only"[^>]*>値下げなしのみ<\/button>/);
+assert.match(indexHtml, /aria-label="最新保存データを表示"[\s\S]*<span>更新<\/span>/);
+assert.match(indexHtml, /aria-label="設定を保存"[\s\S]*<span>保存<\/span>/);
+assert.match(indexHtml, /aria-label="値下げ対象だけ確認（価格は変えない）"[\s\S]*<span>確認<\/span>/);
+assert.match(indexHtml, /aria-label="今すぐ実行"[\s\S]*<span>実行<\/span>/);
 
 console.log(JSON.stringify({
   ok: true,
@@ -80,5 +95,7 @@ console.log(JSON.stringify({
   enabledOnly: context.__enabledIds,
   disabledOnly: context.__disabledIds,
   removedDisplays: ['次回', '残り'],
+  compactActions: ['更新', '保存', '確認', '実行'],
+  statePill: 'image-overlay',
   migratedMode: context.__migratedMode,
 }));

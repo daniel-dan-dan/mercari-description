@@ -693,7 +693,7 @@ async function init() {
   el('markdown-list').addEventListener('input', handleMarkdownFieldChange);
   el('markdown-list').addEventListener('change', handleMarkdownFieldChange);
   el('markdown-list').addEventListener('error', handleMarkdownImageError, true);
-  el('markdown-filter-select').addEventListener('change', handleMarkdownFilterChange);
+  el('markdown-filter-control').addEventListener('click', handleMarkdownFilterChange);
   ['research-title', 'research-keyword', 'research-category', 'research-brand', 'research-size', 'research-condition', 'research-gender', 'research-sale-status', 'research-min-price', 'research-max-price', 'research-sample-size', 'research-sort', 'research-period-months', 'research-excludes', 'research-note']
     .forEach(id => {
       const node = el(id);
@@ -726,7 +726,6 @@ async function init() {
     }
   }
   markdownFilterMode = readMarkdownFilterMode();
-  el('markdown-filter-select').value = markdownFilterMode;
   markdownRows = readJsonList(MARKDOWN_ROWS_KEY);
   renderResearchData();
   renderMarkdownRows();
@@ -3261,7 +3260,9 @@ function readMarkdownFilterMode() {
 }
 
 function handleMarkdownFilterChange(event) {
-  const value = event.target.value;
+  const button = event.target.closest?.('[data-markdown-filter]');
+  if (!button) return;
+  const value = button.dataset.markdownFilter;
   markdownFilterMode = MARKDOWN_FILTER_MODES.has(value) ? value : 'all';
   try {
     localStorage.setItem(MARKDOWN_FILTER_KEY, markdownFilterMode);
@@ -3350,12 +3351,11 @@ function renderMarkdownOverview_(data = {}) {
   const markdownAt = markdownRun.createdAt ? formatListingStyleDate(markdownRun.createdAt) : '未実行';
   const summary = markdownRun.summary || {};
   const resultText = markdownRun.createdAt
-    ? `${Number(summary.updated || 0)}件更新 / ${Number(summary.error || 0)}件失敗`
+    ? `更新${Number(summary.updated || 0)} / 失敗${Number(summary.error || 0)}`
     : '結果なし';
   node.innerHTML = `
-    <div><span>21時の商品取得</span><strong>${escapeHtml(syncAt)}</strong></div>
-    <div><span>20時の値下げ</span><strong>${escapeHtml(markdownAt)}</strong></div>
-    <div><span>直近結果</span><strong>${escapeHtml(resultText)}</strong></div>
+    <div><span>商品取得</span><strong>${escapeHtml(syncAt)}</strong></div>
+    <div><span>値下げ結果</span><strong title="${escapeHtml(markdownAt)}">${escapeHtml(resultText)}</strong></div>
     <div><span>Mac接続</span><strong class="connected">接続済み</strong></div>`;
 }
 
@@ -3524,8 +3524,13 @@ function renderMarkdownRows() {
   const disabledCount = Math.max(0, markdownRows.length - enabledCount);
   const visibleRows = filteredMarkdownRows(markdownRows);
   if (count) count.textContent = `${enabledCount}件`;
+  document.querySelectorAll('[data-markdown-filter]').forEach(button => {
+    const selected = button.dataset.markdownFilter === markdownFilterMode;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
   if (summary) {
-    summary.textContent = `表示 ${visibleRows.length}件 / 100円値下げ中 ${enabledCount}件・値下げなし ${disabledCount}件`;
+    summary.textContent = `値下げ中 ${enabledCount}件 / 値下げなし ${disabledCount}件`;
   }
   if (!markdownRows.length) {
     list.innerHTML = '<div class="research-empty">まだ取得していません</div>';
@@ -3567,9 +3572,9 @@ function renderMarkdownCard(row) {
       <div class="markdown-card-layout">
         <a class="markdown-card-media" href="${escapeHtml(itemUrl)}" target="_blank" rel="noopener" aria-label="${escapeHtml(title)}の商品ページを開く">
           ${imageMarkup}
+          <span class="markdown-card-state ${stateClass}">${stateText}</span>
         </a>
         <div class="markdown-card-body">
-          <span class="markdown-card-state ${stateClass}">${stateText}</span>
           <div class="markdown-card-header">
             <div>
               <h3>${escapeHtml(title)}</h3>

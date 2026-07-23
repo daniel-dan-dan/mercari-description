@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260723b">
+  <link rel="stylesheet" href="styles.css?v=20260723c">
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -25,7 +25,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260723b / 値下げ写真・絞り込み対応</p>
+      <p class="settings-version" id="settings-version">v20260723c / 値下げ一覧コンパクト表示</p>
     </section>
 
     <!-- メイン画面 -->
@@ -378,7 +378,7 @@
       </div>
 
       <div id="markdown-panel" class="tab-panel" role="tabpanel" aria-labelledby="markdown-tab-btn" hidden>
-        <div class="step markdown-step">
+        <div class="step markdown-step markdown-control-step">
           <div class="research-head">
             <div>
               <span class="research-kicker">20時値下げ / 21時取得</span>
@@ -391,21 +391,28 @@
           </div>
           <p class="note">毎日20:00に100円値下げします。毎日21:00に出品中商品を取得し、新規商品は下限価格を現在価格の7割にして自動ONにします。</p>
           <div id="markdown-overview" class="markdown-overview" aria-live="polite">
-            <div><span>21時の商品取得</span><strong>確認中</strong></div>
-            <div><span>20時の値下げ</span><strong>確認中</strong></div>
-            <div><span>直近結果</span><strong>確認中</strong></div>
+            <div><span>商品取得</span><strong>確認中</strong></div>
+            <div><span>値下げ結果</span><strong>確認中</strong></div>
             <div><span>Mac接続</span><strong>確認中</strong></div>
           </div>
-          <div class="research-actions">
-            <button id="markdown-load-btn" class="btn primary" type="button">最新保存データを表示</button>
-            <button id="markdown-save-btn" class="btn" type="button">設定を保存</button>
-            <button id="markdown-dry-run-btn" class="btn" type="button">値下げ対象だけ確認（価格は変えない）</button>
-            <button id="markdown-run-btn" class="btn danger" type="button">今すぐ実行</button>
+          <div class="research-actions markdown-actions">
+            <button id="markdown-load-btn" class="btn markdown-action-btn" type="button" title="最新保存データを表示" aria-label="最新保存データを表示">
+              <i data-lucide="refresh-cw" aria-hidden="true"></i><span>更新</span>
+            </button>
+            <button id="markdown-save-btn" class="btn markdown-action-btn" type="button" title="設定を保存" aria-label="設定を保存">
+              <i data-lucide="save" aria-hidden="true"></i><span>保存</span>
+            </button>
+            <button id="markdown-dry-run-btn" class="btn markdown-action-btn" type="button" title="値下げ対象だけ確認（価格は変えない）" aria-label="値下げ対象だけ確認（価格は変えない）">
+              <i data-lucide="search" aria-hidden="true"></i><span>確認</span>
+            </button>
+            <button id="markdown-run-btn" class="btn danger markdown-action-btn" type="button" title="今すぐ実行" aria-label="今すぐ実行">
+              <i data-lucide="play" aria-hidden="true"></i><span>実行</span>
+            </button>
           </div>
           <p id="markdown-status" class="status" role="status" aria-live="polite" hidden></p>
         </div>
 
-        <div class="step markdown-step">
+        <div class="step markdown-step markdown-list-step">
           <div class="research-list-head">
             <div>
               <span class="research-kicker">候補</span>
@@ -413,15 +420,12 @@
             </div>
           </div>
           <div class="markdown-filter-tools">
-            <p id="markdown-filter-summary" class="markdown-filter-summary" aria-live="polite">表示 0件 / 100円値下げ中 0件・値下げなし 0件</p>
-            <label class="markdown-filter-control" for="markdown-filter-select">
-              <span>表示対象</span>
-              <select id="markdown-filter-select">
-                <option value="all">すべての商品</option>
-                <option value="enabled-only">100円値下げ中のみ</option>
-                <option value="disabled-only">値下げしていない商品のみ</option>
-              </select>
-            </label>
+            <p id="markdown-filter-summary" class="markdown-filter-summary" aria-live="polite">値下げ中 0件 / 値下げなし 0件</p>
+            <div id="markdown-filter-control" class="markdown-filter-control" role="group" aria-label="表示対象">
+              <button type="button" data-markdown-filter="all" aria-pressed="true">すべて</button>
+              <button type="button" data-markdown-filter="enabled-only" aria-pressed="false">値下げ中のみ</button>
+              <button type="button" data-markdown-filter="disabled-only" aria-pressed="false">値下げなしのみ</button>
+            </div>
           </div>
           <div id="markdown-list" class="markdown-list">
             <div class="research-empty">まだ取得していません</div>
@@ -445,8 +449,8 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260723b"></script>
-  <script src="app.js?v=20260723b"></script>
+  <script src="catalog-data.js?v=20260723c"></script>
+  <script src="app.js?v=20260723c"></script>
   <script>
     if (window.lucide) window.lucide.createIcons();
     if ('serviceWorker' in navigator) {

@@ -1053,113 +1053,201 @@ textarea.streaming {
 }
 
 /* ========== 100円値下げ ========== */
+.markdown-control-step {
+  padding: 10px 12px;
+}
+.markdown-control-step .research-head,
+.markdown-control-step > .note {
+  display: none;
+}
+.markdown-control-step .markdown-overview {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 0 0 9px;
+  padding: 0;
+  overflow: hidden;
+  border-color: #f0d7da;
+  border-radius: 12px;
+  background: #fffafa;
+}
+.markdown-control-step .markdown-overview div {
+  padding: 6px 7px;
+  border-right: 1px solid #f0d7da;
+}
+.markdown-control-step .markdown-overview div:last-child {
+  border-right: 0;
+}
+.markdown-control-step .markdown-overview span {
+  font-size: 9px;
+}
+.markdown-control-step .markdown-overview strong {
+  font-size: 10px;
+}
+.markdown-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 0;
+}
+.markdown-action-btn {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 4px;
+  border-color: #efc9ce;
+  color: #c72f43;
+  font-size: 12px;
+  font-weight: 900;
+}
+.markdown-action-btn svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+}
+.markdown-list-step {
+  padding: 11px 12px 0;
+  overflow: hidden;
+}
+.markdown-list-step > .research-list-head {
+  display: none;
+}
 .markdown-filter-tools {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 2px 0 14px;
-  padding: 11px 12px;
-  border: 1px solid #eed9dd;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #fff8f9 0%, #f7fffc 100%);
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 10px;
+  border-bottom: 1px solid #f0d7da;
 }
 .markdown-filter-summary {
   margin: 0;
-  color: #6c596d;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1.45;
+  color: #493749;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.35;
 }
 .markdown-filter-control {
   display: grid;
-  flex: 0 0 min(250px, 52%);
-  gap: 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
   margin: 0;
-  color: #6b5d7d;
-  font-size: 11px;
-  font-weight: 800;
+  overflow: hidden;
+  border: 1px solid #e5d4d8;
+  border-radius: 12px;
+  background: #fff;
 }
-.markdown-filter-control select {
-  width: 100%;
-  min-height: 44px;
-  padding: 8px 34px 8px 10px;
-  border: 1px solid #dfc8cd;
-  border-radius: 11px;
-  background-color: #fff;
-  color: #2d1e4a;
-  font-size: 13px;
-  font-weight: 800;
+.markdown-filter-control button {
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px 4px;
+  border: 0;
+  border-right: 1px solid #e5d4d8;
+  background: #fff;
+  color: #5f5263;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.markdown-filter-control button:last-child {
+  border-right: 0;
+}
+.markdown-filter-control button.active,
+.markdown-filter-control button[aria-pressed="true"] {
+  background: #fff4f5;
+  color: #d92f3b;
+  box-shadow: inset 0 0 0 1px #ff7781;
 }
 .markdown-list {
   display: grid;
-  gap: 12px;
+  gap: 0;
 }
 .markdown-card {
-  padding: 13px;
-  border: 1px solid #ecd2d7;
-  border-radius: 14px;
+  padding: 12px 0 13px;
+  border: 0;
+  border-bottom: 1px solid #f0dfe2;
+  border-radius: 0;
   background: #fff;
-  box-shadow: 0 4px 12px -10px rgba(30, 20, 80, 0.22);
+  box-shadow: none;
 }
 .markdown-card.enabled {
-  border-color: #86d4bd;
-  background: linear-gradient(180deg, #ffffff 0%, #f5fffb 100%);
+  background: #fff;
 }
 .markdown-card.at-floor {
-  border-color: #f0a34c;
-  background: linear-gradient(180deg, #ffffff 0%, #fff6e8 100%);
+  background: #fffbf4;
 }
 .markdown-card.disabled {
   opacity: 0.82;
 }
 .markdown-card-layout {
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
 }
 .markdown-card-media {
   position: relative;
   display: grid;
-  width: 96px;
+  width: 78px;
   aspect-ratio: 1;
-  overflow: hidden;
+  margin-bottom: 11px;
   place-items: center;
-  border: 1px solid #eadde0;
-  border-radius: 12px;
-  background:
-    linear-gradient(135deg, rgba(242, 61, 74, 0.07), rgba(15, 155, 135, 0.08)),
-    #fff;
+  border: 0;
+  border-radius: 10px;
+  background: #fff7f8;
 }
 .markdown-card-media img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border: 1px solid #eadde0;
+  border-radius: 10px;
 }
 .markdown-card-image-empty {
+  display: grid;
+  width: 100%;
+  height: 100%;
   padding: 6px;
+  place-items: center;
+  border: 1px solid #eadde0;
+  border-radius: 10px;
   color: #8a7e99;
   font-size: 11px;
   font-weight: 800;
   text-align: center;
 }
 .markdown-card-body {
+  display: grid;
+  grid-template-areas:
+    "title price toggle"
+    "note note note";
+  grid-template-columns: minmax(0, 1fr) 84px 56px;
+  gap: 5px 6px;
+  align-items: center;
   min-width: 0;
 }
 .markdown-card-state {
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  z-index: 2;
   display: inline-flex;
-  min-height: 24px;
+  min-height: 22px;
   align-items: center;
-  margin: 0 0 7px;
-  padding: 3px 8px;
+  justify-content: center;
+  margin: 0;
+  padding: 2px 8px;
+  transform: translateX(-50%);
   border-radius: 999px;
   background: #f2eff4;
   color: #6c596d;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(35, 68, 58, 0.08);
 }
 .markdown-card-state.active {
   background: #dff7ee;
@@ -1170,17 +1258,21 @@ textarea.streaming {
   color: #8a5100;
 }
 .markdown-card-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-  margin-bottom: 10px;
+  display: contents;
+}
+.markdown-card-header > div {
+  grid-area: title;
+  min-width: 0;
 }
 .markdown-card h3 {
-  margin: 0 0 4px;
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
   color: #2d1e4a;
-  font-size: 14px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 1.38;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .markdown-card a {
   color: #0f7a69;
@@ -1188,66 +1280,119 @@ textarea.streaming {
   font-weight: 800;
   text-decoration: none;
 }
+.markdown-card-header > div > a {
+  display: none;
+}
 .markdown-toggle {
+  grid-area: toggle;
   flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  padding: 7px 9px;
-  border-radius: 999px;
-  background: #f2fbf7;
-  color: #174837;
-  font-size: 12px;
-  white-space: nowrap;
+  display: flex;
+  min-width: 0;
   min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #174837;
+  font-size: 10px;
+  white-space: nowrap;
 }
 .markdown-toggle input {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: #cfc7cb;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.markdown-toggle input::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
   width: 18px;
   height: 18px;
-  accent-color: #0f9b87;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(40, 28, 31, 0.22);
+  content: "";
+  transition: transform 0.15s ease;
+}
+.markdown-toggle input:checked {
+  background: #0f9b87;
+}
+.markdown-toggle input:checked::after {
+  transform: translateX(18px);
+}
+.markdown-toggle input:focus-visible {
+  outline: 2px solid #f23d4a;
+  outline-offset: 2px;
+}
+.markdown-toggle input:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+.markdown-toggle span {
+  font-weight: 900;
 }
 .markdown-price-grid {
+  grid-area: price;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  align-items: end;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  align-items: center;
 }
 .markdown-price-grid > div,
 .markdown-price-grid > label {
   display: grid;
-  gap: 3px;
-  min-height: 58px;
+  gap: 0;
+  min-height: 0;
   margin: 0;
-  padding: 8px;
-  border-radius: 12px;
-  background: #fffafa;
-  border: 1px solid #f3e4e7;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: #6b5d7d;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 800;
 }
 .markdown-price-grid strong {
   color: #2d1e4a;
   font-size: 14px;
+  line-height: 1.25;
 }
 .markdown-price-grid input {
+  width: 100%;
   min-width: 0;
-  padding: 7px 8px;
-  border-radius: 9px;
-  font-size: 13px;
+  min-height: 32px;
+  padding: 4px 5px;
+  border: 1px solid #9fded2;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
 }
 .markdown-card-note {
-  margin: 9px 0 0;
+  grid-area: note;
+  margin: 2px 0 0;
   color: #8a5260;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 700;
+}
+.markdown-card.enabled .markdown-card-note {
+  display: none;
 }
 .markdown-card.at-floor .markdown-card-note {
   color: #a05b00;
 }
 .markdown-card.at-floor .markdown-toggle {
-  background: #fff0d6;
   color: #6b4300;
 }
 
@@ -2447,6 +2592,20 @@ select {
   .research-actions {
     grid-template-columns: 1fr;
   }
+  .markdown-actions {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .markdown-control-step,
+  .markdown-list-step {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+  .markdown-action-btn {
+    min-height: 46px;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 11px;
+  }
   .research-form-section {
     padding: 11px;
   }
@@ -2466,27 +2625,26 @@ select {
   .markdown-card-header {
     flex-direction: column;
   }
-  .markdown-filter-tools {
-    align-items: stretch;
-    flex-direction: column;
-  }
   .markdown-filter-control {
-    flex-basis: auto;
     width: 100%;
   }
   .markdown-card-layout {
-    grid-template-columns: 78px minmax(0, 1fr);
-    gap: 10px;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 9px;
   }
   .markdown-card-media {
-    width: 78px;
+    width: 72px;
+  }
+  .markdown-card-body {
+    grid-template-columns: minmax(0, 1fr) 80px 54px;
+    gap: 4px 5px;
   }
   .markdown-toggle {
-    width: 100%;
+    width: auto;
     justify-content: center;
   }
   .markdown-price-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
   .measurement-row {
     grid-template-columns: minmax(72px, 1fr) 84px 20px 38px;
