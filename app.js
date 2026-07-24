@@ -6,7 +6,8 @@
 
 const LEGACY_API_KEY_STORAGE_KEY = 'mercari_desc_api_key';
 const SERVICE_URL_KEY = 'gasUrl';
-const API_AUTH_TOKEN_KEY = 'daniel_api_auth_token';
+const API_AUTH_TOKEN_KEY = 'mercari_api_auth_token';
+const LEGACY_SHARED_API_AUTH_TOKEN_KEY = 'daniel_api_auth_token';
 const FALLBACK_GAS_URL = 'https://script.google.com/macros/s/AKfycbwYfwDG7Kqplk2oVeX7kF_gsAKTlK087ToE4LGp5R7PglTFMARP2lrA6ZV9m3MD0LEs/exec';
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（AI分析用・コスト節約）
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
@@ -1503,7 +1504,16 @@ function fetchWithTimeout(url, opts = {}, ms = 15000) {
 }
 
 function getApiAuthToken() {
-  return String(localStorage.getItem(API_AUTH_TOKEN_KEY) || '').trim();
+  const currentToken = String(localStorage.getItem(API_AUTH_TOKEN_KEY) || '').trim();
+  if (currentToken) return currentToken;
+
+  // GitHub Pages配下の別PWAと共有していた旧キーから一度だけ移行する。
+  // 旧キーは店舗巡回アプリが引き続き使うため、削除しない。
+  const legacyToken = String(localStorage.getItem(LEGACY_SHARED_API_AUTH_TOKEN_KEY) || '').trim();
+  if (legacyToken) {
+    localStorage.setItem(API_AUTH_TOKEN_KEY, legacyToken);
+  }
+  return legacyToken;
 }
 
 function createOperationId_(label = 'operation') {

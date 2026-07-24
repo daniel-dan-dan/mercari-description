@@ -26,6 +26,14 @@ const source = [
 vm.runInContext(source, context, { filename: 'app.js' });
 
 const hooks = context.MercariAppTestHooks;
+const authStorage = new Map([['daniel_api_auth_token', 'legacy-route-token']]);
+context.localStorage.getItem = key => authStorage.get(key) || null;
+context.localStorage.setItem = (key, value) => authStorage.set(key, value);
+assert.equal(context.getApiAuthToken(), 'legacy-route-token');
+assert.equal(authStorage.get('mercari_api_auth_token'), 'legacy-route-token');
+authStorage.set('mercari_api_auth_token', 'dedicated-mercari-token');
+assert.equal(context.getApiAuthToken(), 'dedicated-mercari-token');
+
 assert.equal(hooks.normalizeResearchWizardStep(1), 1);
 assert.equal(hooks.normalizeResearchWizardStep('2'), 2);
 assert.equal(hooks.normalizeResearchWizardStep(3), 3);
@@ -96,12 +104,16 @@ assert.match(indexHtml, />次へ：確認</);
 assert.match(indexHtml, />調査依頼を保存</);
 assert.match(indexHtml, />保存済みの依頼を見る</);
 assert.match(indexHtml, /id="research-saved-section"/);
-assert.match(indexHtml, /styles\.css\?v=20260723d/);
-assert.match(indexHtml, /app\.js\?v=20260723d/);
-assert.match(indexHtml, /v20260723d \/ 相場リサーチ3段階入力/);
+assert.match(indexHtml, /styles\.css\?v=20260725a/);
+assert.match(indexHtml, /app\.js\?v=20260725a/);
+assert.match(indexHtml, /v20260725a \/ 接続コード分離対応/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260723d/);
+assert.match(serviceWorker, /mercari-description-v20260725a/);
+
+const pairHtml = fs.readFileSync('pair.html', 'utf8');
+assert.match(pairHtml, /mercari_api_auth_token/);
+assert.doesNotMatch(pairHtml, /const key = 'daniel_api_auth_token'/);
 
 [
   'research-brand',
@@ -132,4 +144,5 @@ console.log(JSON.stringify({
   invalidStepFallback: 1,
   priceRangeGuard: true,
   preservedResearchFields: 17,
+  authStorageMigrated: true,
 }));
