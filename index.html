@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260725e">
+  <link rel="stylesheet" href="styles.css?v=20260725f">
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -25,7 +25,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260725e / タイトル語句の整理</p>
+      <p class="settings-version" id="settings-version">v20260725f / 価格改定画面を簡潔化</p>
     </section>
 
     <!-- メイン画面 -->
@@ -461,21 +461,11 @@
 
       <div id="markdown-panel" class="tab-panel" role="tabpanel" aria-labelledby="markdown-tab-btn" hidden>
         <div class="step markdown-step markdown-control-step">
-          <section class="markdown-recommendation-hero" aria-labelledby="markdown-recommendation-title">
-            <div class="markdown-recommendation-hero-head">
-              <div>
-                <span class="markdown-recommendation-kicker">21時にいいね履歴を取得</span>
-                <h2 id="markdown-recommendation-title">価格改定のおすすめ</h2>
-              </div>
-              <span class="markdown-display-only">表示のみ</span>
-            </div>
-            <p>いいねの増え方と停滞期間から、価格維持・100円値下げ・大幅値下げ候補を分けます。おすすめ表示だけでは価格を変更しません。</p>
-            <div id="markdown-recommendation-summary" class="markdown-recommendation-summary" aria-live="polite">
-              <div class="large"><span>大幅候補</span><strong>0件</strong></div>
-              <div class="small"><span>100円</span><strong>0件</strong></div>
-              <div class="wait"><span>維持・確認</span><strong>0件</strong></div>
-            </div>
-          </section>
+          <div id="markdown-recommendation-summary" class="markdown-recommendation-summary" aria-live="polite" aria-label="価格改定候補の件数">
+            <div class="large"><span>大幅候補</span><strong>0件</strong></div>
+            <div class="small"><span>100円</span><strong>0件</strong></div>
+            <div class="wait"><span>維持・確認</span><strong>0件</strong></div>
+          </div>
           <div class="research-head">
             <div>
               <span class="research-kicker">20時値下げ / 21時取得</span>
@@ -550,8 +540,8 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260725e"></script>
-  <script src="app.js?v=20260725e"></script>
+  <script src="catalog-data.js?v=20260725f"></script>
+  <script src="app.js?v=20260725f"></script>
   <script>
     if (window.lucide) window.lucide.createIcons();
     if ('serviceWorker' in navigator) {

@@ -128,9 +128,11 @@ assert.equal(context.__storedMode, 'disabled-only');
 
 const indexHtml = fs.readFileSync('index.html', 'utf8');
 assert.match(indexHtml, /id="markdown-tab-btn"[^>]*>価格改定<\/button>/);
-assert.match(indexHtml, /価格改定のおすすめ/);
-assert.match(indexHtml, /おすすめ表示だけでは価格を変更しません/);
-assert.match(indexHtml, /id="markdown-recommendation-summary"/);
+assert.doesNotMatch(indexHtml, /21時にいいね履歴を取得/);
+assert.doesNotMatch(indexHtml, /価格改定のおすすめ/);
+assert.doesNotMatch(indexHtml, /おすすめ表示だけでは価格を変更しません/);
+assert.doesNotMatch(indexHtml, />表示のみ</);
+assert.match(indexHtml, /id="markdown-recommendation-summary"[^>]*aria-label="価格改定候補の件数"/);
 assert.match(indexHtml, /data-markdown-filter="all"[^>]*>すべて<\/button>/);
 assert.match(indexHtml, /data-markdown-filter="enabled-only"[^>]*>値下げ中のみ<\/button>/);
 assert.match(indexHtml, /data-markdown-filter="disabled-only"[^>]*>値下げなしのみ<\/button>/);
@@ -139,6 +141,10 @@ assert.match(indexHtml, /aria-label="設定を保存"[\s\S]*<span>保存<\/span>
 assert.match(indexHtml, /aria-label="値下げ対象だけ確認（価格は変えない）"[\s\S]*<span>確認<\/span>/);
 assert.match(indexHtml, /aria-label="今すぐ実行"[\s\S]*<span>実行<\/span>/);
 
+const styles = fs.readFileSync('styles.css', 'utf8');
+assert.doesNotMatch(styles, /\.markdown-recommendation-hero/);
+assert.match(styles, /\.markdown-recommendation-summary[\s\S]*margin: 0 0 10px/);
+
 console.log(JSON.stringify({
   ok: true,
   all: context.__allIds,
@@ -146,6 +152,7 @@ console.log(JSON.stringify({
   disabledOnly: context.__disabledIds,
   removedDisplays: ['次回', '残り'],
   compactActions: ['更新', '保存', '確認', '実行'],
+  compactSummaryOnly: true,
   recommendationTypes: ['largeMarkdown', 'markdown100'],
   belowFloorWarning: true,
   displayOnly: true,
