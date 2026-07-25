@@ -19,6 +19,14 @@ const MAX_DRAFT_PHOTOS = 20;         // メルカリ下書き保存に送れる�
 const MAX_AI_PHOTOS = 12;            // AI分析に送る写真枚数。通信安定のため下書き枚数より少なくする
 const MAX_AI_PAYLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_MERCARI_TITLE_LENGTH = 40; // メルカリの商品名上限
+const MERCARI_TITLE_EXCLUDED_MARKETING_PATTERNS = [
+  /(?:オールシーズン|通年|春夏|秋冬|春物|夏物|秋物|冬物|春先|初夏|盛夏|秋口|冬場|真冬|3シーズン|３シーズン|三シーズン)(?:向け|用|物|シーズン|対応)?/gi,
+  /(?:^|[\s・、,／/｜|])(?:春|夏|秋|冬)(?:向け|用|物|シーズン)?(?=$|[\s・、,／/｜|])/g,
+  /\b(?:S\/S|SS|A\/W|AW|F\/W|FW|SPRING|SUMMER|AUTUMN|FALL|WINTER)\b/gi,
+  /(?:大人|スマート|きれいめ)?カジュアル(?:向け|用|スタイル|コーデ|シーン|系|ウェア)?/gi,
+  /(?:ビジネス|フォーマル|セレモニー)(?:向け|用|スタイル|コーデ|シーン|系|ウェア)?/g,
+  /\b(?:CASUAL|BUSINESS|FORMAL|CEREMONY)\b/gi,
+];
 const PRODUCT_GENDER_STORAGE_KEY = 'mercari_product_gender';
 const PRODUCT_GENDER_LABELS = { men: 'メンズ', women: 'レディース' };
 const LISTING_STYLE_SUMMARY_STORAGE_KEY = 'mercari_listing_style_summary';
@@ -269,8 +277,10 @@ function sanitizeAiDataForSeason(aiData = {}) {
   sanitized.condition = cleanSeasonMarketingText(aiData.condition, rule);
   sanitized.title_keywords = getAiTitleKeywordList(aiData)
     .map(word => cleanSeasonMarketingText(word, rule))
+    .map(word => cleanMercariTitleMarketingWords(word))
     .filter(Boolean)
-    .filter(word => !isDisallowedSeasonMarketingText(word, rule));
+    .filter(word => !isDisallowedSeasonMarketingText(word, rule))
+    .filter(word => !isExcludedMercariTitleMarketingText(word));
   return sanitized;
 }
 
@@ -1577,6 +1587,9 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
    候補:
 ${formatMercariCategoryPrompt()}
 10. title_keywords — 商品名に入れる候補の短い単語を配列で2〜5個。メルカリ上限40文字に収めやすいよう、1語は12文字以内を目安にする。
+   - 季節を表す言葉（春夏、秋冬、春物、夏物、秋物、冬物、3シーズン、SS、AWなど）は一切入れない
+   - 着用場面・雰囲気だけを表す言葉（カジュアル、ビジネス、フォーマル、セレモニーなど）は一切入れない
+   - ブランド、アイテム、素材、柄、付属品、状態など、商品そのものを検索できる事実だけを候補にする
    - 過去出品例がある場合は、過去のタイトルでよく使う訴求語・語順・強調の癖を参考にする
    - ただし、過去出品例の商品情報（ブランド、サイズ、色、状態、素材）は今回の商品へコピーしない
 
@@ -1609,7 +1622,9 @@ function buildDescriptionSystemPrompt(stylePrompt = '') {
 - 現在日付: ${formatSeasonRuleDate()}。販売訴求では「${seasonRule.label}」に合う季節ワードだけを使う
 - 使ってよい季節ワード例: ${seasonRule.allowedWords.join('、')}
 - 使わない季節外れワード: ${seasonRule.disallowedWords.join('、')}
-- title_keywords と appeal にも、季節外れワードを入れない${buildPastListingStylePrompt(stylePrompt)}`;
+- appeal には季節外れワードを入れない
+- title_keywords には、販売時期に合うかどうかに関係なく季節ワードを一切入れない
+- title_keywords には、カジュアル、ビジネス、フォーマル、セレモニーなどの着用場面・雰囲気語も一切入れない${buildPastListingStylePrompt(stylePrompt)}`;
 }
 
 /**
@@ -2295,16 +2310,37 @@ function mercariTitleLength(value) {
   return Array.from(String(value || '').trim()).length;
 }
 
+function isExcludedMercariTitleMarketingText(value) {
+  const text = String(value || '');
+  return MERCARI_TITLE_EXCLUDED_MARKETING_PATTERNS.some(pattern => {
+    pattern.lastIndex = 0;
+    return pattern.test(text);
+  });
+}
+
+function cleanMercariTitleMarketingWords(value) {
+  let cleaned = String(value || '');
+  MERCARI_TITLE_EXCLUDED_MARKETING_PATTERNS.forEach(pattern => {
+    pattern.lastIndex = 0;
+    cleaned = cleaned.replace(pattern, ' ');
+  });
+  return cleaned
+    .replace(/\s+([・、。,.／/｜|])/g, '$1')
+    .replace(/([・、。,.／/｜|]){2,}/g, '$1')
+    .replace(/^[\s・、。,.／/｜|_-]+|[\s・、。,.／/｜|_-]+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function normalizeMercariTitle(value) {
-  const cleaned = String(value || '')
+  const cleaned = cleanMercariTitleMarketingWords(value)
     .replace(/\s+/g, ' ')
     .trim();
   return Array.from(cleaned).slice(0, MAX_MERCARI_TITLE_LENGTH).join('').trim();
 }
 
 function capMercariTitleInput(value) {
-  const chars = Array.from(String(value || ''));
-  return chars.slice(0, MAX_MERCARI_TITLE_LENGTH).join('');
+  return normalizeMercariTitle(value);
 }
 
 function cleanTitleSegment(value) {
@@ -2327,6 +2363,7 @@ function addUniqueTitleToken(tokens, token, existingTitle) {
   const cleaned = cleanTitleSegment(token).replace(/[、。,.].*$/, '').trim();
   if (!cleaned) return;
   if (isDisallowedSeasonMarketingText(cleaned)) return;
+  if (isExcludedMercariTitleMarketingText(cleaned)) return;
   if (mercariTitleLength(cleaned) > 12) return;
 
   const comparable = normalizeTitleComparable(cleaned);
@@ -2396,12 +2433,6 @@ function extractTitleAppealWords(aiData) {
     [/ツイード/i, 'ツイード'],
     [/デニム/i, 'デニム'],
     [/綿\s*100\s*[%％]|コットン\s*100\s*[%％]/, '綿100%'],
-    [/春夏/, '春夏'],
-    [/秋冬/, '秋冬'],
-    [/3シーズン|３シーズン|三シーズン/, '3シーズン'],
-    [/ビジネス/, 'ビジネス'],
-    [/カジュアル/, 'カジュアル'],
-    [/セレモニー|フォーマル/, 'フォーマル'],
     [/希少|なかなか出回らない/, '希少'],
     [/上質|高級感|高級/, '上質'],
     [/美シルエット|きれいなシルエット|綺麗なシルエット/, '美シルエット'],
@@ -2471,7 +2502,7 @@ function restoreGenerationUiState_(state) {
   const textarea = el('result-text');
   textarea.classList.remove('streaming');
   textarea.value = state.result || '';
-  el('title-text').value = state.title || '';
+  el('title-text').value = normalizeMercariTitle(state.title || '');
   el('result-section').hidden = !!state.resultSectionHidden;
   el('mercari-settings').hidden = !!state.mercariSettingsHidden;
   el('m-condition').value = state.mercariCondition || '目立った傷や汚れなし';
@@ -7020,6 +7051,9 @@ async function saveDraft() {
 globalThis.MercariAppTestHooks = {
   buildDraftPayload_,
   buildDescriptionProductName,
+  buildMercariTitle,
+  cleanMercariTitleMarketingWords,
+  isExcludedMercariTitleMarketingText,
   normalizeMercariTitle,
   defaultNewMinPrice: price => Math.max(300, Math.floor(Number(price || 0) * 0.7)),
   normalizeResearchWizardStep,
