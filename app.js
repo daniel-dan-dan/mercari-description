@@ -8,7 +8,10 @@ const LEGACY_API_KEY_STORAGE_KEY = 'mercari_desc_api_key';
 const SERVICE_URL_KEY = 'gasUrl';
 const API_AUTH_TOKEN_KEY = 'mercari_api_auth_token';
 const LEGACY_SHARED_API_AUTH_TOKEN_KEY = 'daniel_api_auth_token';
+const MAC_SERVICE_URL_CACHE_KEY = 'mercari_mac_service_url_cache';
 const FALLBACK_GAS_URL = 'https://script.google.com/macros/s/AKfycbwYfwDG7Kqplk2oVeX7kF_gsAKTlK087ToE4LGp5R7PglTFMARP2lrA6ZV9m3MD0LEs/exec';
+const GAS_DISCOVERY_MAX_ATTEMPTS = 3;
+const GAS_DISCOVERY_RETRY_DELAYS_MS = [700, 1400];
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（AI分析用・コスト節約）
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
 const MAX_SELECT_PHOTOS = 30;        // 編集素材として選べる写真枚数
@@ -177,6 +180,7 @@ let activeTemporaryDraftId = null;
 let descriptionGenerationInProgress = false;
 let photoProcessingInProgress = false;
 let photoProcessingOperationId = 0;
+let macServiceDiscoveryPromise = null;
 
 // ----- 画面制御 -----
 const el = (id) => document.getElementById(id);
@@ -1711,6 +1715,41 @@ function normalizeGasUrl(url) {
   return String(url || '').trim().replace(/\/+$/, '');
 }
 
+function normalizeMacServiceUrl_(url) {
+  const normalized = normalizeGasUrl(url);
+  if (!normalized) return '';
+  try {
+    const parsed = new URL(normalized);
+    const localHttp = parsed.protocol === 'http:'
+      && ['localhost', '127.0.0.1'].includes(parsed.hostname);
+    if (parsed.protocol !== 'https:' && !localHttp) return '';
+    return normalized;
+  } catch (_) {
+    return '';
+  }
+}
+
+function getCachedMacServiceUrl_() {
+  try {
+    return normalizeMacServiceUrl_(localStorage.getItem(MAC_SERVICE_URL_CACHE_KEY));
+  } catch (_) {
+    return '';
+  }
+}
+
+function cacheMacServiceUrl_(url) {
+  const normalized = normalizeMacServiceUrl_(url);
+  if (!normalized) return '';
+  try {
+    localStorage.setItem(MAC_SERVICE_URL_CACHE_KEY, normalized);
+  } catch (_) {}
+  return normalized;
+}
+
+function clearCachedMacServiceUrl_() {
+  try { localStorage.removeItem(MAC_SERVICE_URL_CACHE_KEY); } catch (_) {}
+}
+
 function getPreferredGasUrl() {
   return normalizeGasUrl(localStorage.getItem(SERVICE_URL_KEY)) || FALLBACK_GAS_URL;
 }
@@ -1723,7 +1762,14 @@ function getGasUrlCandidates() {
   return Array.from(new Set(urls));
 }
 
-async function fetchTunnelUrlFromGas(gasUrl) {
+function isTransientServiceDiscoveryError_(error) {
+  const message = String(error?.message || error || '');
+  return error?.name === 'AbortError'
+    || /load failed|failed to fetch|networkerror|network request failed|timed? ?out/i.test(message)
+    || /GAS URLエラー \(5\d\d\)/i.test(message);
+}
+
+async function fetchTunnelUrlFromGasOnce_(gasUrl) {
   const authToken = getApiAuthToken();
   if (!authToken) throw new Error('端末接続コードが未設定です。設定画面で接続してください。');
   const gasResp = await fetchWithTimeout(
@@ -1734,7 +1780,7 @@ async function fetchTunnelUrlFromGas(gasUrl) {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: 'getTunnelUrl', auth_token: authToken }),
     },
-    15000
+    10000
   );
   const text = await gasResp.text();
   let gasData;
@@ -1749,7 +1795,32 @@ async function fetchTunnelUrlFromGas(gasUrl) {
   }
   let tunnelUrl = (gasData.data && gasData.data.url) || gasData.url || '';
   if (!tunnelUrl) throw new Error('Macのメルカリ自動入力サービスが起動していません。Macでstart.pyを確認してください。');
-  return normalizeGasUrl(tunnelUrl);
+  tunnelUrl = normalizeMacServiceUrl_(tunnelUrl);
+  if (!tunnelUrl) throw new Error('GASに登録されたMacサービスURLが正しくありません。');
+  return tunnelUrl;
+}
+
+async function fetchTunnelUrlFromGas(gasUrl, { onRetry } = {}) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= GAS_DISCOVERY_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await fetchTunnelUrlFromGasOnce_(gasUrl);
+    } catch (error) {
+      lastError = error;
+      if (!isTransientServiceDiscoveryError_(error) || attempt >= GAS_DISCOVERY_MAX_ATTEMPTS) {
+        break;
+      }
+      onRetry?.(attempt + 1, GAS_DISCOVERY_MAX_ATTEMPTS);
+      const delay = GAS_DISCOVERY_RETRY_DELAYS_MS[attempt - 1] || 1400;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  if (isTransientServiceDiscoveryError_(lastError)) {
+    const error = new Error(`GASとの通信が一時的に失敗しました（${GAS_DISCOVERY_MAX_ATTEMPTS}回自動再試行済み）。`);
+    error.cause = lastError;
+    throw error;
+  }
+  throw lastError || new Error('GASからMacサービスURLを取得できませんでした。');
 }
 
 async function pingMacService(url) {
@@ -1763,9 +1834,17 @@ async function pingMacService(url) {
   return !!json.ok;
 }
 
-async function getMercariServiceUrl(statusCallback) {
+async function discoverMercariServiceUrl_(statusCallback) {
   const gasUrls = getGasUrlCandidates();
   if (!gasUrls.length) throw new Error('設定画面でGAS URLを入力してください');
+
+  const cachedUrl = getCachedMacServiceUrl_();
+  if (cachedUrl) {
+    statusCallback?.('前回のMac接続先を確認中...');
+    try {
+      if (await pingMacService(cachedUrl)) return cachedUrl;
+    } catch (_) {}
+  }
 
   const errors = [];
   for (let i = 0; i < gasUrls.length; i += 1) {
@@ -1773,7 +1852,11 @@ async function getMercariServiceUrl(statusCallback) {
     const label = i === 0 ? 'MacサービスURLを取得中...' : '予備GAS URLでMacサービスURLを取得中...';
     try {
       statusCallback?.(label);
-      let tunnelUrl = await fetchTunnelUrlFromGas(gasUrl);
+      let tunnelUrl = await fetchTunnelUrlFromGas(gasUrl, {
+        onRetry: (attempt, maxAttempts) => {
+          statusCallback?.(`接続先の取得を再試行中... (${attempt}/${maxAttempts})`);
+        },
+      });
 
       statusCallback?.('Macサービスに接続確認中...');
       let passed = false;
@@ -1781,12 +1864,17 @@ async function getMercariServiceUrl(statusCallback) {
       if (!passed) {
         statusCallback?.('トンネル再接続中... (3秒後に再試行)');
         await new Promise(resolve => setTimeout(resolve, 3000));
-        tunnelUrl = await fetchTunnelUrlFromGas(gasUrl);
+        tunnelUrl = await fetchTunnelUrlFromGas(gasUrl, {
+          onRetry: (attempt, maxAttempts) => {
+            statusCallback?.(`接続先の再取得中... (${attempt}/${maxAttempts})`);
+          },
+        });
         statusCallback?.('再接続確認中...');
         try { passed = await pingMacService(tunnelUrl); } catch (_) {}
       }
 
       if (!passed) throw new Error('Macサービスに接続できません。Cloudflare tunnelの再起動が必要です。');
+      cacheMacServiceUrl_(tunnelUrl);
       if (normalizeGasUrl(localStorage.getItem(SERVICE_URL_KEY)) !== gasUrl) {
         localStorage.setItem(SERVICE_URL_KEY, gasUrl);
         const gasUrlInput = el('gas-url-input');
@@ -1798,7 +1886,32 @@ async function getMercariServiceUrl(statusCallback) {
     }
   }
 
+  if (cachedUrl) {
+    statusCallback?.('前回のMac接続先を再確認中...');
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    try {
+      if (await pingMacService(cachedUrl)) return cachedUrl;
+    } catch (_) {}
+    clearCachedMacServiceUrl_();
+  }
+
   throw new Error(`MacサービスURLを取得できませんでした。${errors.join(' / ')}`);
+}
+
+async function getMercariServiceUrl(statusCallback) {
+  if (macServiceDiscoveryPromise) {
+    statusCallback?.('Macサービス接続の確認待ち...');
+    return macServiceDiscoveryPromise;
+  }
+  const discovery = discoverMercariServiceUrl_(statusCallback);
+  macServiceDiscoveryPromise = discovery;
+  try {
+    return await discovery;
+  } finally {
+    if (macServiceDiscoveryPromise === discovery) {
+      macServiceDiscoveryPromise = null;
+    }
+  }
 }
 
 function readListingStyleSummary() {
@@ -2329,6 +2442,44 @@ function buildMercariTitle(aiData = {}) {
   return normalizeMercariTitle(title);
 }
 
+function captureGenerationUiState_() {
+  return {
+    title: el('title-text').value,
+    result: el('result-text').value,
+    resultSectionHidden: el('result-section').hidden,
+    mercariSettingsHidden: el('mercari-settings').hidden,
+    mercariCondition: el('m-condition').value,
+    mercariCategoryKey: getSelectedMercariCategoryKey(),
+    mercariBrand: el('m-brand').value,
+    mercariSize: getSelectedMercariSize(),
+    mercariSizeUserEdited: el('m-size').dataset.userEdited === '1',
+    finalSizeBadgeHidden: el('final-size-badge')?.hidden ?? true,
+    resultMetaHidden: el('result-meta')?.hidden ?? true,
+    lastAiData,
+  };
+}
+
+function restoreGenerationUiState_(state) {
+  if (!state) return;
+  const textarea = el('result-text');
+  textarea.classList.remove('streaming');
+  textarea.value = state.result || '';
+  el('title-text').value = state.title || '';
+  el('result-section').hidden = !!state.resultSectionHidden;
+  el('mercari-settings').hidden = !!state.mercariSettingsHidden;
+  el('m-condition').value = state.mercariCondition || '目立った傷や汚れなし';
+  setSelectedMercariCategoryKey(state.mercariCategoryKey || 'unknown');
+  el('m-brand').value = state.mercariBrand || '';
+  el('m-size').value = state.mercariSize || '';
+  el('m-size').dataset.userEdited = state.mercariSizeUserEdited ? '1' : '';
+  const finalSizeBadge = el('final-size-badge');
+  if (finalSizeBadge) finalSizeBadge.hidden = !!state.finalSizeBadgeHidden;
+  const resultMeta = el('result-meta');
+  if (resultMeta) resultMeta.hidden = !!state.resultMetaHidden;
+  lastAiData = state.lastAiData || null;
+  updateDraftChecklist();
+}
+
 // ----- 生成実行 -----
 async function generateDescription() {
   const measurements = collectMeasurements();
@@ -2391,6 +2542,7 @@ async function generateDescription() {
     }
   }
 
+  const generationUiState = captureGenerationUiState_();
   el('generate-btn').disabled = true;
   lastAiData = null;
 
@@ -2502,7 +2654,7 @@ async function generateDescription() {
       hideStatus('status');
     }
   } catch (err) {
-    textarea.classList.remove('streaming');
+    restoreGenerationUiState_(generationUiState);
     console.error(err);
     showStatus('status', '❌ 生成失敗: ' + err.message, 'error');
     if (temporaryDraftId) {
@@ -6761,5 +6913,10 @@ globalThis.MercariAppTestHooks = {
   inferTemporaryDraftStatus_,
   temporaryDraftSummaryFromRecord_,
   safeTemporaryThumbnailBase64_,
+  normalizeMacServiceUrl_,
+  getCachedMacServiceUrl_,
+  cacheMacServiceUrl_,
+  clearCachedMacServiceUrl_,
+  isTransientServiceDiscoveryError_,
 };
 if (!globalThis.__MERCARI_TEST__) init();
