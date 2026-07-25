@@ -102,6 +102,13 @@ const MARKDOWN_ROWS_KEY = 'mercari_markdown_rows';
 const MARKDOWN_SORT_KEY = 'mercari_markdown_sort';
 const MARKDOWN_FILTER_KEY = 'mercari_markdown_filter';
 const MARKDOWN_FILTER_MODES = new Set(['all', 'enabled-only', 'disabled-only']);
+const MARKDOWN_RECOMMENDATION_META = Object.freeze({
+  collecting: { label: '判定材料を収集中', icon: '…', className: 'collecting' },
+  keep: { label: '価格維持・様子見', icon: '＝', className: 'keep' },
+  markdown100: { label: '100円値下げ', icon: '−100', className: 'markdown100' },
+  largeMarkdown: { label: '大幅値下げ候補', icon: '↓', className: 'large' },
+  reviewListing: { label: '出品内容を見直す', icon: '見直し', className: 'review' },
+});
 const RESEARCH_EMPTY_VALUES = new Set(['', '指定なし', 'すべて']);
 const RESEARCH_WIZARD_STEPS = {
   1: '検索対象',
@@ -4509,6 +4516,63 @@ function markdownAtFloor(row) {
   return current <= markdownFloor(row) || markdownNextPrice(row) < markdownFloor(row);
 }
 
+function markdownRecommendation(row) {
+  const currentPrice = Number(row?.currentPrice || 0);
+  const raw = row?.recommendation && typeof row.recommendation === 'object'
+    ? row.recommendation
+    : null;
+  const type = raw && MARKDOWN_RECOMMENDATION_META[raw.type] ? raw.type : 'collecting';
+  const meta = MARKDOWN_RECOMMENDATION_META[type];
+  const suggestedPrice = Number.isFinite(Number(raw?.suggestedPrice))
+    ? Number(raw.suggestedPrice)
+    : currentPrice;
+  const reasons = Array.isArray(raw?.reasons) && raw.reasons.length
+    ? raw.reasons.map(value => String(value))
+    : [row?.reactionError
+        ? 'いいね数の取得に失敗したため、次回の21時取得を待ちます'
+        : 'いいね履歴を取得すると判定を開始します'];
+  const warnings = Array.isArray(raw?.warnings)
+    ? raw.warnings
+      .filter(warning => warning?.code !== 'BELOW_MIN_PRICE')
+      .map(warning => String(warning?.message || ''))
+      .filter(Boolean)
+    : [];
+  const minPrice = Number(row?.minPrice || 0);
+  if (minPrice >= 300 && suggestedPrice < minPrice) {
+    warnings.push(`設定下限${formatYen(minPrice)}を${formatYen(minPrice - suggestedPrice)}下回る案です。利益を確認してください`);
+  }
+  return {
+    type,
+    meta,
+    suggestedPrice,
+    reasons,
+    warnings,
+    displayOnly: raw?.displayOnly !== false,
+  };
+}
+
+function markdownLikeMetrics(row) {
+  const raw = row?.likeMetrics && typeof row.likeMetrics === 'object' ? row.likeMetrics : {};
+  const numberOrNull = value => {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  };
+  return {
+    total: numberOrNull(raw.total ?? row?.likeCount),
+    delta24h: numberOrNull(raw.delta24h),
+    delta72h: numberOrNull(raw.delta72h),
+    delta7d: numberOrNull(raw.delta7d),
+    observedDays: Math.max(0, Number(raw.observedDays || 0)),
+    lastIncreaseObservedAt: String(raw.lastIncreaseObservedAt || row?.lastLikeAt || ''),
+  };
+}
+
+function formatMarkdownLikeDelta(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
+  return `+${Math.max(0, Number(value))}`;
+}
+
 function mergeMarkdownRows(listings, settings) {
   const saved = new Map(markdownRows.map(row => [normalizeMarkdownItemId(row.itemId || row.url), row]));
   const settingMap = new Map((settings || []).map(row => [normalizeMarkdownItemId(row.itemId || row.url), row]));
@@ -4532,6 +4596,12 @@ function mergeMarkdownRows(listings, settings) {
       autoEnabled: settingHasAuto
         ? Boolean(setting.autoEnabled)
         : (itemHasAuto ? Boolean(item.autoEnabled) : Boolean(old.autoEnabled)),
+      recommendation: item?.recommendation && typeof item.recommendation === 'object'
+        ? item.recommendation
+        : null,
+      likeMetrics: item?.likeMetrics && typeof item.likeMetrics === 'object'
+        ? item.likeMetrics
+        : null,
     };
   });
 }
@@ -4812,6 +4882,7 @@ function renderMarkdownRows() {
   const list = el('markdown-list');
   const count = el('markdown-enabled-count');
   const summary = el('markdown-filter-summary');
+  const recommendationSummary = el('markdown-recommendation-summary');
   if (!list) return;
   const enabledCount = markdownRows.filter(markdownIsActive).length;
   const disabledCount = Math.max(0, markdownRows.length - enabledCount);
@@ -4824,6 +4895,19 @@ function renderMarkdownRows() {
   });
   if (summary) {
     summary.textContent = `値下げ中 ${enabledCount}件 / 値下げなし ${disabledCount}件`;
+  }
+  if (recommendationSummary) {
+    const recommendationCounts = markdownRows.reduce((counts, row) => {
+      const type = markdownRecommendation(row).type;
+      if (type === 'largeMarkdown') counts.large += 1;
+      else if (type === 'markdown100') counts.small += 1;
+      else counts.wait += 1;
+      return counts;
+    }, { large: 0, small: 0, wait: 0 });
+    recommendationSummary.innerHTML = `
+      <div class="large"><span>大幅候補</span><strong>${recommendationCounts.large}件</strong></div>
+      <div class="small"><span>100円</span><strong>${recommendationCounts.small}件</strong></div>
+      <div class="wait"><span>維持・確認</span><strong>${recommendationCounts.wait}件</strong></div>`;
   }
   if (!markdownRows.length) {
     list.innerHTML = '<div class="research-empty">まだ取得していません</div>';
@@ -4850,6 +4934,20 @@ function renderMarkdownCard(row) {
   const itemUrl = markdownItemUrl(row);
   const stateClass = autoChecked ? 'active' : (atFloor ? 'floor' : 'inactive');
   const stateText = autoChecked ? '100円値下げ中' : (atFloor ? '下限到達' : '値下げなし');
+  const recommendation = markdownRecommendation(row);
+  const metrics = markdownLikeMetrics(row);
+  const suggestionText = ['keep', 'collecting', 'reviewListing'].includes(recommendation.type)
+    ? '現在価格を維持'
+    : formatYen(recommendation.suggestedPrice);
+  const reasonMarkup = recommendation.reasons
+    .map(reasonText => `<li>${escapeHtml(reasonText)}</li>`)
+    .join('');
+  const warningMarkup = recommendation.warnings
+    .map(warningText => `<p class="markdown-recommendation-warning"><span aria-hidden="true">⚠</span>${escapeHtml(warningText)}</p>`)
+    .join('');
+  const lastIncreaseText = metrics.lastIncreaseObservedAt
+    ? `最終増加確認 ${formatListingStyleDate(metrics.lastIncreaseObservedAt)}`
+    : '最終増加確認 まだなし';
   const imageMarkup = imageUrl
     ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}の1枚目の写真" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
     : '<span class="markdown-card-image-empty" aria-hidden="true">写真なし</span>';
@@ -4861,7 +4959,7 @@ function renderMarkdownCard(row) {
             ? '次回値下げで下限を下回ります'
             : (autoChecked ? '20時の自動値下げ対象です' : '自動値下げはOFFです')));
   return `
-    <article class="markdown-card ${atFloor ? 'at-floor' : (autoChecked ? 'enabled' : '')} ${canEnable ? '' : 'disabled'}" data-markdown-id="${escapeHtml(itemId)}">
+    <article class="markdown-card recommendation-${recommendation.meta.className} ${atFloor ? 'at-floor' : (autoChecked ? 'enabled' : '')} ${canEnable ? '' : 'disabled'}" data-markdown-id="${escapeHtml(itemId)}">
       <div class="markdown-card-layout">
         <a class="markdown-card-media" href="${escapeHtml(itemUrl)}" target="_blank" rel="noopener" aria-label="${escapeHtml(title)}の商品ページを開く">
           ${imageMarkup}
@@ -4884,6 +4982,28 @@ function renderMarkdownCard(row) {
               <input type="number" min="300" step="1" inputmode="numeric" value="${minPrice || ''}" placeholder="例: 1200" data-markdown-min="${escapeHtml(itemId)}">
             </label>
           </div>
+          <section class="markdown-recommendation-card" aria-label="価格改定おすすめ">
+            <div class="markdown-recommendation-card-head">
+              <span class="markdown-recommendation-badge">
+                <span aria-hidden="true">${escapeHtml(recommendation.meta.icon)}</span>
+                ${escapeHtml(recommendation.meta.label)}
+              </span>
+              <span class="markdown-suggested-price">
+                <small>おすすめ</small>
+                <strong>${escapeHtml(suggestionText)}</strong>
+              </span>
+            </div>
+            <ul class="markdown-recommendation-reasons">${reasonMarkup}</ul>
+            <div class="markdown-like-signals" aria-label="いいね頻度">
+              <span>累計 <strong>${metrics.total === null ? '—' : escapeHtml(metrics.total)}</strong></span>
+              <span>24時間 <strong>${escapeHtml(formatMarkdownLikeDelta(metrics.delta24h))}</strong></span>
+              <span>72時間 <strong>${escapeHtml(formatMarkdownLikeDelta(metrics.delta72h))}</strong></span>
+              <span>7日 <strong>${escapeHtml(formatMarkdownLikeDelta(metrics.delta7d))}</strong></span>
+            </div>
+            <p class="markdown-like-history-note">履歴 ${metrics.observedDays}日分 / ${escapeHtml(lastIncreaseText)}</p>
+            ${warningMarkup}
+            <p class="markdown-display-note">表示のみ・このおすすめから価格は変更しません</p>
+          </section>
           <p class="markdown-card-note">${escapeHtml(reason)}</p>
         </div>
       </div>

@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260725c">
+  <link rel="stylesheet" href="styles.css?v=20260725d">
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -25,7 +25,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260725c / 接続の自動復旧対応</p>
+      <p class="settings-version" id="settings-version">v20260725d / 価格改定おすすめ対応</p>
     </section>
 
     <!-- メイン画面 -->
@@ -41,7 +41,7 @@
       <div class="app-tabs" role="tablist" aria-label="メルカリAI出品メニュー">
         <button id="description-tab-btn" class="app-tab active" type="button" role="tab" aria-selected="true" aria-controls="description-panel">説明文</button>
         <button id="research-tab-btn" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="research-panel">相場リサーチ</button>
-        <button id="markdown-tab-btn" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="markdown-panel">100円値下げ</button>
+        <button id="markdown-tab-btn" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="markdown-panel">価格改定</button>
       </div>
 
       <div id="description-panel" class="tab-panel active" role="tabpanel" aria-labelledby="description-tab-btn">
@@ -461,6 +461,21 @@
 
       <div id="markdown-panel" class="tab-panel" role="tabpanel" aria-labelledby="markdown-tab-btn" hidden>
         <div class="step markdown-step markdown-control-step">
+          <section class="markdown-recommendation-hero" aria-labelledby="markdown-recommendation-title">
+            <div class="markdown-recommendation-hero-head">
+              <div>
+                <span class="markdown-recommendation-kicker">21時にいいね履歴を取得</span>
+                <h2 id="markdown-recommendation-title">価格改定のおすすめ</h2>
+              </div>
+              <span class="markdown-display-only">表示のみ</span>
+            </div>
+            <p>いいねの増え方と停滞期間から、価格維持・100円値下げ・大幅値下げ候補を分けます。おすすめ表示だけでは価格を変更しません。</p>
+            <div id="markdown-recommendation-summary" class="markdown-recommendation-summary" aria-live="polite">
+              <div class="large"><span>大幅候補</span><strong>0件</strong></div>
+              <div class="small"><span>100円</span><strong>0件</strong></div>
+              <div class="wait"><span>維持・確認</span><strong>0件</strong></div>
+            </div>
+          </section>
           <div class="research-head">
             <div>
               <span class="research-kicker">20時値下げ / 21時取得</span>
@@ -472,6 +487,10 @@
             </div>
           </div>
           <p class="note">毎日20:00に100円値下げします。毎日21:00に出品中商品を取得し、新規商品は下限価格を現在価格の7割にして自動ONにします。</p>
+          <div class="markdown-existing-label">
+            <span>既存の100円自動値下げ設定</span>
+            <small>20時実行</small>
+          </div>
           <div id="markdown-overview" class="markdown-overview" aria-live="polite">
             <div><span>商品取得</span><strong>確認中</strong></div>
             <div><span>値下げ結果</span><strong>確認中</strong></div>
@@ -531,8 +550,8 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260725c"></script>
-  <script src="app.js?v=20260725c"></script>
+  <script src="catalog-data.js?v=20260725d"></script>
+  <script src="app.js?v=20260725d"></script>
   <script>
     if (window.lucide) window.lucide.createIcons();
     if ('serviceWorker' in navigator) {
