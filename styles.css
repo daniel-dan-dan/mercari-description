@@ -1820,7 +1820,6 @@ textarea.streaming {
   font-size: 10px;
 }
 .markdown-like-history-note,
-.markdown-display-note,
 .markdown-recommendation-warning {
   margin: 0;
   font-size: 9px;
@@ -1829,11 +1828,6 @@ textarea.streaming {
 }
 .markdown-like-history-note {
   color: #82727c;
-}
-.markdown-display-note {
-  padding-top: 5px;
-  border-top: 1px dashed #ddd0d5;
-  color: #8e737e;
 }
 .markdown-recommendation-warning {
   display: flex;

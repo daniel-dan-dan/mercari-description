@@ -5244,7 +5244,6 @@ function renderMarkdownCard(row) {
             </div>
             <p class="markdown-like-history-note">履歴 ${metrics.observedDays}日分 / ${escapeHtml(lastIncreaseText)}</p>
             ${warningMarkup}
-            <p class="markdown-display-note">表示のみ・このおすすめから価格は変更しません</p>
           </section>
           <p class="markdown-card-note">
             <span>${escapeHtml(reason)}</span>

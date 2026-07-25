@@ -112,7 +112,7 @@ assert.match(context.__cardHtml, /価格改定おすすめ/);
 assert.match(context.__cardHtml, /100円値下げ/);
 assert.match(context.__cardHtml, /おすすめ[\s\S]*2,400円/);
 assert.match(context.__cardHtml, /72時間[\s\S]*\+1/);
-assert.match(context.__cardHtml, /表示のみ・このおすすめから価格は変更しません/);
+assert.doesNotMatch(context.__cardHtml, /表示のみ・このおすすめから価格は変更しません/);
 assert.match(context.__cardHtml, /data-markdown-save-state[^>]*>自動保存<\/span>/);
 assert.match(context.__warningCardHtml, /大幅値下げ候補/);
 assert.match(context.__warningCardHtml, /設定下限1,900円を200円下回る案/);
