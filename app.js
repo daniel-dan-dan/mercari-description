@@ -46,8 +46,19 @@ const SEASON_MARKETING_RULES = {
 };
 
 const DB_NAME = 'mercari_desc_state';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const DB_STORE = 'session';
+const DB_TEMPORARY_DRAFT_STORE = 'inputDrafts';
+const DB_TEMPORARY_DRAFT_SUMMARY_STORE = 'inputDraftSummaries';
+const TEMPORARY_DRAFT_GENERATION_STALE_MS = 5 * 60 * 1000;
+const TEMPORARY_DRAFT_GENERATION_HEARTBEAT_MS = 60 * 1000;
+const TEMPORARY_DRAFT_STATUS = {
+  incomplete: { label: '入力途中', className: 'incomplete' },
+  saved: { label: 'AI生成待ち', className: 'saved' },
+  generating: { label: 'AI生成中', className: 'generating' },
+  failed: { label: 'AI生成失敗', className: 'failed' },
+  generated: { label: 'AI生成済み', className: 'generated' },
+};
 const CATEGORY_JP = { suit: 'スーツ', tops: 'アウター/トップス', bottoms: 'ボトムス', bag: 'バッグ', tie: 'ネクタイ', other: 'その他' };
 // カテゴリとサイズの固定データは catalog-data.js で読み込みます。
 const GENDERED_CATEGORY_FALLBACKS = {
@@ -161,6 +172,11 @@ let activeMultiVoiceSession = null;
 let markdownRows = [];
 let markdownFilterMode = 'all';
 let researchWizardStep = 1;
+let temporaryDrafts = [];
+let activeTemporaryDraftId = null;
+let descriptionGenerationInProgress = false;
+let photoProcessingInProgress = false;
+let photoProcessingOperationId = 0;
 
 // ----- 画面制御 -----
 const el = (id) => document.getElementById(id);
@@ -589,6 +605,81 @@ function updatePhotoSummary() {
   pill.classList.toggle('over-limit', uploadedImages.length > MAX_DRAFT_PHOTOS);
 }
 
+function hasTemporarySaveMinimum_() {
+  return uploadedImages.length > 0 && !!el('category')?.value;
+}
+
+function updateTemporarySaveButton_() {
+  const button = el('temporary-save-btn');
+  const note = el('temporary-save-note');
+  if (!button || !note) return;
+  const hasPhotos = uploadedImages.length > 0;
+  const hasCategory = !!el('category')?.value;
+  const ready = hasPhotos && hasCategory;
+  button.disabled = !ready || descriptionGenerationInProgress || photoProcessingInProgress;
+  button.textContent = activeTemporaryDraftId
+    ? '変更を保存して次の商品へ'
+    : '一時保存して次の商品へ';
+  if (!hasPhotos && !hasCategory) {
+    note.textContent = '写真を追加し、カテゴリを選ぶと一時保存できます。';
+  } else if (!hasPhotos) {
+    note.textContent = '写真を1枚以上追加してください。';
+  } else if (!hasCategory) {
+    note.textContent = 'カテゴリを選択してください。';
+  } else {
+    note.textContent = '保存が完了してから入力欄を空にするため、失敗しても写真と採寸は消えません。';
+  }
+  note.classList.toggle('ready', ready);
+}
+
+function setDescriptionGenerationLock_(locked) {
+  const controls = document.querySelectorAll(
+    '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #reset-btn, #settings-btn'
+  );
+  controls.forEach(control => {
+    if (locked) {
+      if (control.dataset.generationWasDisabled === undefined) {
+        control.dataset.generationWasDisabled = control.disabled ? '1' : '0';
+      }
+      control.disabled = true;
+      return;
+    }
+    if (control.dataset.generationWasDisabled !== undefined) {
+      control.disabled = control.dataset.generationWasDisabled === '1';
+      delete control.dataset.generationWasDisabled;
+    }
+  });
+  el('description-panel')?.classList.toggle('generation-locked', locked);
+  if (!locked) {
+    updateGenerateButton();
+    updateTemporarySaveButton_();
+  }
+}
+
+function setPhotoProcessingLock_(locked) {
+  const controls = document.querySelectorAll(
+    '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #reset-btn, #settings-btn'
+  );
+  controls.forEach(control => {
+    if (locked) {
+      if (control.dataset.photoProcessingWasDisabled === undefined) {
+        control.dataset.photoProcessingWasDisabled = control.disabled ? '1' : '0';
+      }
+      control.disabled = true;
+      return;
+    }
+    if (control.dataset.photoProcessingWasDisabled !== undefined) {
+      control.disabled = control.dataset.photoProcessingWasDisabled === '1';
+      delete control.dataset.photoProcessingWasDisabled;
+    }
+  });
+  el('description-panel')?.classList.toggle('photo-processing-locked', locked);
+  if (!locked) {
+    updateGenerateButton();
+    updateTemporarySaveButton_();
+  }
+}
+
 // ----- 初期起動判定 -----
 async function init() {
   const serviceUrl = getPreferredGasUrl();
@@ -633,6 +724,13 @@ async function init() {
     syncMercariCategoryForProductGender();
     scheduleSave();
   });
+  el('temporary-save-btn').addEventListener('click', () => {
+    saveCurrentAsTemporaryDraft_({ resetAfter: true }).catch(error => {
+      console.error('一時保存失敗:', error);
+      showTemporaryDraftError_(error);
+    });
+  });
+  el('temporary-draft-list').addEventListener('click', handleTemporaryDraftAction_);
   el('generate-btn').addEventListener('click', generateDescription);
   el('retry-btn').addEventListener('click', retryGeneration);
   const listingStyleRefreshBtn = el('listing-style-refresh-btn');
@@ -682,7 +780,10 @@ async function init() {
   el('grid4-btn').addEventListener('click', () => openGridCompose(4));
   el('compose-close').addEventListener('click', closeImageCompose);
   el('draft-btn').addEventListener('click', saveDraft);
-  el('price-input').addEventListener('input', updateDraftChecklist);
+  el('price-input').addEventListener('input', () => {
+    scheduleSave();
+    updateDraftChecklist();
+  });
   el('description-tab-btn').addEventListener('click', () => switchMainTab('description'));
   el('research-tab-btn').addEventListener('click', () => switchMainTab('research'));
   el('markdown-tab-btn').addEventListener('click', () => switchMainTab('markdown'));
@@ -733,6 +834,12 @@ async function init() {
       console.warn('セッション復元失敗:', e);
     }
   }
+  try {
+    await refreshTemporaryDrafts_({ recoverInterrupted: true });
+  } catch (e) {
+    console.warn('一時保存一覧の読込失敗:', e);
+    showTemporaryDraftError_(e);
+  }
   markdownFilterMode = readMarkdownFilterMode();
   markdownRows = readJsonList(MARKDOWN_ROWS_KEY);
   renderResearchData();
@@ -742,6 +849,7 @@ async function init() {
   if (serviceUrl && authToken) refreshListingStyleStatusFromMac({ silent: true }).catch(() => {});
   if (serviceUrl && authToken) loadMarkdownSnapshot({ silent: true }).catch(() => {});
   updateGenerateButton();
+  updateTemporarySaveButton_();
   updateResearchPreview();
 }
 
@@ -772,6 +880,17 @@ function openSettings() {
 let uploadedImages = [];  // { dataUrl, mediaType, base64 }
 
 async function handlePhotoSelect(e) {
+  if (descriptionGenerationInProgress || photoProcessingInProgress) {
+    e.target.value = '';
+    showStatus(
+      'status',
+      descriptionGenerationInProgress
+        ? 'AI生成中は写真を変更できません。完了後に操作してください。'
+        : '選択した写真を処理中です。完了後に追加してください。',
+      'warn',
+    );
+    return;
+  }
   const files = Array.from(e.target.files);
   if (!files.length) return;
   const remaining = MAX_SELECT_PHOTOS - uploadedImages.length;
@@ -784,22 +903,53 @@ async function handlePhotoSelect(e) {
   if (files.length > remaining) {
     alert(`最大${MAX_SELECT_PHOTOS}枚までなので、先頭の${remaining}枚のみ追加します`);
   }
+  const operationId = ++photoProcessingOperationId;
+  const startingDraftId = activeTemporaryDraftId;
+  const processedImages = [];
+  photoProcessingInProgress = true;
+  setPhotoProcessingLock_(true);
   showStatus('status', '画像を処理中...', 'loading');
-  for (const file of toAdd) {
-    try {
-      const processed = await processImage(file);
-      uploadedImages.push(processed);
-    } catch (err) {
-      console.error(err);
-      alert('画像処理に失敗しました: ' + file.name);
+  try {
+    for (const file of toAdd) {
+      try {
+        const processed = await processImage(file);
+        if (operationId !== photoProcessingOperationId || startingDraftId !== activeTemporaryDraftId) {
+          break;
+        }
+        processedImages.push(processed);
+      } catch (err) {
+        console.error(err);
+        alert('画像処理に失敗しました: ' + file.name);
+      }
     }
+  } finally {
+    photoProcessingInProgress = false;
+    setPhotoProcessingLock_(false);
+    e.target.value = '';  // 同じファイル再選択可能に
   }
+  if (operationId !== photoProcessingOperationId || startingDraftId !== activeTemporaryDraftId) {
+    showStatus('status', '商品が切り替わったため、処理中だった写真は追加しませんでした。', 'warn');
+    return;
+  }
+  uploadedImages.push(...processedImages);
   renderPreviews();
   updateGenerateButton();
   hideStatus('status');
-  e.target.value = '';  // 同じファイル再選択可能に
   scheduleSave();
   updateDraftChecklist();
+}
+
+function createThumbnailBase64FromCanvas_(sourceCanvas, maxEdge = 180) {
+  const longest = Math.max(sourceCanvas.width, sourceCanvas.height);
+  if (!longest) return '';
+  const scale = Math.min(1, maxEdge / longest);
+  const width = Math.max(1, Math.round(sourceCanvas.width * scale));
+  const height = Math.max(1, Math.round(sourceCanvas.height * scale));
+  const thumbnail = document.createElement('canvas');
+  thumbnail.width = width;
+  thumbnail.height = height;
+  thumbnail.getContext('2d').drawImage(sourceCanvas, 0, 0, width, height);
+  return thumbnail.toDataURL('image/jpeg', 0.72).split(',')[1] || '';
 }
 
 function processImage(file) {
@@ -825,8 +975,9 @@ function processImage(file) {
         canvasHQ.width = wHQ; canvasHQ.height = hHQ;
         canvasHQ.getContext('2d').drawImage(img, 0, 0, wHQ, hHQ);
         const base64HQ = canvasHQ.toDataURL('image/jpeg', 0.92).split(',')[1];
+        const thumbnailBase64 = createThumbnailBase64FromCanvas_(canvas);
         resolve({
-          dataUrl, mediaType: 'image/jpeg', base64, base64HQ,
+          dataUrl, mediaType: 'image/jpeg', base64, base64HQ, thumbnailBase64,
           originalDataUrl: dataUrl,
           adjust: { brightness: 0, temp: 0, contrast: 0 },
         });
@@ -845,7 +996,7 @@ function renderPreviews() {
   uploadedImages.forEach((img, idx) => {
     const item = document.createElement('div');
     item.className = 'preview-item';
-    item.draggable = true;
+    item.draggable = !(descriptionGenerationInProgress || photoProcessingInProgress);
     item.dataset.idx = idx;
     item.innerHTML = `
       <img src="${img.dataUrl}" alt="">
@@ -855,7 +1006,9 @@ function renderPreviews() {
     grid.appendChild(item);
   });
   grid.querySelectorAll('.remove').forEach(b => {
+    b.disabled = descriptionGenerationInProgress || photoProcessingInProgress;
     b.addEventListener('click', () => {
+      if (descriptionGenerationInProgress || photoProcessingInProgress) return;
       uploadedImages.splice(Number(b.dataset.idx), 1);
       renderPreviews();
       updateGenerateButton();
@@ -869,6 +1022,7 @@ function renderPreviews() {
 }
 
 function removeUploadedImagesByIndices(indices) {
+  if (descriptionGenerationInProgress || photoProcessingInProgress) return false;
   const targets = [...new Set(indices)]
     .filter(idx => Number.isInteger(idx) && idx >= 0 && idx < uploadedImages.length)
     .sort((a, b) => b - a);
@@ -949,6 +1103,7 @@ function setupDragSort(grid) {
   };
 
   const movePreviewItem = (fromIdx, toIdx) => {
+    if (descriptionGenerationInProgress || photoProcessingInProgress) return false;
     if (fromIdx === null || toIdx === null) return false;
     if (fromIdx === toIdx || (fromIdx === uploadedImages.length - 1 && toIdx >= uploadedImages.length)) {
       return false;
@@ -1351,7 +1506,7 @@ function updateGenerateButton() {
   const hasPhotos = uploadedImages.length > 0;
   const hasCategory = !!el('category').value;
   const ready = hasPhotos && hasCategory;
-  el('generate-btn').disabled = !ready;
+  el('generate-btn').disabled = !ready || descriptionGenerationInProgress || photoProcessingInProgress;
   const note = el('generate-note');
   if (note) {
     note.classList.toggle('ready', ready);
@@ -1366,6 +1521,7 @@ function updateGenerateButton() {
     }
   }
   updatePhotoSummary();
+  updateTemporarySaveButton_();
 }
 
 // ----- AIコール -----
@@ -2178,6 +2334,62 @@ async function generateDescription() {
   const measurements = collectMeasurements();
   if (!measurements) { alert('カテゴリを選んでください'); return; }
   if (!uploadedImages.length) { alert('写真を選んでください'); return; }
+  if (photoProcessingInProgress) {
+    showStatus('status', '写真の処理が完了してからAI生成を実行してください。', 'warn');
+    return;
+  }
+  if (descriptionGenerationInProgress) {
+    showStatus('status', 'AI生成はすでに実行中です。完了するまでお待ちください。', 'warn');
+    return;
+  }
+
+  descriptionGenerationInProgress = true;
+  setDescriptionGenerationLock_(true);
+  try {
+    await saveCurrentSessionNow_();
+  } catch (error) {
+    console.warn('AI生成前の入力状態を端末へ保存できませんでした:', error);
+  }
+  const temporaryDraftId = activeTemporaryDraftId;
+  let temporaryDraftGenerationToken = '';
+  let temporaryDraftHeartbeatTimer = null;
+  if (temporaryDraftId) {
+    try {
+      const claim = await claimTemporaryDraftGeneration_(
+        temporaryDraftId,
+        compactTemporaryDraftState_({
+          ...collectState(),
+          temporaryDraftId,
+        }),
+      );
+      if (!claim.claimed) {
+        await refreshTemporaryDrafts_({ recoverInterrupted: true });
+        showStatus(
+          'status',
+          claim.reason === 'active'
+            ? 'この商品は別の画面でAI生成中です。完了するまでお待ちください。'
+            : '一時保存した商品が見つかりません。もう一度開き直してください。',
+          'warn',
+        );
+        descriptionGenerationInProgress = false;
+        setDescriptionGenerationLock_(false);
+        return;
+      }
+      temporaryDraftGenerationToken = claim.token;
+      await refreshTemporaryDrafts_();
+      setDescriptionGenerationLock_(true);
+      temporaryDraftHeartbeatTimer = window.setInterval(() => {
+        touchTemporaryDraftGeneration_(temporaryDraftId, temporaryDraftGenerationToken)
+          .catch(error => console.warn('AI生成中の一時保存更新に失敗:', error));
+      }, TEMPORARY_DRAFT_GENERATION_HEARTBEAT_MS);
+    } catch (error) {
+      console.error('AI生成前の一時保存更新に失敗:', error);
+      showTemporaryDraftError_(error);
+      descriptionGenerationInProgress = false;
+      setDescriptionGenerationLock_(false);
+      return;
+    }
+  }
 
   el('generate-btn').disabled = true;
   lastAiData = null;
@@ -2207,6 +2419,15 @@ async function generateDescription() {
     } catch (e) {
       console.error('AI応答パース失敗:', e, 'rawText:', rawText);
       showStatus('status', '⚠️ AIの応答がJSON形式でなかったため、そのまま表示しました。ブラウザのコンソールで詳細を確認できます。', 'error');
+      if (temporaryDraftId) {
+        await finalizeTemporaryDraftGeneration_(
+          temporaryDraftId,
+          temporaryDraftGenerationToken,
+          { status: 'failed', errorMessage: 'AIの応答を読み取れませんでした' },
+        ).then(() => refreshTemporaryDrafts_()).catch(error => {
+          console.warn('一時保存の失敗状態を更新できませんでした:', error);
+        });
+      }
       el('generate-btn').disabled = false;
       return;
     }
@@ -2253,14 +2474,50 @@ async function generateDescription() {
     updateMercariSizeNote(mercariSizeResult);
     updateDraftChecklist();
     const inputStage = el('product-input-stage'); if (inputStage) inputStage.open = false;
-    hideStatus('status');
+    scheduleSave();
+    if (temporaryDraftId) {
+      try {
+        const finalized = await finalizeTemporaryDraftGeneration_(
+          temporaryDraftId,
+          temporaryDraftGenerationToken,
+          {
+            status: 'generated',
+            snapshot: compactTemporaryDraftState_({
+              ...collectState(),
+              temporaryDraftId,
+            }),
+          },
+        );
+        await refreshTemporaryDrafts_();
+        if (finalized) {
+          hideStatus('status');
+        } else {
+          showStatus('status', '説明文は生成できましたが、別の画面で同じ商品が更新されたため一時保存一覧には反映していません。', 'warn');
+        }
+      } catch (error) {
+        console.error('生成結果の一時保存更新に失敗:', error);
+        showStatus('status', '説明文は生成できましたが、一時保存一覧の更新に失敗しました。現在の画面は消さずに残しています。', 'warn');
+      }
+    } else {
+      hideStatus('status');
+    }
   } catch (err) {
     textarea.classList.remove('streaming');
     console.error(err);
     showStatus('status', '❌ 生成失敗: ' + err.message, 'error');
+    if (temporaryDraftId) {
+      await finalizeTemporaryDraftGeneration_(
+        temporaryDraftId,
+        temporaryDraftGenerationToken,
+        { status: 'failed', errorMessage: err.message },
+      ).then(() => refreshTemporaryDrafts_()).catch(error => {
+        console.warn('一時保存の失敗状態を更新できませんでした:', error);
+      });
+    }
   } finally {
-    el('generate-btn').disabled = false;
-    updateGenerateButton();
+    if (temporaryDraftHeartbeatTimer) window.clearInterval(temporaryDraftHeartbeatTimer);
+    descriptionGenerationInProgress = false;
+    setDescriptionGenerationLock_(false);
   }
 }
 
@@ -2275,14 +2532,33 @@ function retryGeneration() {
 function openDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
+    let rejectedBecauseBlocked = false;
     req.onupgradeneeded = (e) => {
       const d = e.target.result;
       if (!d.objectStoreNames.contains(DB_STORE)) {
         d.createObjectStore(DB_STORE, { keyPath: 'id' });
       }
+      if (!d.objectStoreNames.contains(DB_TEMPORARY_DRAFT_STORE)) {
+        d.createObjectStore(DB_TEMPORARY_DRAFT_STORE, { keyPath: 'id' });
+      }
+      if (!d.objectStoreNames.contains(DB_TEMPORARY_DRAFT_SUMMARY_STORE)) {
+        d.createObjectStore(DB_TEMPORARY_DRAFT_SUMMARY_STORE, { keyPath: 'id' });
+      }
     };
-    req.onsuccess = (e) => resolve(e.target.result);
+    req.onsuccess = (e) => {
+      const db = e.target.result;
+      db.onversionchange = () => db.close();
+      if (rejectedBecauseBlocked) {
+        db.close();
+        return;
+      }
+      resolve(db);
+    };
     req.onerror = (e) => reject(e.target.error);
+    req.onblocked = () => {
+      rejectedBecauseBlocked = true;
+      reject(new Error('別の画面で古いアプリが開いています。ほかのメルカリアプリ画面を閉じて、もう一度お試しください。'));
+    };
   });
 }
 
@@ -2291,8 +2567,18 @@ async function saveSession(state) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(DB_STORE, 'readwrite');
     tx.objectStore(DB_STORE).put({ id: 'current', ...state, _savedAt: Date.now() });
-    tx.oncomplete = () => resolve();
-    tx.onerror = (e) => reject(e.target.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = (e) => {
+      db.close();
+      reject(e.target.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error('入力内容の自動保存が中断されました'));
+    };
   });
 }
 
@@ -2303,6 +2589,11 @@ async function loadSession() {
     const req = tx.objectStore(DB_STORE).get('current');
     req.onsuccess = () => resolve(req.result || null);
     req.onerror = (e) => reject(e.target.error);
+    tx.oncomplete = () => db.close();
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error('入力内容の復元が中断されました'));
+    };
   });
 }
 
@@ -2311,9 +2602,728 @@ async function clearSessionDb() {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(DB_STORE, 'readwrite');
     tx.objectStore(DB_STORE).delete('current');
-    tx.oncomplete = () => resolve();
-    tx.onerror = (e) => reject(e.target.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = (e) => {
+      db.close();
+      reject(e.target.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error('入力内容のリセットが中断されました'));
+    };
   });
+}
+
+function compactTemporaryDraftPhoto_(photo = {}) {
+  const mediaType = String(photo.mediaType || 'image/jpeg');
+  const dataUrlBase64 = String(photo.dataUrl || '').split(',')[1] || '';
+  const base64 = String(photo.base64 || dataUrlBase64 || photo.base64HQ || '');
+  const base64HQ = String(photo.base64HQ || '');
+  return {
+    mediaType,
+    base64,
+    base64HQ: base64HQ && base64HQ !== base64 ? base64HQ : '',
+    thumbnailBase64: String(photo.thumbnailBase64 || ''),
+    adjust: photo.adjust || { brightness: 0, temp: 0, contrast: 0 },
+  };
+}
+
+function hydrateTemporaryDraftPhoto_(photo = {}) {
+  if (photo.dataUrl) {
+    return {
+      ...photo,
+      base64: photo.base64 || String(photo.dataUrl).split(',')[1] || '',
+      base64HQ: photo.base64HQ || photo.base64 || String(photo.dataUrl).split(',')[1] || '',
+      thumbnailBase64: photo.thumbnailBase64 || '',
+      originalDataUrl: photo.originalDataUrl || photo.dataUrl,
+      adjust: photo.adjust || { brightness: 0, temp: 0, contrast: 0 },
+    };
+  }
+  const mediaType = String(photo.mediaType || 'image/jpeg');
+  const base64 = String(photo.base64 || photo.base64HQ || '');
+  const base64HQ = String(photo.base64HQ || base64);
+  const dataUrl = base64 ? `data:${mediaType};base64,${base64}` : '';
+  return {
+    mediaType,
+    base64,
+    base64HQ,
+    thumbnailBase64: String(photo.thumbnailBase64 || ''),
+    dataUrl,
+    originalDataUrl: dataUrl,
+    adjust: photo.adjust || { brightness: 0, temp: 0, contrast: 0 },
+  };
+}
+
+function compactTemporaryDraftState_(state = {}) {
+  return {
+    ...state,
+    photos: Array.isArray(state.photos)
+      ? state.photos.map(compactTemporaryDraftPhoto_)
+      : [],
+  };
+}
+
+function hydrateTemporaryDraftState_(state = {}) {
+  return {
+    ...state,
+    photos: Array.isArray(state.photos)
+      ? state.photos.map(hydrateTemporaryDraftPhoto_)
+      : [],
+  };
+}
+
+function safeTemporaryThumbnailBase64_(value) {
+  const base64 = String(value || '');
+  return base64 && /^[A-Za-z0-9+/]+={0,2}$/.test(base64) ? base64 : '';
+}
+
+function temporaryDraftSummaryFromRecord_(record = {}) {
+  const snapshot = record.snapshot || {};
+  const photos = Array.isArray(snapshot.photos) ? snapshot.photos : [];
+  const firstPhoto = photos[0] || {};
+  const mediaType = ['image/jpeg', 'image/png', 'image/webp'].includes(firstPhoto.mediaType)
+    ? firstPhoto.mediaType
+    : 'image/jpeg';
+  return {
+    id: record.id,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    status: record.status,
+    errorMessage: String(record.errorMessage || ''),
+    displayName: temporaryDraftDisplayName_(record),
+    photoCount: photos.length,
+    measurementCount: temporaryDraftMeasurementCount_(snapshot),
+    category: snapshot.category || '',
+    canGenerate: photos.length > 0 && !!snapshot.category,
+    thumbnailMediaType: mediaType,
+    thumbnailBase64: safeTemporaryThumbnailBase64_(
+      firstPhoto.thumbnailBase64 || firstPhoto.base64 || firstPhoto.base64HQ || ''
+    ),
+  };
+}
+
+async function putTemporaryDraft_(record, expectedUpdatedAt = null) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(
+      [DB_TEMPORARY_DRAFT_STORE, DB_TEMPORARY_DRAFT_SUMMARY_STORE],
+      'readwrite'
+    );
+    const store = tx.objectStore(DB_TEMPORARY_DRAFT_STORE);
+    const request = store.get(record.id);
+    let result = { saved: false, reason: 'conflict', record: null };
+    request.onsuccess = () => {
+      const current = request.result;
+      if (expectedUpdatedAt !== null
+          && (!current || Number(current.updatedAt || 0) !== Number(expectedUpdatedAt))) {
+        return;
+      }
+      if (current?.status === 'generating'
+          && Number(current.updatedAt || 0) > Date.now() - TEMPORARY_DRAFT_GENERATION_STALE_MS) {
+        result = { saved: false, reason: 'active', record: current };
+        return;
+      }
+      const next = {
+        ...record,
+        createdAt: current?.createdAt || record.createdAt,
+      };
+      store.put(next);
+      tx.objectStore(DB_TEMPORARY_DRAFT_SUMMARY_STORE).put(temporaryDraftSummaryFromRecord_(next));
+      result = { saved: true, reason: '', record: next };
+    };
+    request.onerror = (e) => reject(e.target.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve(result);
+    };
+    tx.onerror = (e) => {
+      db.close();
+      reject(e.target.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error('一時保存が中断されました'));
+    };
+  });
+}
+
+async function claimTemporaryDraftGeneration_(id, snapshot) {
+  const db = await openDb();
+  const token = createOperationId_('draft-generation');
+  const now = Date.now();
+  const cutoff = now - TEMPORARY_DRAFT_GENERATION_STALE_MS;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(
+      [DB_TEMPORARY_DRAFT_STORE, DB_TEMPORARY_DRAFT_SUMMARY_STORE],
+      'readwrite'
+    );
+    const store = tx.objectStore(DB_TEMPORARY_DRAFT_STORE);
+    const request = store.get(id);
+    let result = { claimed: false, token: '', reason: 'missing' };
+    request.onsuccess = () => {
+      const current = request.result;
+      if (!current) return;
+      if (current.status === 'generating' && Number(current.updatedAt || 0) > cutoff) {
+        result = { claimed: false, token: '', reason: 'active' };
+        return;
+      }
+      const next = {
+        ...current,
+        updatedAt: now,
+        status: 'generating',
+        errorMessage: '',
+        generationToken: token,
+        generationStartedAt: now,
+        snapshot,
+      };
+      store.put(next);
+      tx.objectStore(DB_TEMPORARY_DRAFT_SUMMARY_STORE).put(temporaryDraftSummaryFromRecord_(next));
+      result = { claimed: true, token, reason: '', record: next };
+    };
+    request.onerror = (e) => reject(e.target.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve(result);
+    };
+    tx.onerror = (e) => {
+      db.close();
+      reject(e.target.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error('AI生成の開始状態を保存できませんでした'));
+    };
+  });
+}
+
+async function touchTemporaryDraftGeneration_(id, token) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(
+      [DB_TEMPORARY_DRAFT_STORE, DB_TEMPORARY_DRAFT_SUMMARY_STORE],
+      'readwrite'
+    );
+    const store = tx.objectStore(DB_TEMPORARY_DRAFT_STORE);
+    const request = store.get(id);
+    let touched = false;
+    request.onsuccess = () => {
+      const current = request.result;
+      if (!current
+          || current.status !== 'generating'
+          || current.generationToken !== token) {
+        return;
+      }
+      const next = { ...current, updatedAt: Date.now() };
+      store.put(next);
+      tx.objectStore(DB_TEMPORARY_DRAFT_SUMMARY_STORE).put(temporaryDraftSummaryFromRecord_(next));
+      touched = true;
+    };
+    request.onerror = (e) => reject(e.target.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve(touched);
+    };
+    tx.onerror = (e) => {
+      db.close();
+      reject(e.target.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error('AI生成中の状態を更新できませんでした'));
+    };
+  });
+}
+
+async function finalizeTemporaryDraftGeneration_(id, token, {
+  status,
+  errorMessage = '',
+  snapshot = null,
+} = {}) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(
+      [DB_TEMPORARY_DRAFT_STORE, DB_TEMPORARY_DRAFT_SUMMARY_STORE],
+      'readwrite'
+    );
+    const store = tx.objectStore(DB_TEMPORARY_DRAFT_STORE);
+    const request = store.get(id);
+    let finalized = false;
+    request.onsuccess = () => {
+      const current = request.result;
+      if (!current
+          || current.status !== 'generating'
+          || current.generationToken !== token) {
+        return;
+      }
+      const next = {
+        ...current,
+        updatedAt: Date.now(),
+        status,
+        errorMessage: String(errorMessage || ''),
+        generationToken: '',
+        generationStartedAt: 0,
+        snapshot: snapshot || current.snapshot,
+      };
+      store.put(next);
+      tx.objectStore(DB_TEMPORARY_DRAFT_SUMMARY_STORE).put(temporaryDraftSummaryFromRecord_(next));
+      finalized = true;
+    };
+    request.onerror = (e) => reject(e.target.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve(finalized);
+    };
+    tx.onerror = (e) => {
+      db.close();
+      reject(e.target.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error('AI生成結果を一時保存へ反映できませんでした'));
+    };
+  });
+}
+
+async function getTemporaryDraft_(id) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_TEMPORARY_DRAFT_STORE, 'readonly');
+    const req = tx.objectStore(DB_TEMPORARY_DRAFT_STORE).get(id);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = (e) => reject(e.target.error);
+    tx.oncomplete = () => db.close();
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error('一時保存を読み込めませんでした'));
+    };
+  });
+}
+
+async function listTemporaryDrafts_() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_TEMPORARY_DRAFT_SUMMARY_STORE, 'readonly');
+    const req = tx.objectStore(DB_TEMPORARY_DRAFT_SUMMARY_STORE).getAll();
+    req.onsuccess = () => {
+      const rows = Array.isArray(req.result) ? req.result : [];
+      resolve(rows.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)));
+    };
+    req.onerror = (e) => reject(e.target.error);
+    tx.oncomplete = () => db.close();
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error('一時保存一覧を読み込めませんでした'));
+    };
+  });
+}
+
+async function deleteTemporaryDraft_(id) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(
+      [DB_TEMPORARY_DRAFT_STORE, DB_TEMPORARY_DRAFT_SUMMARY_STORE],
+      'readwrite'
+    );
+    const store = tx.objectStore(DB_TEMPORARY_DRAFT_STORE);
+    const request = store.get(id);
+    let deleted = false;
+    request.onsuccess = () => {
+      const current = request.result;
+      if (!current) return;
+      if (current.status === 'generating'
+          && Number(current.updatedAt || 0) > Date.now() - TEMPORARY_DRAFT_GENERATION_STALE_MS) {
+        return;
+      }
+      store.delete(id);
+      tx.objectStore(DB_TEMPORARY_DRAFT_SUMMARY_STORE).delete(id);
+      deleted = true;
+    };
+    request.onerror = (e) => reject(e.target.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve(deleted);
+    };
+    tx.onerror = (e) => {
+      db.close();
+      reject(e.target.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error('一時保存を削除できませんでした'));
+    };
+  });
+}
+
+async function recoverInterruptedTemporaryDraft_(id, cutoff) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(
+      [DB_TEMPORARY_DRAFT_STORE, DB_TEMPORARY_DRAFT_SUMMARY_STORE],
+      'readwrite'
+    );
+    const store = tx.objectStore(DB_TEMPORARY_DRAFT_STORE);
+    const request = store.get(id);
+    let recovered = false;
+    request.onsuccess = () => {
+      const current = request.result;
+      if (!current
+          || current.status !== 'generating'
+          || Number(current.updatedAt || 0) > cutoff) {
+        return;
+      }
+      const next = {
+        ...current,
+        status: 'failed',
+        errorMessage: '前回のAI生成が途中で止まりました。もう一度実行できます。',
+        generationToken: '',
+        generationStartedAt: 0,
+        updatedAt: Date.now(),
+      };
+      store.put(next);
+      tx.objectStore(DB_TEMPORARY_DRAFT_SUMMARY_STORE).put(temporaryDraftSummaryFromRecord_(next));
+      recovered = true;
+    };
+    request.onerror = (e) => reject(e.target.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve(recovered);
+    };
+    tx.onerror = (e) => {
+      db.close();
+      reject(e.target.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error('中断したAI生成の状態を確認できませんでした'));
+    };
+  });
+}
+
+function temporaryDraftMeasurementCount_(snapshot = {}) {
+  return Object.values(snapshot.measurements || {})
+    .filter(value => String(value ?? '').trim() !== '')
+    .length;
+}
+
+function temporaryDraftDisplayName_(record = {}) {
+  if (record.displayName) return String(record.displayName);
+  const snapshot = record.snapshot || {};
+  const title = normalizeMercariTitle(snapshot.title || snapshot.lastAiData?.title || '');
+  if (title) return title;
+  const gender = PRODUCT_GENDER_LABELS[normalizeProductGender(snapshot.productGender)] || '';
+  const category = CATEGORY_JP[snapshot.category] || 'カテゴリ未選択';
+  return `${gender} ${category}`.trim();
+}
+
+function formatTemporaryDraftDate_(value) {
+  const date = new Date(Number(value || 0));
+  if (Number.isNaN(date.getTime())) return '保存日時不明';
+  return new Intl.DateTimeFormat('ja-JP', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function renderTemporaryDrafts_() {
+  const list = el('temporary-draft-list');
+  const count = el('temporary-draft-count');
+  const summary = el('temporary-draft-summary');
+  if (!list || !count || !summary) return;
+  count.textContent = `${temporaryDrafts.length}件`;
+  summary.textContent = temporaryDrafts.length
+    ? `${temporaryDrafts.length}商品を端末内に保存しています`
+    : '写真と採寸を保存して、次の商品へ進めます';
+
+  if (!temporaryDrafts.length) {
+    list.innerHTML = '<div class="temporary-draft-empty">一時保存した商品はまだありません</div>';
+    return;
+  }
+
+  list.innerHTML = temporaryDrafts.map(record => {
+    const photoBase64 = safeTemporaryThumbnailBase64_(record.thumbnailBase64);
+    const mediaType = ['image/jpeg', 'image/png', 'image/webp'].includes(record.thumbnailMediaType)
+      ? record.thumbnailMediaType
+      : 'image/jpeg';
+    const imageMarkup = photoBase64
+      ? `<img src="data:${escapeHtml(mediaType)};base64,${photoBase64}" alt="">`
+      : '<span class="temporary-draft-thumb-empty">写真なし</span>';
+    const status = TEMPORARY_DRAFT_STATUS[record.status] || TEMPORARY_DRAFT_STATUS.saved;
+    const photoCount = Number(record.photoCount || 0);
+    const measurementCount = Number(record.measurementCount || 0);
+    const canGenerate = !!record.canGenerate;
+    const generated = record.status === 'generated';
+    const active = record.id === activeTemporaryDraftId;
+    const errorMarkup = record.errorMessage
+      ? `<p class="temporary-draft-error">${escapeHtml(record.errorMessage)}</p>`
+      : '';
+    return `
+      <article class="temporary-draft-card ${status.className} ${active ? 'active' : ''}" data-temporary-draft-id="${escapeHtml(record.id)}">
+        <div class="temporary-draft-thumb">
+          ${imageMarkup}
+          <span class="temporary-draft-badge ${status.className}">${escapeHtml(status.label)}</span>
+        </div>
+        <div class="temporary-draft-card-body">
+          <h3>${escapeHtml(temporaryDraftDisplayName_(record))}</h3>
+          <p>${photoCount}枚・採寸${measurementCount}項目・${escapeHtml(formatTemporaryDraftDate_(record.updatedAt))}</p>
+          ${errorMarkup}
+          <div class="temporary-draft-actions">
+            <button class="btn small" type="button" data-temporary-action="open" ${active ? 'disabled' : ''}>${active ? '編集中' : (generated ? '結果を開く' : '編集')}</button>
+            ${generated ? '' : `<button class="btn small temporary-generate-btn" type="button" data-temporary-action="generate" ${canGenerate ? '' : 'disabled'}>AI生成</button>`}
+            <button class="btn small temporary-delete-btn" type="button" data-temporary-action="delete" aria-label="${escapeHtml(temporaryDraftDisplayName_(record))}を削除">削除</button>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+async function refreshTemporaryDrafts_({ recoverInterrupted = false } = {}) {
+  let rows = await listTemporaryDrafts_();
+  if (recoverInterrupted) {
+    const cutoff = Date.now() - TEMPORARY_DRAFT_GENERATION_STALE_MS;
+    const interrupted = rows.filter(row =>
+      row.status === 'generating' && Number(row.updatedAt || 0) <= cutoff
+    );
+    let recoveredAny = false;
+    for (const row of interrupted) {
+      recoveredAny = await recoverInterruptedTemporaryDraft_(row.id, cutoff) || recoveredAny;
+    }
+    if (recoveredAny) rows = await listTemporaryDrafts_();
+  }
+  temporaryDrafts = rows;
+  if (activeTemporaryDraftId && !rows.some(row => row.id === activeTemporaryDraftId)) {
+    activeTemporaryDraftId = null;
+  }
+  renderTemporaryDrafts_();
+  updateTemporarySaveButton_();
+  return rows;
+}
+
+function showTemporaryDraftError_(error) {
+  const message = error?.name === 'QuotaExceededError'
+    ? '一時保存できませんでした。端末の保存容量が不足しています。不要な一時保存を削除してください。現在の写真と採寸は消していません。'
+    : `一時保存できませんでした。${error?.message || '現在の写真と採寸は消していません。'}`;
+  showStatus('temporary-draft-status', message, 'error');
+}
+
+function hasMeaningfulCurrentInput_() {
+  if (uploadedImages.length || el('category')?.value) return true;
+  if (el('title-text')?.value.trim() || el('result-text')?.value.trim() || el('price-input')?.value) return true;
+  return [...document.querySelectorAll('#measurement-fields input[type="number"]')]
+    .some(input => String(input.value || '').trim() !== '');
+}
+
+function inferTemporaryDraftStatus_(state = {}) {
+  if (String(state.title || '').trim() && String(state.result || '').trim()) return 'generated';
+  if ((state.photos || []).length && state.category) return 'saved';
+  return 'incomplete';
+}
+
+async function requestPersistentStorage_() {
+  if (!navigator.storage?.persist) return false;
+  try {
+    return await navigator.storage.persist();
+  } catch (error) {
+    console.warn('永続ストレージ要求に失敗:', error);
+    return false;
+  }
+}
+
+async function saveCurrentAsTemporaryDraft_({
+  resetAfter = true,
+  allowIncomplete = false,
+  announce = true,
+} = {}) {
+  if (photoProcessingInProgress) {
+    showStatus('temporary-draft-status', '写真の処理が完了してから一時保存してください。', 'warn');
+    return null;
+  }
+  if (descriptionGenerationInProgress) {
+    showStatus('temporary-draft-status', 'AI生成中は商品を切り替えられません。生成完了後に一時保存してください。', 'warn');
+    return null;
+  }
+  if (!hasMeaningfulCurrentInput_()) return null;
+  if (!allowIncomplete && !hasTemporarySaveMinimum_()) {
+    showStatus('temporary-draft-status', '写真を1枚以上追加し、カテゴリを選択してください。', 'error');
+    return null;
+  }
+
+  await requestPersistentStorage_();
+  const now = Date.now();
+  let existing = activeTemporaryDraftId
+    ? await getTemporaryDraft_(activeTemporaryDraftId)
+    : null;
+  if (existing?.status === 'generating') {
+    const recovered = await recoverInterruptedTemporaryDraft_(
+      existing.id,
+      now - TEMPORARY_DRAFT_GENERATION_STALE_MS,
+    );
+    if (!recovered) {
+      await refreshTemporaryDrafts_();
+      showStatus('temporary-draft-status', 'この商品は別の画面でAI生成中です。完了するまでお待ちください。', 'warn');
+      return null;
+    }
+    existing = await getTemporaryDraft_(existing.id);
+  }
+  const id = activeTemporaryDraftId || createOperationId_('input-draft');
+  const state = {
+    ...collectState(),
+    temporaryDraftId: id,
+  };
+  const record = {
+    id,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    status: inferTemporaryDraftStatus_(state),
+    errorMessage: '',
+    snapshot: compactTemporaryDraftState_(state),
+  };
+
+  const putResult = await putTemporaryDraft_(record, existing?.updatedAt ?? null);
+  if (!putResult.saved) {
+    await refreshTemporaryDrafts_();
+    showStatus(
+      'temporary-draft-status',
+      putResult.reason === 'active'
+        ? '別の画面でAI生成が始まったため、一時保存は上書きしませんでした。現在の写真と採寸はこの画面に残しています。'
+        : '別の画面で同じ商品が更新されたため、一時保存は上書きしませんでした。現在の写真と採寸はこの画面に残しています。',
+      'warn',
+    );
+    return null;
+  }
+  activeTemporaryDraftId = id;
+  await refreshTemporaryDrafts_();
+
+  if (resetAfter) {
+    await clearCurrentProduct_({ clearSession: true, scroll: true });
+    renderTemporaryDrafts_();
+    const tray = el('temporary-draft-stage');
+    if (tray) tray.open = false;
+  } else {
+    scheduleSave();
+  }
+
+  if (announce) {
+    showStatus(
+      'temporary-draft-status',
+      resetAfter
+        ? '一時保存しました。続けて次の商品の写真と採寸を入力できます。'
+        : '現在の入力も一時保存しました。',
+      'success',
+    );
+  }
+  return record;
+}
+
+async function openTemporaryDraft_(id) {
+  if (photoProcessingInProgress) {
+    throw new Error('写真を処理中のため、商品を切り替えられません');
+  }
+  const record = await getTemporaryDraft_(id);
+  if (!record) throw new Error('選択した一時保存が見つかりません');
+  await clearCurrentProduct_({ clearSession: true, scroll: false });
+  activeTemporaryDraftId = id;
+  restoreState(hydrateTemporaryDraftState_({
+    ...(record.snapshot || {}),
+    temporaryDraftId: id,
+  }));
+  const inputStage = el('product-input-stage');
+  if (inputStage) inputStage.open = record.status !== 'generated';
+  scheduleSave();
+  renderTemporaryDrafts_();
+  const tray = el('temporary-draft-stage');
+  if (tray) tray.open = false;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  return record;
+}
+
+async function handleTemporaryDraftAction_(event) {
+  const button = event.target.closest('[data-temporary-action]');
+  if (!button) return;
+  if (photoProcessingInProgress) {
+    showStatus('temporary-draft-status', '写真の処理が完了してから商品を切り替えてください。', 'warn');
+    return;
+  }
+  if (descriptionGenerationInProgress) {
+    showStatus('temporary-draft-status', 'AI生成中は商品を切り替えられません。完了後に操作してください。', 'warn');
+    return;
+  }
+  const card = button.closest('[data-temporary-draft-id]');
+  const id = card?.dataset.temporaryDraftId;
+  const action = button.dataset.temporaryAction;
+  if (!id || !action) return;
+  button.disabled = true;
+
+  try {
+    let record = await getTemporaryDraft_(id);
+    if (!record) throw new Error('選択した一時保存が見つかりません');
+    if (record.status === 'generating') {
+      const recovered = await recoverInterruptedTemporaryDraft_(
+        id,
+        Date.now() - TEMPORARY_DRAFT_GENERATION_STALE_MS,
+      );
+      await refreshTemporaryDrafts_();
+      if (!recovered) {
+        showStatus('temporary-draft-status', 'この商品は別の画面でAI生成中です。完了するまでお待ちください。', 'warn');
+        return;
+      }
+      record = await getTemporaryDraft_(id);
+      if (!record) throw new Error('選択した一時保存が見つかりません');
+      showStatus('temporary-draft-status', '途中で止まったAI生成を解除しました。もう一度実行できます。', 'warn');
+    }
+
+    if (action === 'delete') {
+      if (!confirm(`「${temporaryDraftDisplayName_(record)}」を一時保存から削除しますか？`)) return;
+      const deleted = await deleteTemporaryDraft_(id);
+      if (!deleted) {
+        await refreshTemporaryDrafts_();
+        showStatus('temporary-draft-status', '別の画面でAI生成が始まったため、この商品は削除しませんでした。', 'warn');
+        return;
+      }
+      if (activeTemporaryDraftId === id) {
+        activeTemporaryDraftId = null;
+        scheduleSave();
+      }
+      await refreshTemporaryDrafts_();
+      showStatus('temporary-draft-status', '選択した一時保存を削除しました。', 'success');
+      return;
+    }
+
+    if (activeTemporaryDraftId === id) {
+      if (action === 'generate') {
+        await generateDescription();
+      } else {
+        showStatus('temporary-draft-status', 'この商品は現在編集中です。入力内容はそのまま残しています。', 'success');
+      }
+      return;
+    }
+
+    if (hasMeaningfulCurrentInput_() && activeTemporaryDraftId !== id) {
+      const saved = await saveCurrentAsTemporaryDraft_({
+        resetAfter: false,
+        allowIncomplete: true,
+        announce: false,
+      });
+      if (!saved) throw new Error('現在の入力を一時保存できませんでした');
+    }
+
+    await openTemporaryDraft_(id);
+    if (action === 'generate') {
+      await generateDescription();
+    } else {
+      showStatus('temporary-draft-status', '一時保存した商品を開きました。編集を続けられます。', 'success');
+    }
+  } catch (error) {
+    console.error('一時保存操作に失敗:', error);
+    showTemporaryDraftError_(error);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function collectState() {
@@ -2337,7 +3347,9 @@ function collectState() {
     mercariCategoryKey: getSelectedMercariCategoryKey(),
     mercariBrand: el('m-brand').value,
     mercariSize: getSelectedMercariSize(),
+    mercariSizeUserEdited: el('m-size').dataset.userEdited === '1',
     price: el('price-input').value,
+    temporaryDraftId: activeTemporaryDraftId,
     lastAiData: lastAiData ? {
       ...lastAiData,
       images: undefined,
@@ -2348,22 +3360,37 @@ function collectState() {
 }
 
 let _saveTimer = null;
+let _sessionWriteChain = Promise.resolve();
+async function saveCurrentSessionNow_() {
+  if (_saveTimer) {
+    clearTimeout(_saveTimer);
+    _saveTimer = null;
+  }
+  const state = collectState();
+  _sessionWriteChain = _sessionWriteChain
+    .catch(() => {})
+    .then(() => saveSession(state));
+  await _sessionWriteChain;
+}
+
 function scheduleSave() {
   if (_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
-    saveSession(collectState()).catch(e => console.warn('保存失敗:', e));
+    _saveTimer = null;
+    const state = collectState();
+    _sessionWriteChain = _sessionWriteChain
+      .catch(() => {})
+      .then(() => saveSession(state));
+    _sessionWriteChain.catch(e => console.warn('保存失敗:', e));
   }, 400);
 }
 
 function restoreState(s) {
   if (!s) return;
+  activeTemporaryDraftId = s.temporaryDraftId || null;
   setSelectedProductGender(s.productGender || localStorage.getItem(PRODUCT_GENDER_STORAGE_KEY));
   if (Array.isArray(s.photos) && s.photos.length) {
-    uploadedImages = s.photos.map(p => ({
-      ...p,
-      originalDataUrl: p.originalDataUrl || p.dataUrl,
-      adjust: p.adjust || { brightness: 0, temp: 0, contrast: 0 },
-    }));
+    uploadedImages = s.photos.map(hydrateTemporaryDraftPhoto_);
     renderPreviews();
   }
   if (s.category) {
@@ -2406,11 +3433,13 @@ function restoreState(s) {
     if (s.mercariCategoryKey) setSelectedMercariCategoryKey(s.mercariCategoryKey);
     if (s.mercariBrand) el('m-brand').value = s.mercariBrand;
     if (s.mercariSize) el('m-size').value = s.mercariSize;
+    el('m-size').dataset.userEdited = s.mercariSizeUserEdited ? '1' : '';
     updateMercariSizeNote({ note: s.mercariSize ? `保存済み: ${s.mercariSize}` : 'サイズなし、または手動で選んでください' });
   }
   updateGenerateButton();
   updatePhotoSummary();
   updateDraftChecklist();
+  renderTemporaryDrafts_();
 }
 
 // ----- メインタブ / 相場リサーチ -----
@@ -3721,11 +4750,21 @@ function handleMarkdownImageError(event) {
 }
 
 // ----- リセット -----
-async function resetAll() {
-  if (!confirm('写真・採寸・説明文をすべてリセットしますか？（この操作は取り消せません）')) return;
+async function clearCurrentProduct_({ clearSession = true, scroll = false } = {}) {
+  photoProcessingOperationId += 1;
+  if (_saveTimer) {
+    clearTimeout(_saveTimer);
+    _saveTimer = null;
+  }
+  try {
+    await _sessionWriteChain.catch(() => {});
+  } catch (_) {}
+  stopActiveMultiVoiceInput({ clearStatus: true });
   uploadedImages = [];
   lastAiData = null;
+  activeTemporaryDraftId = null;
   renderPreviews();
+  const photoInput = el('photo-input'); if (photoInput) photoInput.value = '';
   el('category').value = '';
   renderMeasurements();
   el('title-text').value = '';
@@ -3734,16 +4773,39 @@ async function resetAll() {
   el('result-section').hidden = true;
   el('mercari-settings').hidden = true;
   el('m-condition').value = '目立った傷や汚れなし';
+  setSelectedMercariCategoryKey('unknown');
+  el('m-brand').value = '';
+  el('m-size').value = '';
+  el('m-size').dataset.userEdited = '';
+  updateMercariSizeNote({ note: 'サイズなし、または手動で選んでください' });
   const fsb = el('final-size-badge'); if (fsb) fsb.hidden = true;
   const resultMeta = el('result-meta'); if (resultMeta) resultMeta.hidden = true;
   const inputStage = el('product-input-stage'); if (inputStage) inputStage.open = true;
   hideStatus('status');
-  try { await clearSessionDb(); } catch (e) { console.warn(e); }
+  const draftStatus = el('draft-status'); if (draftStatus) draftStatus.hidden = true;
+  if (clearSession) {
+    try { await clearSessionDb(); } catch (e) { console.warn(e); }
+  }
   updateGenerateButton();
   updateDraftChecklist();
   updateSizeSuggestion();
   updatePhotoSummary();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  updateTemporarySaveButton_();
+  renderTemporaryDrafts_();
+  if (scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function resetAll() {
+  if (photoProcessingInProgress) {
+    showStatus('status', '写真の処理が完了してからリセットしてください。', 'warn');
+    return;
+  }
+  if (descriptionGenerationInProgress) {
+    showStatus('status', 'AI生成中はリセットできません。完了後に操作してください。', 'warn');
+    return;
+  }
+  if (!confirm('現在入力中の写真・採寸・説明文をリセットしますか？（一時保存トレイの商品は残ります）')) return;
+  await clearCurrentProduct_({ clearSession: true, scroll: true });
 }
 
 function stopActiveMultiVoiceInput(options = {}) {
@@ -5259,10 +6321,11 @@ async function addComposedImageToApp(dataUrl, options = {}) {
   const cHQ = document.createElement('canvas'); cHQ.width = wHQ; cHQ.height = hHQ;
   cHQ.getContext('2d').drawImage(img, 0, 0, wHQ, hHQ);
   const base64HQ = cHQ.toDataURL('image/jpeg', 0.92).split(',')[1];
+  const thumbnailBase64 = createThumbnailBase64FromCanvas_(c);
 
   const composedImage = {
     dataUrl: smallDataUrl, mediaType: 'image/jpeg',
-    base64: smallDataUrl.split(',')[1], base64HQ,
+    base64: smallDataUrl.split(',')[1], base64HQ, thumbnailBase64,
     originalDataUrl: smallDataUrl, adjust: { brightness: 0, temp: 0, contrast: 0 },
   };
   if (options.insertAt === 'front') {
@@ -5690,5 +6753,13 @@ globalThis.MercariAppTestHooks = {
   normalizeResearchWizardStep,
   isResearchPriceRangeValid,
   setResearchWizardStep,
+  compactTemporaryDraftPhoto_,
+  hydrateTemporaryDraftPhoto_,
+  compactTemporaryDraftState_,
+  hydrateTemporaryDraftState_,
+  temporaryDraftMeasurementCount_,
+  inferTemporaryDraftStatus_,
+  temporaryDraftSummaryFromRecord_,
+  safeTemporaryThumbnailBase64_,
 };
 if (!globalThis.__MERCARI_TEST__) init();

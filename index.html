@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260725a">
+  <link rel="stylesheet" href="styles.css?v=20260725b">
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -25,7 +25,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260725a / 接続コード分離対応</p>
+      <p class="settings-version" id="settings-version">v20260725b / 複数商品の一時保存対応</p>
     </section>
 
     <!-- メイン画面 -->
@@ -45,6 +45,26 @@
       </div>
 
       <div id="description-panel" class="tab-panel active" role="tabpanel" aria-labelledby="description-tab-btn">
+
+      <details id="temporary-draft-stage" class="temporary-draft-stage">
+        <summary>
+          <span class="temporary-draft-summary-icon" aria-hidden="true">
+            <i data-lucide="archive"></i>
+          </span>
+          <span class="temporary-draft-summary-copy">
+            <strong>一時保存トレイ</strong>
+            <small id="temporary-draft-summary">写真と採寸を保存して、次の商品へ進めます</small>
+          </span>
+          <span id="temporary-draft-count" class="temporary-draft-count">0件</span>
+        </summary>
+        <div class="temporary-draft-body">
+          <p class="temporary-draft-device-note">この端末内に保存します。AI生成やMac接続を待たずに入力を続けられます。</p>
+          <div id="temporary-draft-list" class="temporary-draft-list">
+            <div class="temporary-draft-empty">一時保存した商品はまだありません</div>
+          </div>
+        </div>
+      </details>
+      <p id="temporary-draft-status" class="status temporary-draft-status" role="status" aria-live="polite" hidden></p>
 
       <details id="product-input-stage" class="workflow-stage" open>
         <summary>1. 写真・基本情報</summary>
@@ -104,6 +124,11 @@
         </select>
         <div id="measurement-fields"></div>
         <div id="size-suggestion" class="size-suggestion" hidden></div>
+      </div>
+
+      <div class="temporary-save-action">
+        <button id="temporary-save-btn" class="btn temporary-save-btn large" type="button" disabled>一時保存して次の商品へ</button>
+        <p id="temporary-save-note" class="note small">写真を追加し、カテゴリを選ぶと一時保存できます。</p>
       </div>
         </div>
       </details>
@@ -506,8 +531,8 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260725a"></script>
-  <script src="app.js?v=20260725a"></script>
+  <script src="catalog-data.js?v=20260725b"></script>
+  <script src="app.js?v=20260725b"></script>
   <script>
     if (window.lucide) window.lucide.createIcons();
     if ('serviceWorker' in navigator) {
