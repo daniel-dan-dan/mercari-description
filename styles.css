@@ -1708,10 +1708,33 @@ textarea.streaming {
 }
 .markdown-card-note {
   grid-area: note;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   margin: 2px 0 0;
   color: #8a5260;
   font-size: 10px;
   font-weight: 700;
+}
+.markdown-card-note > span:first-child {
+  min-width: 0;
+}
+.markdown-auto-save-state {
+  flex: 0 0 auto;
+  color: #8a7e99;
+  font-size: 9px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.markdown-auto-save-state.saving {
+  color: #9b6200;
+}
+.markdown-auto-save-state.saved {
+  color: #0f7a69;
+}
+.markdown-auto-save-state.error {
+  color: #c42d45;
 }
 .markdown-recommendation-card {
   grid-area: recommend;
@@ -1860,6 +1883,9 @@ textarea.streaming {
   border-style: dashed;
 }
 .markdown-card.enabled .markdown-card-note {
+  justify-content: flex-end;
+}
+.markdown-card.enabled .markdown-card-note > span:first-child {
   display: none;
 }
 .markdown-card.at-floor .markdown-card-note {

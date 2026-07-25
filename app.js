@@ -189,6 +189,8 @@ let lastAiData = null;
 let activeMultiVoiceSession = null;
 let markdownRows = [];
 let markdownFilterMode = 'all';
+let markdownSettingsWriteTail = Promise.resolve();
+const markdownAutoSaveStates = new Map();
 let researchWizardStep = 1;
 let temporaryDrafts = [];
 let activeTemporaryDraftId = null;
@@ -4740,10 +4742,17 @@ async function syncMarkdownListingsNow() {
     el('markdown-dry-run-btn'),
     el('markdown-run-btn'),
   ].filter(Boolean);
+  const settingInputs = Array.from(document.querySelectorAll('[data-markdown-auto], [data-markdown-min]'))
+    .map(node => ({ node, disabled: node.disabled }));
   let waitControl = null;
   actionButtons.forEach(button => { button.disabled = true; });
+  settingInputs.forEach(({ node }) => { node.disabled = true; });
   setMarkdownStatus('メルカリから最新の商品一覧といいね情報を取得しています。商品数により数分かかります...');
   try {
+    await waitForMarkdownSettingsWrites_();
+    if ([...markdownAutoSaveStates.values()].some(state => state.status === 'error')) {
+      throw new Error('自動保存に失敗した設定があります。「再保存」を押してから、もう一度お試しください。');
+    }
     const tunnelUrl = await getMercariServiceUrl((message) => setMarkdownStatus(message));
     const resp = await fetchWithTimeout(`${tunnelUrl}/markdown/sync`, {
       method: 'POST',
@@ -4777,6 +4786,9 @@ async function syncMarkdownListingsNow() {
   } finally {
     waitControl?.cleanup();
     actionButtons.forEach(button => { button.disabled = false; });
+    settingInputs.forEach(({ node, disabled }) => {
+      if (node.isConnected) node.disabled = disabled;
+    });
   }
 }
 
@@ -4803,34 +4815,185 @@ function collectMarkdownRowsFromDom() {
     const minInput = document.querySelector(`[data-markdown-min="${id}"]`);
     const autoInput = document.querySelector(`[data-markdown-auto="${id}"]`);
     if (minInput) row.minPrice = Number(minInput.value || 0);
-    row.autoEnabled = Boolean(autoInput?.checked) && markdownCanEnable(row);
+    if (autoInput) row.autoEnabled = Boolean(autoInput.checked) && markdownCanEnable(row);
   });
   markdownRows = next;
   persistMarkdownRows();
   return markdownRows;
 }
 
+function markdownSettingPayload_(row = {}) {
+  const minPrice = Number(row.minPrice || 0);
+  const normalized = { ...row, minPrice };
+  return {
+    itemId: normalizeMarkdownItemId(row.itemId || row.url),
+    url: String(row.url || ''),
+    title: String(row.title || ''),
+    imageUrl: markdownImageUrl(row),
+    currentPrice: Number(row.currentPrice || 0),
+    minPrice,
+    autoEnabled: Boolean(row.autoEnabled) && markdownCanEnable(normalized),
+  };
+}
+
+function markdownAutoSaveView_(itemId) {
+  const state = markdownAutoSaveStates.get(itemId) || {};
+  if (state.status === 'saving') return { className: 'saving', label: '保存中…' };
+  if (state.status === 'saved') return { className: 'saved', label: '保存済み' };
+  if (state.status === 'error') return { className: 'error', label: '保存失敗' };
+  return { className: 'idle', label: '自動保存' };
+}
+
+function updateMarkdownAutoSaveIndicator_(itemId) {
+  const node = document.querySelector(
+    `[data-markdown-id="${CSS.escape(itemId)}"] [data-markdown-save-state]`
+  );
+  if (!node) return;
+  const view = markdownAutoSaveView_(itemId);
+  const state = markdownAutoSaveStates.get(itemId) || {};
+  node.className = `markdown-auto-save-state ${view.className}`;
+  node.textContent = view.label;
+  if (state.message) node.title = state.message;
+  else node.removeAttribute('title');
+}
+
+async function postMarkdownSettings_(rows, { statusCallback } = {}) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const tunnelUrl = await getMercariServiceUrl(statusCallback);
+      const resp = await fetchWithTimeout(`${tunnelUrl}/markdown/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: rows }),
+      }, 30000);
+      const data = await readJsonResponse(resp, '100円値下げ設定の保存');
+      if (!data.ok) throw new Error(data.error || '設定保存に失敗しました');
+      return Array.isArray(data.settings) ? data.settings : [];
+    } catch (error) {
+      lastError = error;
+      if (attempt >= 2 || !isTransientServiceDiscoveryError_(error)) break;
+      await new Promise(resolve => setTimeout(resolve, 800));
+    }
+  }
+  throw lastError || new Error('設定保存に失敗しました');
+}
+
+function validateSavedMarkdownRows_(savedRows, payloads) {
+  const savedById = new Map(
+    (savedRows || []).map(row => [normalizeMarkdownItemId(row.itemId || row.url), row])
+  );
+  payloads.forEach(payload => {
+    const saved = savedById.get(payload.itemId);
+    if (
+      !saved ||
+      Number(saved.minPrice || 0) !== Number(payload.minPrice || 0) ||
+      Boolean(saved.autoEnabled) !== Boolean(payload.autoEnabled)
+    ) {
+      throw new Error(`${payload.title || payload.itemId}の保存結果を確認できませんでした`);
+    }
+  });
+  return savedRows;
+}
+
+function enqueueMarkdownSettingsWrite_(rows, options = {}) {
+  const payloads = (rows || [])
+    .map(markdownSettingPayload_)
+    .filter(row => row.itemId);
+  const task = markdownSettingsWriteTail.then(async () => {
+    const savedRows = await postMarkdownSettings_(payloads, options);
+    return validateSavedMarkdownRows_(savedRows, payloads);
+  });
+  markdownSettingsWriteTail = task.catch(() => {});
+  return { task, payloads };
+}
+
+function waitForMarkdownSettingsWrites_() {
+  return markdownSettingsWriteTail;
+}
+
+function markMarkdownRowsSaved_(payloads) {
+  payloads.forEach(payload => {
+    const current = markdownRows.find(row => row.itemId === payload.itemId);
+    const state = markdownAutoSaveStates.get(payload.itemId) || {};
+    if (
+      !current ||
+      state.status === 'saving' ||
+      Number(current.minPrice || 0) !== Number(payload.minPrice || 0) ||
+      Boolean(current.autoEnabled) !== Boolean(payload.autoEnabled)
+    ) {
+      return;
+    }
+    markdownAutoSaveStates.set(payload.itemId, {
+      ...state,
+      status: 'saved',
+      message: '',
+    });
+    updateMarkdownAutoSaveIndicator_(payload.itemId);
+  });
+}
+
+function queueMarkdownRowAutoSave_(itemId) {
+  const row = markdownRows.find(item => item.itemId === itemId);
+  if (!row) return Promise.resolve(false);
+  const previousState = markdownAutoSaveStates.get(itemId) || {};
+  const version = Number(previousState.version || 0) + 1;
+  markdownAutoSaveStates.set(itemId, {
+    status: 'saving',
+    version,
+    message: '',
+  });
+  updateMarkdownAutoSaveIndicator_(itemId);
+  const { task } = enqueueMarkdownSettingsWrite_([row]);
+  const handled = task.then(() => {
+    const latest = markdownAutoSaveStates.get(itemId);
+    if (!latest || latest.version !== version) return true;
+    markdownAutoSaveStates.set(itemId, {
+      status: 'saved',
+      version,
+      message: '',
+    });
+    updateMarkdownAutoSaveIndicator_(itemId);
+    return true;
+  }).catch(error => {
+    const latest = markdownAutoSaveStates.get(itemId);
+    if (latest?.version === version) {
+      markdownAutoSaveStates.set(itemId, {
+        status: 'error',
+        version,
+        message: error.message,
+      });
+      updateMarkdownAutoSaveIndicator_(itemId);
+      const title = String(row.title || row.itemId || '商品').slice(0, 24);
+      setMarkdownStatus(`${title}の設定を自動保存できませんでした。「再保存」を押してください。`, 'warn');
+    }
+    return false;
+  });
+  return handled;
+}
+
 async function saveMarkdownSettings({ silent = false } = {}) {
   const rows = collectMarkdownRowsFromDom();
-  if (!silent) setMarkdownStatus('100円値下げ設定をMacへ保存しています...');
+  const button = el('markdown-save-btn');
+  if (button && !silent) button.disabled = true;
+  if (!silent) setMarkdownStatus('全商品の100円値下げ設定を再保存しています...');
   try {
-    const tunnelUrl = await getMercariServiceUrl((message) => {
-      if (!silent) setMarkdownStatus(message);
+    const { task, payloads } = enqueueMarkdownSettingsWrite_(rows, {
+      statusCallback: message => {
+        if (!silent) setMarkdownStatus(message);
+      },
     });
-    const resp = await fetchWithTimeout(`${tunnelUrl}/markdown/settings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: rows }),
-    }, 30000);
-    const data = await resp.json();
-    if (!data.ok) throw new Error(data.error || '設定保存に失敗しました');
-    if (!silent) setMarkdownStatus('100円値下げ設定を保存しました', 'success');
+    await task;
+    markMarkdownRowsSaved_(payloads);
+    if (!silent) setMarkdownStatus('全商品の設定を再保存しました', 'success');
     renderMarkdownRows();
     return true;
   } catch (e) {
     console.warn(e);
-    if (!silent) setMarkdownStatus(`設定保存に失敗しました: ${e.message}`, 'warn');
+    if (!silent) setMarkdownStatus(`再保存に失敗しました: ${e.message}`, 'warn');
     return false;
+  } finally {
+    if (button && !silent) button.disabled = false;
   }
 }
 
@@ -4930,19 +5093,22 @@ function summarizeMarkdownIssues(run = {}) {
 
 function handleMarkdownFieldChange(event) {
   const target = event.target;
-  const itemId = normalizeMarkdownItemId(target.dataset.markdownMin || target.dataset.markdownAuto || '');
+  const minItemId = normalizeMarkdownItemId(target.dataset.markdownMin || '');
+  const autoItemId = normalizeMarkdownItemId(target.dataset.markdownAuto || '');
+  if (autoItemId && event.type !== 'change') return;
+  const itemId = minItemId || autoItemId;
   if (!itemId) return;
   const row = markdownRows.find(item => item.itemId === itemId);
   if (!row) return;
-  if (target.dataset.markdownMin) {
+  if (minItemId) {
     row.minPrice = Number(target.value || 0);
     if (!markdownCanEnable(row)) row.autoEnabled = false;
   }
-  if (target.dataset.markdownAuto) {
+  if (autoItemId) {
     row.autoEnabled = Boolean(target.checked) && markdownCanEnable(row);
   }
   persistMarkdownRows();
-  if (event.type === 'input' && target.dataset.markdownMin) {
+  if (event.type === 'input' && minItemId) {
     const count = el('markdown-enabled-count');
     if (count) {
       count.textContent = `${markdownRows.filter(markdownIsActive).length}件`;
@@ -4950,6 +5116,7 @@ function handleMarkdownFieldChange(event) {
     return;
   }
   renderMarkdownRows();
+  queueMarkdownRowAutoSave_(itemId);
 }
 
 function renderMarkdownRows() {
@@ -5032,6 +5199,7 @@ function renderMarkdownCard(row) {
         : (!canEnable
             ? '次回値下げで下限を下回ります'
             : (autoChecked ? '20時の自動値下げ対象です' : '自動値下げはOFFです')));
+  const autoSaveView = markdownAutoSaveView_(itemId);
   return `
     <article class="markdown-card recommendation-${recommendation.meta.className} ${atFloor ? 'at-floor' : (autoChecked ? 'enabled' : '')} ${canEnable ? '' : 'disabled'}" data-markdown-id="${escapeHtml(itemId)}">
       <div class="markdown-card-layout">
@@ -5078,7 +5246,10 @@ function renderMarkdownCard(row) {
             ${warningMarkup}
             <p class="markdown-display-note">表示のみ・このおすすめから価格は変更しません</p>
           </section>
-          <p class="markdown-card-note">${escapeHtml(reason)}</p>
+          <p class="markdown-card-note">
+            <span>${escapeHtml(reason)}</span>
+            <span class="markdown-auto-save-state ${autoSaveView.className}" data-markdown-save-state aria-live="polite">${autoSaveView.label}</span>
+          </p>
         </div>
       </div>
     </article>

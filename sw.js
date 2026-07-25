@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'mercari-description-';
-const CACHE_NAME = 'mercari-description-v20260725g';
+const CACHE_NAME = 'mercari-description-v20260725h';
 const ASSETS = [
   './',
   './index.html',

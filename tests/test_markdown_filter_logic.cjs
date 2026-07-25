@@ -113,6 +113,7 @@ assert.match(context.__cardHtml, /100円値下げ/);
 assert.match(context.__cardHtml, /おすすめ[\s\S]*2,400円/);
 assert.match(context.__cardHtml, /72時間[\s\S]*\+1/);
 assert.match(context.__cardHtml, /表示のみ・このおすすめから価格は変更しません/);
+assert.match(context.__cardHtml, /data-markdown-save-state[^>]*>自動保存<\/span>/);
 assert.match(context.__warningCardHtml, /大幅値下げ候補/);
 assert.match(context.__warningCardHtml, /設定下限1,900円を200円下回る案/);
 assert.equal(context.__clearedServerFields.recommendation, null);
@@ -138,7 +139,7 @@ assert.match(indexHtml, /data-markdown-filter="all"[^>]*>すべて<\/button>/);
 assert.match(indexHtml, /data-markdown-filter="enabled-only"[^>]*>値下げ中のみ<\/button>/);
 assert.match(indexHtml, /data-markdown-filter="disabled-only"[^>]*>値下げなしのみ<\/button>/);
 assert.match(indexHtml, /id="markdown-sync-btn"[^>]*aria-label="メルカリから最新の商品一覧を取得"[\s\S]*<span>最新取得<\/span>/);
-assert.match(indexHtml, /aria-label="設定を保存"[\s\S]*<span>保存<\/span>/);
+assert.match(indexHtml, /aria-label="全商品の設定を再保存"[\s\S]*<span>再保存<\/span>/);
 assert.match(indexHtml, /aria-label="値下げ対象だけ確認（価格は変えない）"[\s\S]*<span>確認<\/span>/);
 assert.match(indexHtml, /aria-label="今すぐ実行"[\s\S]*<span>実行<\/span>/);
 assert.match(appJs, /fetchWithTimeout\(`\$\{tunnelUrl\}\/markdown\/sync`/);
@@ -157,7 +158,7 @@ console.log(JSON.stringify({
   enabledOnly: context.__enabledIds,
   disabledOnly: context.__disabledIds,
   removedDisplays: ['次回', '残り'],
-  compactActions: ['最新取得', '保存', '確認', '実行'],
+  compactActions: ['最新取得', '再保存', '確認', '実行'],
   compactSummaryOnly: true,
   recommendationTypes: ['largeMarkdown', 'markdown100'],
   belowFloorWarning: true,
