@@ -64,11 +64,11 @@ assert.match(
 );
 
 const indexHtml = fs.readFileSync('index.html', 'utf8');
-assert.match(indexHtml, /v20260725f \/ 価格改定画面を簡潔化/);
-assert.match(indexHtml, /app\.js\?v=20260725f/);
+assert.match(indexHtml, /v20260725g \/ 最新商品を即時取得/);
+assert.match(indexHtml, /app\.js\?v=20260725g/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260725f/);
+assert.match(serviceWorker, /mercari-description-v20260725g/);
 
 console.log(JSON.stringify({
   ok: true,
@@ -76,5 +76,5 @@ console.log(JSON.stringify({
   cachedUrlFallback: true,
   singleFlight: true,
   generationUiRestore: true,
-  version: 'v20260725f',
+  version: 'v20260725g',
 }));

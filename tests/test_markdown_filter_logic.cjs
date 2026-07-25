@@ -127,6 +127,7 @@ assert.equal(context.__migratedMode, 'disabled-only');
 assert.equal(context.__storedMode, 'disabled-only');
 
 const indexHtml = fs.readFileSync('index.html', 'utf8');
+const appJs = fs.readFileSync('app.js', 'utf8');
 assert.match(indexHtml, /id="markdown-tab-btn"[^>]*>価格改定<\/button>/);
 assert.doesNotMatch(indexHtml, /21時にいいね履歴を取得/);
 assert.doesNotMatch(indexHtml, /価格改定のおすすめ/);
@@ -136,10 +137,15 @@ assert.match(indexHtml, /id="markdown-recommendation-summary"[^>]*aria-label="�
 assert.match(indexHtml, /data-markdown-filter="all"[^>]*>すべて<\/button>/);
 assert.match(indexHtml, /data-markdown-filter="enabled-only"[^>]*>値下げ中のみ<\/button>/);
 assert.match(indexHtml, /data-markdown-filter="disabled-only"[^>]*>値下げなしのみ<\/button>/);
-assert.match(indexHtml, /aria-label="最新保存データを表示"[\s\S]*<span>更新<\/span>/);
+assert.match(indexHtml, /id="markdown-sync-btn"[^>]*aria-label="メルカリから最新の商品一覧を取得"[\s\S]*<span>最新取得<\/span>/);
 assert.match(indexHtml, /aria-label="設定を保存"[\s\S]*<span>保存<\/span>/);
 assert.match(indexHtml, /aria-label="値下げ対象だけ確認（価格は変えない）"[\s\S]*<span>確認<\/span>/);
 assert.match(indexHtml, /aria-label="今すぐ実行"[\s\S]*<span>実行<\/span>/);
+assert.match(appJs, /fetchWithTimeout\(`\$\{tunnelUrl\}\/markdown\/sync`/);
+assert.match(appJs, /body: JSON\.stringify\(\{ limit: 300 \}\)/);
+assert.match(appJs, /pollMacJob\(tunnelUrl, data\.job_id/);
+assert.match(appJs, /await loadMarkdownSnapshot\(\{ silent: true \}\)/);
+assert.match(appJs, /価格は変更していません/);
 
 const styles = fs.readFileSync('styles.css', 'utf8');
 assert.doesNotMatch(styles, /\.markdown-recommendation-hero/);
@@ -151,7 +157,7 @@ console.log(JSON.stringify({
   enabledOnly: context.__enabledIds,
   disabledOnly: context.__disabledIds,
   removedDisplays: ['次回', '残り'],
-  compactActions: ['更新', '保存', '確認', '実行'],
+  compactActions: ['最新取得', '保存', '確認', '実行'],
   compactSummaryOnly: true,
   recommendationTypes: ['largeMarkdown', 'markdown100'],
   belowFloorWarning: true,

@@ -816,7 +816,7 @@ async function init() {
   el('research-wizard').addEventListener('click', handleResearchWizardAction);
   el('research-request-list').addEventListener('click', handleResearchRequestAction);
   el('research-result-list').addEventListener('click', handleResearchResultAction);
-  el('markdown-load-btn').addEventListener('click', () => loadMarkdownSnapshot({ silent: false }));
+  el('markdown-sync-btn').addEventListener('click', syncMarkdownListingsNow);
   el('markdown-save-btn').addEventListener('click', saveMarkdownSettings);
   el('markdown-dry-run-btn').addEventListener('click', () => runMarkdownNow({ dryRun: true }));
   el('markdown-run-btn').addEventListener('click', () => runMarkdownNow({ dryRun: false }));
@@ -4711,8 +4711,6 @@ function persistMarkdownRows() {
 }
 
 async function loadMarkdownSnapshot({ silent = false } = {}) {
-  const btn = el('markdown-load-btn');
-  btn.disabled = true;
   if (!silent) setMarkdownStatus('21時に取得した最新の商品情報を読み込んでいます...');
   try {
     const tunnelUrl = await getMercariServiceUrl((message) => {
@@ -4732,8 +4730,53 @@ async function loadMarkdownSnapshot({ silent = false } = {}) {
   } catch (e) {
     console.warn(e);
     if (!silent) setMarkdownStatus(`取得に失敗しました: ${e.message}`, 'warn');
+  }
+}
+
+async function syncMarkdownListingsNow() {
+  const actionButtons = [
+    el('markdown-sync-btn'),
+    el('markdown-save-btn'),
+    el('markdown-dry-run-btn'),
+    el('markdown-run-btn'),
+  ].filter(Boolean);
+  let waitControl = null;
+  actionButtons.forEach(button => { button.disabled = true; });
+  setMarkdownStatus('メルカリから最新の商品一覧といいね情報を取得しています。商品数により数分かかります...');
+  try {
+    const tunnelUrl = await getMercariServiceUrl((message) => setMarkdownStatus(message));
+    const resp = await fetchWithTimeout(`${tunnelUrl}/markdown/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 300 }),
+    }, 30000);
+    const data = await readJsonResponse(resp, '最新商品の取得開始');
+    if (!data.ok || !data.job_id) throw new Error(data.error || '最新商品の取得を開始できませんでした');
+
+    waitControl = attachJobWaitCancel_(el('markdown-status'));
+    const statusData = await pollMacJob(tunnelUrl, data.job_id, {
+      intervalMs: 10000,
+      timeoutMs: 20 * 60 * 1000,
+      onStatus: current => {
+        setMarkdownStatus(current.message || 'メルカリから最新の商品一覧を取得しています...');
+      },
+      signal: waitControl.signal,
+    });
+    const summary = statusData.run?.summary || {};
+    const synced = Number(summary.synced || 0);
+    const added = Number(summary.new || 0);
+    const reactionErrors = Number(summary.reactionErrors || 0);
+    await loadMarkdownSnapshot({ silent: true });
+    setMarkdownStatus(
+      `最新商品を取得しました。出品中${synced}件 / 新規${added}件 / いいね取得エラー${reactionErrors}件。価格は変更していません。`,
+      reactionErrors > 0 ? 'warn' : 'success',
+    );
+  } catch (e) {
+    console.warn(e);
+    setMarkdownStatus(`最新商品の取得に失敗しました: ${e.message}`, 'warn');
   } finally {
-    btn.disabled = false;
+    waitControl?.cleanup();
+    actionButtons.forEach(button => { button.disabled = false; });
   }
 }
 
