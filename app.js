@@ -1797,6 +1797,7 @@ function shouldPreserveDraftOperation_(error) {
   const message = String(error?.message || error || '');
   return !!error?.ambiguousDraftStart
     || isTransientServiceDiscoveryError_(error)
+    || isRetryableJobStatusError_(error)
     || /待機を中止しました。処理自体はMacで継続しています/.test(message);
 }
 
@@ -7439,8 +7440,11 @@ async function startDraftJob_(initialTunnelUrl, payload, options = {}) {
 function formatDraftSaveError_(error) {
   const raw = String(error?.message || error || '').trim();
   if (!raw) return '下書き保存で不明なエラーが発生しました。入力内容は残っています。';
-  if (isTransientServiceDiscoveryError_(error)) {
-    return `${formatNetworkError(error, '下書き保存通信')} 入力内容は残っています。`;
+  if (isTransientServiceDiscoveryError_(error) || isRetryableJobStatusError_(error)) {
+    return (
+      'Macとの通信が一時的に切れました。Macの処理は継続している可能性があります。'
+      + '入力内容は残っています。少し待って同じ内容で再保存すると、前回の受付状況から確認します。'
+    );
   }
   return raw;
 }

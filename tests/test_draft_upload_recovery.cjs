@@ -213,6 +213,19 @@ const hooks = context.MercariAppTestHooks;
     ),
     false,
   );
+  const exhausted503 = Object.assign(
+    new Error('処理状況の応答をJSONとして読めませんでした (503): <html>'),
+    { httpStatus: 503 },
+  );
+  assert.equal(hooks.shouldPreserveDraftOperation_(exhausted503), true);
+  assert.doesNotMatch(hooks.formatDraftSaveError_(exhausted503), /<html>|JSON/);
+  assert.match(hooks.formatDraftSaveError_(exhausted503), /前回の受付状況から確認/);
+  assert.equal(
+    hooks.shouldPreserveDraftOperation_(
+      Object.assign(new Error('不明なジョブ'), { httpStatus: 404 }),
+    ),
+    false,
+  );
   assert.doesNotMatch(hooks.formatDraftSaveError_(new Error('Fetch is aborted')), /Fetch is aborted/);
   assert.match(source, /const DRAFT_START_MAX_ATTEMPTS = 2;/);
   assert.match(source, /const DRAFT_START_TIMEOUT_MS = 120000;/);
