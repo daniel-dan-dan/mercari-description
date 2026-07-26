@@ -44,6 +44,17 @@ const apparelPrompt = hooks.buildProductAudiencePrompt_('women');
 assert.match(apparelPrompt, /対象は「レディース」/);
 assert.match(apparelPrompt, /「レディース」側のカテゴリ/);
 
+const nonApparelSystemPrompt = hooks.buildDescriptionSystemPrompt('', 'other');
+assert.match(nonApparelSystemPrompt, /工具・家電・生活用品/);
+assert.match(nonApparelSystemPrompt, /写真だけで動作確認済みとは書かない/);
+assert.match(nonApparelSystemPrompt, /mercari_category_key — 必ず "unknown"/);
+assert.doesNotMatch(nonApparelSystemPrompt, /黒っぽい.*ネイビー/);
+assert.doesNotMatch(nonApparelSystemPrompt, /トレンチコート/);
+assert.doesNotMatch(nonApparelSystemPrompt, /質感や着心地/);
+
+const apparelSystemPrompt = hooks.buildDescriptionSystemPrompt('', 'men');
+assert.match(apparelSystemPrompt, /トレンチコート/);
+
 assert.equal(
   hooks.coerceMercariCategoryForProductGender('men_shirt', 'tops', 'other'),
   'unknown',
@@ -195,7 +206,7 @@ assert.match(indexHtml, /name="product-gender" value="other"/);
 assert.match(indexHtml, /id="product-gender-note"/);
 assert.match(indexHtml, /工具などアパレル以外として生成します/);
 assert.match(indexHtml, /id="m-size-field"/);
-assert.match(indexHtml, /v20260726c \/ アパレル以外に対応/);
+assert.match(indexHtml, /v20260726d \/ アパレル以外に対応/);
 
 assert.match(source, /syncBroadCategoryForProductGenderChange_\(input\.value\)/);
 assert.match(source, /el\('category'\)\.value = isNonApparelProductAudience\(\) \? 'other' : ''/);
@@ -210,12 +221,15 @@ const styles = fs.readFileSync('styles.css', 'utf8');
 assert.match(styles, /\.gender-segmented\s*\{[\s\S]*grid-template-columns:\s*repeat\(3/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260726c/);
+assert.match(serviceWorker, /mercari-description-v20260726d/);
+
+const pairHtml = fs.readFileSync('pair.html', 'utf8');
+assert.match(pairHtml, /styles\.css\?v=20260726d/);
 
 console.log(JSON.stringify({
   ok: true,
   audiences: ['men', 'women', 'other'],
   nonApparelCategory: 'manual-after-draft',
   nonApparelSize: 'not-required',
-  version: 'v20260726c',
+  version: 'v20260726d',
 }));

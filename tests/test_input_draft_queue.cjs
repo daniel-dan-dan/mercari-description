@@ -103,8 +103,8 @@ const indexHtml = fs.readFileSync('index.html', 'utf8');
 });
 assert.match(indexHtml, />一時保存して次の商品へ</);
 assert.match(indexHtml, /この端末内に保存します/);
-assert.match(indexHtml, /styles\.css\?v=20260726c/);
-assert.match(indexHtml, /app\.js\?v=20260726c/);
+assert.match(indexHtml, /styles\.css\?v=20260726d/);
+assert.match(indexHtml, /app\.js\?v=20260726d/);
 
 assert.match(source, /const DB_VERSION = 2;/);
 assert.match(source, /const DB_TEMPORARY_DRAFT_STORE = 'inputDrafts';/);
@@ -135,7 +135,7 @@ assert.match(styles, /\.temporary-draft-card/);
 assert.match(styles, /\.btn\.temporary-save-btn/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260726c/);
+assert.match(serviceWorker, /mercari-description-v20260726d/);
 
 console.log(JSON.stringify({
   ok: true,
@@ -144,5 +144,5 @@ console.log(JSON.stringify({
   compactPhotoFields: Object.keys(compactPhoto),
   measurementCount: hooks.temporaryDraftMeasurementCount_(compactState),
   statuses: ['incomplete', 'saved', 'failed', 'generated'],
-  version: 'v20260726c',
+  version: 'v20260726d',
 }));

@@ -66,12 +66,12 @@ assert.match(
 );
 
 const indexHtml = fs.readFileSync('index.html', 'utf8');
-assert.match(indexHtml, /v20260726c \/ アパレル以外に対応/);
-assert.match(indexHtml, /catalog-data\.js\?v=20260726c/);
-assert.match(indexHtml, /app\.js\?v=20260726c/);
+assert.match(indexHtml, /v20260726d \/ アパレル以外に対応/);
+assert.match(indexHtml, /catalog-data\.js\?v=20260726d/);
+assert.match(indexHtml, /app\.js\?v=20260726d/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260726c/);
+assert.match(serviceWorker, /mercari-description-v20260726d/);
 
 console.log(JSON.stringify({
   ok: true,
@@ -79,5 +79,5 @@ console.log(JSON.stringify({
   cachedUrlFallback: true,
   singleFlight: true,
   generationUiRestore: true,
-  version: 'v20260726c',
+  version: 'v20260726d',
 }));

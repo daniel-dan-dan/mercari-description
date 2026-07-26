@@ -1735,17 +1735,46 @@ ${formatMercariCategoryPrompt()}
 
 {"brand":"...","brand_en":"...","item":"...","tag_size":"...","color":"...","material":"...","condition":"...","appeal":"...","mercari_category_key":"men_shirt","mercari_condition":"目立った傷や汚れなし","title_keywords":["美品","上質"]}`;
 
+const NON_APPAREL_SYSTEM_PROMPT = `あなたはメルカリで工具・家電・生活用品などを出品するための商品情報整理の専門家です。
+アップロードされた商品の写真を分析し、以下の情報をJSON形式で返してください。
+
+抽出する情報:
+1. brand — メーカー・ブランド名のカタカナ表記。ロゴや銘板から確認できなければ "---"
+1a. brand_en — メーカー・ブランド名の英数字による原文表記。確認できなければ "---"
+2. item — 商品の種類。写真や銘板から確認できる一般名・型番を簡潔にまとめる
+3. tag_size — 必ず "---"
+4. color — 写真で確認できる色を「カタカナ＋漢字」で記載。光や影を考慮し、判断できない場合は推測せず "---"
+5. material — 写真や銘板から確認できる素材、型番、品番、電圧、容量、セット内容など。確認できない項目は推測しない
+6. condition — 写真で確認できる傷、汚れ、使用感、欠品を具体的に記載。写真だけで動作確認済みとは書かない
+7. appeal — 用途、機能、付属品、仕様を中心に2〜3文。着用・着心地・季節の服装に関する表現は使わない
+8. mercari_condition — 以下の6択から1つ: "新品、未使用" / "未使用に近い" / "目立った傷や汚れなし" / "やや傷や汚れあり" / "傷や汚れあり" / "全体的に状態が悪い"
+9. mercari_category_key — 必ず "unknown"
+10. title_keywords — 型番、電圧、容量、数量、付属品、状態など、写真から確認できる検索語を2〜5個
+   - 春夏・秋冬などの季節語や、カジュアル・ビジネスなどの服装語は入れない
+   - 1語は12文字以内を目安にする
+
+ルール:
+- 写真から読み取れない情報は "---" とし、性能・動作・付属品を推測で追加しない
+- 過去出品例は文体だけを参考にし、別商品のブランド・型番・仕様・状態をコピーしない
+- 出力はJSONオブジェクト1つのみ。前置き、後置き、コードフェンスを含めない
+- JSON内の文字列は二重引用符で囲み、文字列中の改行は \\n でエスケープする
+
+{"brand":"...","brand_en":"...","item":"...","tag_size":"---","color":"...","material":"...","condition":"...","appeal":"...","mercari_category_key":"unknown","mercari_condition":"目立った傷や汚れなし","title_keywords":["型番","18V"]}`;
+
 function buildPastListingStylePrompt(stylePrompt) {
   const prompt = String(stylePrompt || '').trim();
   return prompt ? `\n\n${prompt}` : '';
 }
 
-function buildDescriptionSystemPrompt(stylePrompt = '') {
-  const productGender = getSelectedProductGender();
+function buildDescriptionSystemPrompt(
+  stylePrompt = '',
+  productGender = getSelectedProductGender(),
+) {
   const audiencePrompt = buildProductAudiencePrompt_(productGender);
   const nonApparel = isNonApparelProductAudience(productGender);
+  const basePrompt = nonApparel ? NON_APPAREL_SYSTEM_PROMPT : SYSTEM_PROMPT;
   const seasonRule = getSeasonMarketingRule();
-  return `${SYSTEM_PROMPT}
+  return `${basePrompt}
 
 ${audiencePrompt}
 
@@ -7788,6 +7817,7 @@ globalThis.MercariAppTestHooks = {
   setSelectedProductGender,
   invalidateGeneratedResultAfterInputChange_,
   buildProductAudiencePrompt_,
+  buildDescriptionSystemPrompt,
   coerceMercariCategoryForProductGender,
   isManualMercariCategoryAllowed_,
   sanitizeAiDataForSeason,
