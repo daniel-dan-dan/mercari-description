@@ -9,9 +9,17 @@ const SERVICE_URL_KEY = 'gasUrl';
 const API_AUTH_TOKEN_KEY = 'mercari_api_auth_token';
 const LEGACY_SHARED_API_AUTH_TOKEN_KEY = 'daniel_api_auth_token';
 const MAC_SERVICE_URL_CACHE_KEY = 'mercari_mac_service_url_cache';
+const DRAFT_OPERATION_STORAGE_KEY = 'mercari_pending_draft_operation';
 const FALLBACK_GAS_URL = 'https://script.google.com/macros/s/AKfycbwYfwDG7Kqplk2oVeX7kF_gsAKTlK087ToE4LGp5R7PglTFMARP2lrA6ZV9m3MD0LEs/exec';
 const GAS_DISCOVERY_MAX_ATTEMPTS = 3;
 const GAS_DISCOVERY_RETRY_DELAYS_MS = [700, 1400];
+const DRAFT_START_MAX_ATTEMPTS = 2;
+const DRAFT_START_TIMEOUT_MS = 120000;
+const DRAFT_START_RETRY_DELAY_MS = 1200;
+const JOB_STATUS_MAX_CONSECUTIVE_ERRORS = 3;
+const JOB_STATUS_RETRY_DELAY_MS = 1500;
+const DRAFT_OPERATION_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_DRAFT_PAYLOAD_BYTES = 28 * 1024 * 1024;
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（AI分析用・コスト節約）
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
 const MAX_SELECT_PHOTOS = 30;        // 編集素材として選べる写真枚数
@@ -1671,8 +1679,23 @@ function parseAiJson(rawText) {
 
 function fetchWithTimeout(url, opts = {}, ms = 15000) {
   const ctrl = new AbortController();
-  const tid = setTimeout(() => ctrl.abort(), ms);
+  let timedOut = false;
+  const tid = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, ms);
   const headers = new Headers(opts.headers || {});
+  const externalSignal = opts.signal;
+  const requestOptions = { ...opts };
+  delete requestOptions.signal;
+  const abortFromExternalSignal = () => ctrl.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      abortFromExternalSignal();
+    } else {
+      externalSignal.addEventListener('abort', abortFromExternalSignal, { once: true });
+    }
+  }
   let target;
   try { target = new URL(url, location.href); } catch (_) { target = null; }
   const isGas = target && target.hostname === 'script.google.com';
@@ -1684,7 +1707,18 @@ function fetchWithTimeout(url, opts = {}, ms = 15000) {
   if (!isGas && method === 'POST' && !headers.has('X-Operation-Id')) {
     headers.set('X-Operation-Id', createOperationId_(target?.pathname || 'request'));
   }
-  return fetch(url, { ...opts, headers, signal: ctrl.signal }).finally(() => clearTimeout(tid));
+  return fetch(url, { ...requestOptions, headers, signal: ctrl.signal })
+    .catch(error => {
+      if (!timedOut) throw error;
+      const timeoutError = new Error(`通信が${Math.ceil(ms / 1000)}秒でタイムアウトしました`);
+      timeoutError.name = 'TimeoutError';
+      timeoutError.cause = error;
+      throw timeoutError;
+    })
+    .finally(() => {
+      clearTimeout(tid);
+      externalSignal?.removeEventListener('abort', abortFromExternalSignal);
+    });
 }
 
 function getApiAuthToken() {
@@ -1707,6 +1741,65 @@ function createOperationId_(label = 'operation') {
   return `${String(label).replace(/[^a-z0-9_-]+/gi, '-').slice(0, 30)}-${suffix}`;
 }
 
+function draftPayloadFingerprint_(payload) {
+  const text = JSON.stringify(payload);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${text.length}-${(hash >>> 0).toString(36)}`;
+}
+
+function getOrCreateDraftOperation_(payload, now = Date.now()) {
+  const fingerprint = draftPayloadFingerprint_(payload);
+  try {
+    const saved = JSON.parse(localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) || 'null');
+    const createdAt = Number(saved?.createdAt || 0);
+    if (
+      saved?.operationId
+      && saved.fingerprint === fingerprint
+      && createdAt > 0
+      && now - createdAt <= DRAFT_OPERATION_TTL_MS
+    ) {
+      return {
+        operationId: String(saved.operationId),
+        fingerprint,
+        createdAt,
+        reused: true,
+      };
+    }
+  } catch (_) {}
+
+  const record = {
+    operationId: createOperationId_('draft-start'),
+    fingerprint,
+    createdAt: now,
+  };
+  try {
+    localStorage.setItem(DRAFT_OPERATION_STORAGE_KEY, JSON.stringify(record));
+  } catch (_) {}
+  return { ...record, reused: false };
+}
+
+function clearDraftOperation_(operationId = '') {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) || 'null');
+    if (!operationId || saved?.operationId === operationId) {
+      localStorage.removeItem(DRAFT_OPERATION_STORAGE_KEY);
+    }
+  } catch (_) {
+    try { localStorage.removeItem(DRAFT_OPERATION_STORAGE_KEY); } catch (_) {}
+  }
+}
+
+function shouldPreserveDraftOperation_(error) {
+  const message = String(error?.message || error || '');
+  return !!error?.ambiguousDraftStart
+    || isTransientServiceDiscoveryError_(error)
+    || /待機を中止しました。処理自体はMacで継続しています/.test(message);
+}
+
 function estimateJsonBytes(value) {
   const text = JSON.stringify(value);
   if (window.TextEncoder) return new TextEncoder().encode(text).length;
@@ -1715,7 +1808,10 @@ function estimateJsonBytes(value) {
 
 function formatNetworkError(err, label) {
   const raw = (err && err.message) ? err.message : String(err || '');
-  if (err && err.name === 'AbortError') {
+  if (
+    (err && (err.name === 'AbortError' || err.name === 'TimeoutError'))
+    || /fetch is aborted|the operation was aborted/i.test(raw)
+  ) {
     return `${label}がタイムアウトしました。写真枚数を減らすか、少し時間を置いて再実行してください。`;
   }
   if (/load failed|failed to fetch|networkerror/i.test(raw)) {
@@ -1789,7 +1885,8 @@ function getGasUrlCandidates() {
 function isTransientServiceDiscoveryError_(error) {
   const message = String(error?.message || error || '');
   return error?.name === 'AbortError'
-    || /load failed|failed to fetch|networkerror|network request failed|timed? ?out/i.test(message)
+    || error?.name === 'TimeoutError'
+    || /load failed|failed to fetch|fetch is aborted|the operation was aborted|networkerror|network request failed|timed? ?out|タイムアウト/i.test(message)
     || /GAS URLエラー \(5\d\d\)/i.test(message);
 }
 
@@ -2067,13 +2164,82 @@ function waitForPoll_(ms, signal) {
   });
 }
 
-async function pollMacJob(tunnelUrl, jobId, { intervalMs = 3000, timeoutMs = 240000, onStatus, signal } = {}) {
+function isRetryableJobStatusError_(error) {
+  const status = Number(error?.httpStatus || 0);
+  return !!error?.retryableJobStatus
+    || isTransientServiceDiscoveryError_(error)
+    || [408, 425, 429, 500, 502, 503, 504].includes(status);
+}
+
+async function pollMacJob(
+  tunnelUrl,
+  jobId,
+  {
+    intervalMs = 3000,
+    timeoutMs = 240000,
+    onStatus,
+    signal,
+    refreshUrl,
+    networkRetryDelayMs = JOB_STATUS_RETRY_DELAY_MS,
+  } = {},
+) {
   const started = Date.now();
+  let currentTunnelUrl = tunnelUrl;
+  let consecutiveNetworkErrors = 0;
   while (true) {
     if (Date.now() - started > timeoutMs) throw new Error('処理がタイムアウトしました');
     await waitForPoll_(intervalMs, signal);
-    const statusResp = await fetchWithTimeout(`${tunnelUrl}/status/${jobId}`, {}, 12000);
-    const statusData = await readJsonResponse(statusResp, '処理状況');
+    let statusResp;
+    let statusData;
+    try {
+      statusResp = await fetchWithTimeout(`${currentTunnelUrl}/status/${jobId}`, {}, 12000);
+      try {
+        statusData = await readJsonResponse(statusResp, '処理状況');
+      } catch (parseError) {
+        parseError.httpStatus = statusResp.status;
+        parseError.retryableJobStatus = !!statusResp.ok;
+        throw parseError;
+      }
+      if (!statusResp.ok) {
+        const error = new Error(
+          statusData.message
+          || statusData.error
+          || `処理状況の取得に失敗しました (${statusResp.status})`
+        );
+        error.httpStatus = statusResp.status;
+        throw error;
+      }
+      if (!['pending', 'running', 'done', 'error'].includes(statusData.status)) {
+        const error = new Error('処理状況の応答形式が不正です');
+        error.httpStatus = statusResp.status;
+        error.retryableJobStatus = true;
+        throw error;
+      }
+      consecutiveNetworkErrors = 0;
+    } catch (error) {
+      if (!isRetryableJobStatusError_(error)) throw error;
+      consecutiveNetworkErrors += 1;
+      if (consecutiveNetworkErrors >= JOB_STATUS_MAX_CONSECUTIVE_ERRORS) throw error;
+      onStatus?.({
+        status: 'waiting',
+        message: (
+          'Macの処理は継続中です。接続を自動再確認しています... '
+          + `(${consecutiveNetworkErrors + 1}/${JOB_STATUS_MAX_CONSECUTIVE_ERRORS})`
+        ),
+      });
+      if (typeof refreshUrl === 'function') {
+        try {
+          const refreshedUrl = normalizeMacServiceUrl_(await refreshUrl());
+          if (refreshedUrl) currentTunnelUrl = refreshedUrl;
+        } catch (_) {
+          // 一時的にURLを再取得できなくても、Mac処理は止めず次の状態確認を続ける。
+        }
+      }
+      if (networkRetryDelayMs > 0) {
+        await waitForPoll_(networkRetryDelayMs, signal);
+      }
+      continue;
+    }
     onStatus?.(statusData);
     if (statusData.status === 'done') return statusData;
     if (statusData.status === 'error') throw new Error(statusData.message || 'Mac側処理でエラーが発生しました');
@@ -7147,6 +7313,7 @@ function updateDraftChecklist() {
 
 // ----- 下書き保存（Cloudflare tunnel経由でMac自動入力） -----
 function buildDraftPayload_(input) {
+  const preferHighQuality = input.preferHighQuality !== false;
   return {
     title: normalizeMercariTitle(input.title),
     description: String(input.description || '').trim(),
@@ -7158,12 +7325,124 @@ function buildDraftPayload_(input) {
     mercari_brand: String(input.mercariBrand || '').trim(),
     mercari_size: input.mercariSize || '',
     photos: (input.photos || []).map(img => ({
-      base64: img.base64HQ || img.base64,
+      base64: preferHighQuality
+        ? (img.base64HQ || img.base64)
+        : (img.base64 || img.base64HQ),
       mediaType: img.mediaType,
     })),
     mercari_condition: input.mercariCondition,
     mercari_shipping: 'らくらくメルカリ便',
   };
+}
+
+function buildDraftPayloadWithinLimit_(input) {
+  const highQualityPayload = buildDraftPayload_(input);
+  const highQualityBytes = estimateJsonBytes(highQualityPayload);
+  if (highQualityBytes <= MAX_DRAFT_PAYLOAD_BYTES) {
+    return { payload: highQualityPayload, optimized: false, bytes: highQualityBytes };
+  }
+
+  const optimizedPayload = buildDraftPayload_({ ...input, preferHighQuality: false });
+  const optimizedBytes = estimateJsonBytes(optimizedPayload);
+  if (optimizedBytes <= MAX_DRAFT_PAYLOAD_BYTES) {
+    return { payload: optimizedPayload, optimized: true, bytes: optimizedBytes };
+  }
+
+  throw new Error(
+    `写真データが大きすぎます（約${(optimizedBytes / 1024 / 1024).toFixed(1)}MB）。`
+    + '写真を合成するか枚数を減らしてから、もう一度保存してください。'
+  );
+}
+
+function isRetryableDraftStartError_(error) {
+  const status = Number(error?.httpStatus || 0);
+  return !!error?.retryableDraftStart
+    || isTransientServiceDiscoveryError_(error)
+    || [408, 425, 429, 500, 502, 503, 504].includes(status);
+}
+
+async function startDraftJob_(initialTunnelUrl, payload, options = {}) {
+  const onStatus = options.onStatus;
+  const refreshUrl = options.refreshUrl;
+  const retryDelayMs = Number.isFinite(options.retryDelayMs)
+    ? Math.max(0, options.retryDelayMs)
+    : DRAFT_START_RETRY_DELAY_MS;
+  const operationId = String(options.operationId || createOperationId_('draft-start'));
+  let tunnelUrl = normalizeMacServiceUrl_(initialTunnelUrl);
+  let lastError = null;
+  const payloadJson = JSON.stringify(payload);
+
+  for (let attempt = 1; attempt <= DRAFT_START_MAX_ATTEMPTS; attempt += 1) {
+    if (attempt > 1) {
+      onStatus?.(`下書き情報を再送中... (${attempt}/${DRAFT_START_MAX_ATTEMPTS})`);
+    }
+    try {
+      const response = await fetchWithTimeout(
+        `${tunnelUrl}/draft`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Operation-Id': operationId,
+          },
+          body: payloadJson,
+        },
+        DRAFT_START_TIMEOUT_MS,
+      );
+      let data;
+      try {
+        data = await readJsonResponse(response, '下書き保存開始');
+      } catch (parseError) {
+        parseError.httpStatus = response.status;
+        parseError.ambiguousDraftStart = !!response.ok;
+        parseError.retryableDraftStart = !!response.ok;
+        throw parseError;
+      }
+      if (!response.ok || !data.ok || !data.job_id) {
+        const error = new Error(data.error || '下書き保存を開始できませんでした');
+        error.httpStatus = response.status;
+        throw error;
+      }
+      return { data, tunnelUrl, operationId };
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableDraftStartError_(error)) throw error;
+      if (attempt >= DRAFT_START_MAX_ATTEMPTS) break;
+
+      onStatus?.(
+        `通信が中断されたため、自動で再接続しています... `
+        + `(${attempt + 1}/${DRAFT_START_MAX_ATTEMPTS})`
+      );
+      if (retryDelayMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+      }
+      if (typeof refreshUrl === 'function') {
+        try {
+          const refreshedUrl = normalizeMacServiceUrl_(await refreshUrl());
+          if (refreshedUrl) tunnelUrl = refreshedUrl;
+        } catch (_) {
+          // URL再取得に失敗しても、同じ受付IDで現行URLへの再送を試す。
+        }
+      }
+    }
+  }
+
+  const error = new Error(
+    `下書き情報をMacへ送れませんでした（${DRAFT_START_MAX_ATTEMPTS}回自動再試行済み）。`
+    + '入力内容は残っています。通信が安定してから、もう一度保存してください。'
+  );
+  error.cause = lastError;
+  error.ambiguousDraftStart = true;
+  throw error;
+}
+
+function formatDraftSaveError_(error) {
+  const raw = String(error?.message || error || '').trim();
+  if (!raw) return '下書き保存で不明なエラーが発生しました。入力内容は残っています。';
+  if (isTransientServiceDiscoveryError_(error)) {
+    return `${formatNetworkError(error, '下書き保存通信')} 入力内容は残っています。`;
+  }
+  return raw;
 }
 
 async function saveDraft() {
@@ -7203,6 +7482,7 @@ async function saveDraft() {
   const draftStatus = el('draft-status');
   const draftBtn = el('draft-btn');
   let waitControl = null;
+  let draftOperationId = '';
   draftBtn.disabled = true;
   draftStatus.hidden = false;
   draftStatus.textContent = 'MacサービスURLを取得中...';
@@ -7211,12 +7491,18 @@ async function saveDraft() {
     const tunnelUrl = await getMercariServiceUrl((message) => {
       draftStatus.textContent = message;
     });
+    const refreshMacServiceUrl = async () => {
+      clearCachedMacServiceUrl_();
+      return getMercariServiceUrl(message => {
+        draftStatus.textContent = message;
+      });
+    };
 
     // 下書きリクエスト送信
     draftStatus.textContent = '下書き情報を送信中...';
     const mercariCategoryKey = getSelectedMercariCategoryKey();
     const mercariCategoryOption = getMercariCategoryOption(mercariCategoryKey);
-    const payload = buildDraftPayload_({
+    const draftPayload = buildDraftPayloadWithinLimit_({
       title: el('title-text').value || lastAiData.title,
       description: el('result-text').value.trim() || lastAiData.description,
       price,
@@ -7229,31 +7515,43 @@ async function saveDraft() {
       photos: uploadedImages,
       mercariCondition: el('m-condition').value,
     });
-    const draftResp = await fetchWithTimeout(`${tunnelUrl}/draft`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }, 30000);  // 写真あり→30秒に延長
-    const draftData = await readJsonResponse(draftResp, '下書き保存開始');
-    if (!draftResp.ok || !draftData.ok || !draftData.job_id) {
-      throw new Error(draftData.error || '下書き保存を開始できませんでした');
+    if (draftPayload.optimized) {
+      draftStatus.textContent = '写真データを通信向けに最適化して送信中...';
     }
-    const jobId = draftData.job_id;
+    const draftOperation = getOrCreateDraftOperation_(draftPayload.payload);
+    draftOperationId = draftOperation.operationId;
+    if (draftOperation.reused) {
+      draftStatus.textContent = '前回の受付状況を確認しながら再接続中...';
+    }
+    const startedDraft = await startDraftJob_(tunnelUrl, draftPayload.payload, {
+      operationId: draftOperation.operationId,
+      onStatus: message => {
+        draftStatus.textContent = message;
+      },
+      refreshUrl: refreshMacServiceUrl,
+    });
+    const jobId = startedDraft.data.job_id;
 
     // ポーリング
     draftStatus.textContent = 'Macが下書きを入力中... (しばらくお待ちください)';
     waitControl = attachJobWaitCancel_(draftStatus);
-    await pollMacJob(tunnelUrl, jobId, {
+    await pollMacJob(startedDraft.tunnelUrl, jobId, {
       intervalMs: 10000,
       timeoutMs: 10 * 60 * 1000,
       onStatus: statusData => {
       draftStatus.textContent = statusData.message || '処理中...';
       },
       signal: waitControl.signal,
+      refreshUrl: refreshMacServiceUrl,
     });
     draftStatus.textContent = '下書き保存が完了しました。メルカリアプリで確認してください。';
+    clearDraftOperation_(draftOperationId);
   } catch (e) {
-    draftStatus.textContent = `❌ エラー: ${e.message}`;
+    console.error('[draft-save]', e);
+    if (draftOperationId && !shouldPreserveDraftOperation_(e)) {
+      clearDraftOperation_(draftOperationId);
+    }
+    draftStatus.textContent = `❌ ${formatDraftSaveError_(e)}`;
   } finally {
     waitControl?.cleanup();
     draftBtn.disabled = false;
@@ -7263,6 +7561,16 @@ async function saveDraft() {
 // ----- 起動 -----
 globalThis.MercariAppTestHooks = {
   buildDraftPayload_,
+  buildDraftPayloadWithinLimit_,
+  draftPayloadFingerprint_,
+  getOrCreateDraftOperation_,
+  clearDraftOperation_,
+  shouldPreserveDraftOperation_,
+  startDraftJob_,
+  pollMacJob,
+  isRetryableJobStatusError_,
+  isRetryableDraftStartError_,
+  formatDraftSaveError_,
   buildDescriptionProductName,
   buildMercariTitle,
   cleanMercariTitleMarketingWords,

@@ -47,6 +47,8 @@ assert.equal(hooks.getCachedMacServiceUrl_(), '');
 assert.equal(hooks.isTransientServiceDiscoveryError_(new Error('Load failed')), true);
 assert.equal(hooks.isTransientServiceDiscoveryError_(new Error('Failed to fetch')), true);
 assert.equal(hooks.isTransientServiceDiscoveryError_({ name: 'AbortError', message: '' }), true);
+assert.equal(hooks.isTransientServiceDiscoveryError_(new Error('Fetch is aborted')), true);
+assert.equal(hooks.isTransientServiceDiscoveryError_({ name: 'TimeoutError', message: '' }), true);
 assert.equal(hooks.isTransientServiceDiscoveryError_(new Error('GAS URLエラー (503)')), true);
 assert.equal(hooks.isTransientServiceDiscoveryError_(new Error('UNAUTHORIZED')), false);
 
@@ -64,11 +66,12 @@ assert.match(
 );
 
 const indexHtml = fs.readFileSync('index.html', 'utf8');
-assert.match(indexHtml, /v20260725i \/ おすすめ表示を簡潔化/);
-assert.match(indexHtml, /app\.js\?v=20260725i/);
+assert.match(indexHtml, /v20260726a \/ 下書き送信の自動復旧/);
+assert.match(indexHtml, /catalog-data\.js\?v=20260726a/);
+assert.match(indexHtml, /app\.js\?v=20260726a/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260725i/);
+assert.match(serviceWorker, /mercari-description-v20260726a/);
 
 console.log(JSON.stringify({
   ok: true,
@@ -76,5 +79,5 @@ console.log(JSON.stringify({
   cachedUrlFallback: true,
   singleFlight: true,
   generationUiRestore: true,
-  version: 'v20260725i',
+  version: 'v20260726a',
 }));
