@@ -337,7 +337,8 @@ function cleanSeasonMarketingText(value, rule = getSeasonMarketingRule()) {
   return text
     .replace(/\s+([、。,.])/g, '$1')
     .replace(/([、。,.]){2,}/g, '$1')
-    .replace(/^[\s、。,.・/／|｜-]+|[\s、。,.・/／|｜-]+$/g, '')
+    .replace(/^[\s、。,.・/／|｜]+|[\s、。,.・/／|｜-]+$/g, '')
+    .replace(/^-\s+/, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -361,8 +362,10 @@ function cleanSeasonMarketingSentences(value, rule = getSeasonMarketingRule()) {
   return kept.length ? kept.join('') : cleanSeasonMarketingText(text, rule);
 }
 
-const APPEAL_LEADING_CONNECTIVE_PATTERN = /^(その一方で|そのため|そのうえ|また|さらに|加えて|一方で|そして|なお|ただし|特に|例えば)(?![、，,ぁ-んァ-ヶー])/;
+const APPEAL_LEADING_CONNECTIVE_PATTERN = /^(その一方で|そのため|そのうえ|さらに|加えて|一方で|そして|ただし|特に|例えば|また(?!ぎ|ぐ|が|い|た(?:び|く|き|か|け|こ|っ|た))|なお(?!す|し|せ|そ|っ|り|る|れ|ろ))(?![、，,])/;
+const APPEAL_LEADING_ASCII_COMMA_PATTERN = /^((?:その一方で|そのため|そのうえ|さらに|加えて|一方で|そして|ただし|特に|例えば|また(?!ぎ|ぐ|が|い|た(?:び|く|き|か|け|こ|っ|た))|なお(?!す|し|せ|そ|っ|り|る|れ|ろ)))[，,]/;
 const APPEAL_SUBORDINATE_CLAUSE_PATTERN = /^([^、。！？!?]{2,30}(?:ため|ので|ながら|つつ))(?![、，,])/;
+const APPEAL_ASCII_SENTENCE_BOUNDARY_PATTERN = /\.(?=\s+(?:その一方で|そのため|そのうえ|また|さらに|加えて|一方で|そして|なお|ただし|特に|例えば))/g;
 
 function splitAppealSentences_(value) {
   const text = String(value || '');
@@ -381,7 +384,7 @@ function polishAppealSentence_(value) {
   if (!sentence) return '';
 
   sentence = sentence
-    .replace(/^((?:その一方で|そのため|そのうえ|また|さらに|加えて|一方で|そして|なお|ただし|特に|例えば))[，,]/, '$1、')
+    .replace(APPEAL_LEADING_ASCII_COMMA_PATTERN, '$1、')
     .replace(APPEAL_LEADING_CONNECTIVE_PATTERN, '$1、');
   if (!sentence.includes('、') && sentence.length >= 20) {
     sentence = sentence.replace(APPEAL_SUBORDINATE_CLAUSE_PATTERN, '$1、');
@@ -398,6 +401,7 @@ function polishAppealSentence_(value) {
 function polishAppealText_(value) {
   const text = String(value || '')
     .replace(/\r\n?/g, '\n')
+    .replace(APPEAL_ASCII_SENTENCE_BOUNDARY_PATTERN, '。')
     .trim();
   if (!text) return '';
 

@@ -70,6 +70,14 @@ assert.equal(
   hooks.polishAppealText_('またたび入りの猫用おもちゃです。'),
   'またたび入りの猫用おもちゃです。',
 );
+assert.equal(
+  hooks.polishAppealText_('またすぐに使えます。さらにお手入れも簡単です。'),
+  'また、すぐに使えます。さらに、お手入れも簡単です。',
+);
+assert.equal(
+  hooks.polishAppealText_('使いやすいです. また便利です.'),
+  '使いやすいです。また、便利です。',
+);
 const idempotentAppeal = '上質な風合いが魅力。また、幅広く活躍します。';
 assert.equal(
   hooks.polishAppealText_(hooks.polishAppealText_(idempotentAppeal)),
@@ -104,6 +112,12 @@ assert.equal(
     appeal: 'また幅広い用途に使えます',
   }, 'other').appeal,
   'また、幅広い用途に使えます。',
+);
+assert.equal(
+  hooks.sanitizeAiDataForSeason({
+    appeal: '-20℃の環境に対応します。型番3.5のモデルです。',
+  }, 'men').appeal,
+  '-20℃の環境に対応します。型番3.5のモデルです。',
 );
 
 const prompt = hooks.buildDescriptionSystemPrompt(
@@ -149,5 +163,5 @@ console.log(JSON.stringify({
   ok: true,
   punctuationFallback: true,
   promptPriority: 'appeal-rules-after-past-style',
-  version: 'v20260726e',
+  version: 'v20260726f',
 }));
