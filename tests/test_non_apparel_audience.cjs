@@ -51,6 +51,7 @@ assert.match(nonApparelSystemPrompt, /mercari_category_key — 必ず "unknown"/
 assert.doesNotMatch(nonApparelSystemPrompt, /黒っぽい.*ネイビー/);
 assert.doesNotMatch(nonApparelSystemPrompt, /トレンチコート/);
 assert.doesNotMatch(nonApparelSystemPrompt, /質感や着心地/);
+assert.doesNotMatch(nonApparelSystemPrompt, /滑らかな肌触り|軽やかな着心地|幅広い装い/);
 
 const apparelSystemPrompt = hooks.buildDescriptionSystemPrompt('', 'men');
 assert.match(apparelSystemPrompt, /トレンチコート/);
@@ -206,7 +207,7 @@ assert.match(indexHtml, /name="product-gender" value="other"/);
 assert.match(indexHtml, /id="product-gender-note"/);
 assert.match(indexHtml, /工具などアパレル以外として生成します/);
 assert.match(indexHtml, /id="m-size-field"/);
-assert.match(indexHtml, /v20260726d \/ アパレル以外に対応/);
+assert.match(indexHtml, /v20260726e \/ 訴求文の文体を改善/);
 
 assert.match(source, /syncBroadCategoryForProductGenderChange_\(input\.value\)/);
 assert.match(source, /el\('category'\)\.value = isNonApparelProductAudience\(\) \? 'other' : ''/);
@@ -221,15 +222,15 @@ const styles = fs.readFileSync('styles.css', 'utf8');
 assert.match(styles, /\.gender-segmented\s*\{[\s\S]*grid-template-columns:\s*repeat\(3/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260726d/);
+assert.match(serviceWorker, /mercari-description-v20260726e/);
 
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
-assert.match(pairHtml, /styles\.css\?v=20260726d/);
+assert.match(pairHtml, /styles\.css\?v=20260726e/);
 
 console.log(JSON.stringify({
   ok: true,
   audiences: ['men', 'women', 'other'],
   nonApparelCategory: 'manual-after-draft',
   nonApparelSize: 'not-required',
-  version: 'v20260726d',
+  version: 'v20260726e',
 }));

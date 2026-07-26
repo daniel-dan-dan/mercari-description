@@ -345,23 +345,82 @@ function cleanSeasonMarketingText(value, rule = getSeasonMarketingRule()) {
 function cleanSeasonMarketingSentences(value, rule = getSeasonMarketingRule()) {
   const text = String(value || '').trim();
   if (!text) return '';
-  const sentences = text.match(/[^。！？!?]+[。！？!?]?/g) || [text];
+  const sentences = splitAppealSentences_(text);
   const kept = sentences
     .map(sentence => sentence.trim())
     .filter(Boolean)
     .filter(sentence => !isDisallowedSeasonMarketingText(sentence, rule))
-    .map(sentence => cleanSeasonMarketingText(sentence, rule))
+    .map(sentence => {
+      const ending = sentence.match(/[。！？!?]$/)?.[0] || '';
+      const cleaned = cleanSeasonMarketingText(sentence, rule);
+      return cleaned && ending && !/[。！？!?]$/.test(cleaned)
+        ? `${cleaned}${ending}`
+        : cleaned;
+    })
     .filter(Boolean);
   return kept.length ? kept.join('') : cleanSeasonMarketingText(text, rule);
+}
+
+const APPEAL_LEADING_CONNECTIVE_PATTERN = /^(その一方で|そのため|そのうえ|また|さらに|加えて|一方で|そして|なお|ただし|特に|例えば)(?![、，,ぁ-んァ-ヶー])/;
+const APPEAL_SUBORDINATE_CLAUSE_PATTERN = /^([^、。！？!?]{2,30}(?:ため|ので|ながら|つつ))(?![、，,])/;
+
+function splitAppealSentences_(value) {
+  const text = String(value || '');
+  return text.match(/[^。！？!?]+(?:[。！？!?][」』）)]?|$)/g) || [text];
+}
+
+function polishAppealSentence_(value) {
+  let sentence = String(value || '')
+    .replace(/^[\s・●○■□◆◇▶▷※]+/, '')
+    .replace(/^[-‐‑–—]\s+/, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\s+([、。，,.！？!?])/g, '$1')
+    .replace(/、{2,}/g, '、')
+    .replace(/。{2,}/g, '。')
+    .trim();
+  if (!sentence) return '';
+
+  sentence = sentence
+    .replace(/^((?:その一方で|そのため|そのうえ|また|さらに|加えて|一方で|そして|なお|ただし|特に|例えば))[，,]/, '$1、')
+    .replace(APPEAL_LEADING_CONNECTIVE_PATTERN, '$1、');
+  if (!sentence.includes('、') && sentence.length >= 20) {
+    sentence = sentence.replace(APPEAL_SUBORDINATE_CLAUSE_PATTERN, '$1、');
+  }
+  if (sentence.endsWith('.')) {
+    sentence = `${sentence.slice(0, -1)}。`;
+  }
+  if (!/[。！？!?][」』）)]?$/.test(sentence)) {
+    sentence += '。';
+  }
+  return sentence;
+}
+
+function polishAppealText_(value) {
+  const text = String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+  if (!text) return '';
+
+  const sentences = [];
+  text.split(/\n+/).forEach(line => {
+    const parts = splitAppealSentences_(line);
+    parts.forEach(part => {
+      const polished = polishAppealSentence_(part);
+      if (polished) sentences.push(polished);
+    });
+  });
+  return sentences.join('');
 }
 
 function sanitizeAiDataForSeason(aiData = {}, productGender = getSelectedProductGender()) {
   const rule = getSeasonMarketingRule();
   const nonApparel = isNonApparelProductAudience(productGender);
   const sanitized = { ...aiData };
-  sanitized.appeal = nonApparel
-    ? String(aiData.appeal || '').trim()
-    : cleanSeasonMarketingSentences(aiData.appeal, rule);
+  const polishedAppeal = polishAppealText_(aiData.appeal);
+  const seasonSafeAppeal = nonApparel
+    ? polishedAppeal
+    : cleanSeasonMarketingSentences(polishedAppeal, rule);
+  sanitized.appeal = polishAppealText_(seasonSafeAppeal);
   sanitized.condition = nonApparel
     ? String(aiData.condition || '').trim()
     : cleanSeasonMarketingText(aiData.condition, rule);
@@ -1766,6 +1825,27 @@ function buildPastListingStylePrompt(stylePrompt) {
   return prompt ? `\n\n${prompt}` : '';
 }
 
+function buildAppealWritingRules_(productGender = getSelectedProductGender()) {
+  const nonApparel = isNonApparelProductAudience(productGender);
+  const example = nonApparel
+    ? '「写真で確認できる仕様と、扱いやすい形状が特徴。必要な付属品がまとまっているため、日々の作業へすぐに取り入れられます。保管や持ち運びにも配慮された、実用的なアイテムです。」'
+    : '「滑らかな肌触りと、落ち着いた色合いが魅力。端正なシルエットで、幅広い装いに自然となじみます。軽やかな着心地のため、長い季節に活躍するアイテムです。」';
+  return `訴求文（appeal）の文体ルール（過去出品例より優先）:
+- 2〜3文の読みやすい日本語に整え、単語や短い句を並べただけの文章にしない
+- 意味の切れ目には読点「、」を入れる。特に「また」「さらに」「一方で」「そのため」などの接続語の直後には読点を付ける
+- 長い修飾句や理由・条件を文頭に置いた場合も、主文との境目に読点を入れる。ただし短い文へ読点をむやみに増やさない
+- すべての文末に「。」を付ける（自然な「！」「？」で終わる場合を除く）
+- 2〜3文のうち、体言止めは多くても1文までとし、残りは自然な「です・ます」調にする
+- 2文なら「体言止め1文＋丁寧語1文」、3文なら「体言止め1文＋丁寧語2文」を目安にする。体言止めは連続させない
+- 「です。です。」「ます。ます。」のように同じ文末を連続させず、体言止めと丁寧語を自然に使い分ける
+- 過去出品例に句読点不足や同じ文末の連続があっても、その癖は引き継がない
+- 下の文体例は句読点と文末のリズムだけを示す。特徴、仕様、付属品、着心地などの内容はコピーせず、今回の写真で確認できる事実だけを書く
+- 出力前に、読点不足、文末の重複、助詞の抜け、不自然な体言止めがないかappealだけを黙って読み直してからJSONを返す
+
+文体例:
+${example}`;
+}
+
 function buildDescriptionSystemPrompt(
   stylePrompt = '',
   productGender = getSelectedProductGender(),
@@ -1787,7 +1867,9 @@ ${nonApparel
 - 使わない季節外れワード: ${seasonRule.disallowedWords.join('、')}
 - appeal には季節外れワードを入れない`}
 - title_keywords には、販売時期に合うかどうかに関係なく季節ワードを一切入れない
-- title_keywords には、カジュアル、ビジネス、フォーマル、セレモニーなどの着用場面・雰囲気語も一切入れない${buildPastListingStylePrompt(stylePrompt)}`;
+- title_keywords には、カジュアル、ビジネス、フォーマル、セレモニーなどの着用場面・雰囲気語も一切入れない${buildPastListingStylePrompt(stylePrompt)}
+
+${buildAppealWritingRules_(productGender)}`;
 }
 
 function buildProductAudiencePrompt_(productGender = getSelectedProductGender()) {
@@ -2584,7 +2666,7 @@ function buildDescription(
   const color = aiData.color || '---';
   const material = aiData.material || '---';
   const condition = aiData.condition || '---';
-  const appeal = aiData.appeal || '';
+  const appeal = polishAppealText_(aiData.appeal);
   const nonApparel = isNonApparelProductAudience(productGender);
   const sizeBlock = nonApparel
     ? `【寸法】
@@ -7817,10 +7899,13 @@ globalThis.MercariAppTestHooks = {
   setSelectedProductGender,
   invalidateGeneratedResultAfterInputChange_,
   buildProductAudiencePrompt_,
+  buildAppealWritingRules_,
   buildDescriptionSystemPrompt,
   coerceMercariCategoryForProductGender,
   isManualMercariCategoryAllowed_,
+  cleanSeasonMarketingSentences,
   sanitizeAiDataForSeason,
+  polishAppealText_,
   buildDescription,
   getSizeProfileKey,
   deriveMercariSize,
