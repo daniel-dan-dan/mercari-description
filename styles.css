@@ -169,6 +169,21 @@ label {
   background: #f8f4fb;
 }
 
+.gender-segmented {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.gender-segmented span {
+  padding-inline: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.product-gender-note {
+  margin: 8px 2px 0;
+  color: #6b5d7d;
+}
+
 .segmented-control label {
   position: relative;
   margin: 0;
@@ -184,7 +199,7 @@ label {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 42px;
+  min-height: 44px;
   padding: 8px 10px;
   border-radius: 9px;
   color: #6b5d7d;

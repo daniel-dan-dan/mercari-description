@@ -36,7 +36,7 @@ const MERCARI_TITLE_EXCLUDED_MARKETING_PATTERNS = [
   /\b(?:CASUAL|BUSINESS|FORMAL|CEREMONY)\b/gi,
 ];
 const PRODUCT_GENDER_STORAGE_KEY = 'mercari_product_gender';
-const PRODUCT_GENDER_LABELS = { men: 'メンズ', women: 'レディース' };
+const PRODUCT_GENDER_LABELS = { men: 'メンズ', women: 'レディース', other: 'その他' };
 const LISTING_STYLE_SUMMARY_STORAGE_KEY = 'mercari_listing_style_summary';
 const LISTING_STYLE_PROMPT_STORAGE_KEY = 'mercari_listing_style_prompt';
 const SEASON_MARKETING_RULES = {
@@ -211,7 +211,11 @@ let macServiceDiscoveryPromise = null;
 const el = (id) => document.getElementById(id);
 
 function normalizeProductGender(value) {
-  return value === 'women' ? 'women' : 'men';
+  return value === 'women' || value === 'other' ? value : 'men';
+}
+
+function isNonApparelProductAudience(value = getSelectedProductGender()) {
+  return normalizeProductGender(value) === 'other';
 }
 
 function getSelectedProductGender() {
@@ -225,10 +229,81 @@ function getSelectedProductGenderLabel() {
 
 function setSelectedProductGender(value, { persist = true } = {}) {
   const gender = normalizeProductGender(value);
+  const nonApparel = isNonApparelProductAudience(gender);
   document.querySelectorAll('input[name="product-gender"]').forEach(input => {
     input.checked = input.value === gender;
   });
   if (persist) localStorage.setItem(PRODUCT_GENDER_STORAGE_KEY, gender);
+  const note = el('product-gender-note');
+  if (note) note.hidden = !nonApparel;
+  const sizeField = el('m-size-field');
+  if (sizeField) sizeField.hidden = nonApparel;
+  const categorySelect = el('category');
+  if (categorySelect) categorySelect.disabled = nonApparel;
+  if (nonApparel) {
+    const sizeSelect = el('m-size');
+    if (sizeSelect) {
+      sizeSelect.value = '';
+      sizeSelect.dataset.userEdited = '';
+    }
+    const sizeNote = el('m-size-note');
+    if (sizeNote) sizeNote.textContent = 'アパレル以外のためサイズ選択は不要です';
+  }
+}
+
+function syncBroadCategoryForProductGenderChange_(productGender) {
+  const categorySelect = el('category');
+  if (!categorySelect) return false;
+  const nonApparel = isNonApparelProductAudience(productGender);
+  const nextCategory = nonApparel
+    ? 'other'
+    : (categorySelect.value === 'other' ? '' : categorySelect.value);
+  if (nextCategory === categorySelect.value) return false;
+  categorySelect.value = nextCategory;
+  renderMeasurements();
+  return true;
+}
+
+function invalidateGeneratedResultAfterInputChange_(changedFieldLabel) {
+  const title = el('title-text');
+  const description = el('result-text');
+  const hadGeneratedResult = !!lastAiData
+    || !!String(title?.value || '').trim()
+    || !!String(description?.value || '').trim()
+    || (el('result-section') && !el('result-section').hidden);
+  if (!hadGeneratedResult) return false;
+
+  lastAiData = null;
+  if (title) title.value = '';
+  if (description) {
+    description.value = '';
+    description.classList.remove('streaming');
+  }
+  const resultSection = el('result-section');
+  if (resultSection) resultSection.hidden = true;
+  const mercariSettings = el('mercari-settings');
+  if (mercariSettings) mercariSettings.hidden = true;
+  const condition = el('m-condition');
+  if (condition) condition.value = '目立った傷や汚れなし';
+  const brand = el('m-brand');
+  if (brand) brand.value = '';
+  const size = el('m-size');
+  if (size) {
+    size.value = '';
+    size.dataset.userEdited = '';
+  }
+  const finalSize = el('final-size-badge');
+  if (finalSize) finalSize.hidden = true;
+  const resultMeta = el('result-meta');
+  if (resultMeta) resultMeta.hidden = true;
+  const draftStatus = el('draft-status');
+  if (draftStatus) draftStatus.hidden = true;
+  showStatus(
+    'status',
+    `${changedFieldLabel}を変更したため、前の生成結果を解除しました。もう一度「説明文を生成」を押してください。`,
+    'warn',
+  );
+  return true;
 }
 
 function getSeasonMarketingRule(date = new Date()) {
@@ -280,16 +355,21 @@ function cleanSeasonMarketingSentences(value, rule = getSeasonMarketingRule()) {
   return kept.length ? kept.join('') : cleanSeasonMarketingText(text, rule);
 }
 
-function sanitizeAiDataForSeason(aiData = {}) {
+function sanitizeAiDataForSeason(aiData = {}, productGender = getSelectedProductGender()) {
   const rule = getSeasonMarketingRule();
+  const nonApparel = isNonApparelProductAudience(productGender);
   const sanitized = { ...aiData };
-  sanitized.appeal = cleanSeasonMarketingSentences(aiData.appeal, rule);
-  sanitized.condition = cleanSeasonMarketingText(aiData.condition, rule);
+  sanitized.appeal = nonApparel
+    ? String(aiData.appeal || '').trim()
+    : cleanSeasonMarketingSentences(aiData.appeal, rule);
+  sanitized.condition = nonApparel
+    ? String(aiData.condition || '').trim()
+    : cleanSeasonMarketingText(aiData.condition, rule);
   sanitized.title_keywords = getAiTitleKeywordList(aiData)
-    .map(word => cleanSeasonMarketingText(word, rule))
+    .map(word => nonApparel ? String(word || '').trim() : cleanSeasonMarketingText(word, rule))
     .map(word => cleanMercariTitleMarketingWords(word))
     .filter(Boolean)
-    .filter(word => !isDisallowedSeasonMarketingText(word, rule))
+    .filter(word => nonApparel || !isDisallowedSeasonMarketingText(word, rule))
     .filter(word => !isExcludedMercariTitleMarketingText(word));
   return sanitized;
 }
@@ -351,6 +431,7 @@ function validMercariCategoryKeyOrFallback(key, fallback) {
 }
 
 function pickGenderedCategoryFallback(categoryKey, targetGender, broadCat = el('category')?.value) {
+  if (isNonApparelProductAudience(targetGender)) return 'unknown';
   const fallbackMap = GENDERED_CATEGORY_FALLBACKS[targetGender] || GENDERED_CATEGORY_FALLBACKS.men;
   const option = getMercariCategoryOption(categoryKey);
   const text = [...(option.path || []), option.label || ''].join(' ');
@@ -377,12 +458,16 @@ function pickGenderedCategoryFallback(categoryKey, targetGender, broadCat = el('
   return fallback ? validMercariCategoryKeyOrFallback(fallback, categoryKey) : categoryKey;
 }
 
-function coerceMercariCategoryForProductGender(categoryKey, broadCat = el('category')?.value) {
+function coerceMercariCategoryForProductGender(
+  categoryKey,
+  broadCat = el('category')?.value,
+  targetGender = getSelectedProductGender(),
+) {
   const normalized = normalizeMercariCategoryKey(categoryKey);
+  if (isNonApparelProductAudience(targetGender)) return 'unknown';
   const categoryGender = getMercariCategoryGender(normalized);
-  const selectedGender = getSelectedProductGender();
-  if (!categoryGender || categoryGender === selectedGender) return normalized;
-  return pickGenderedCategoryFallback(normalized, selectedGender, broadCat);
+  if (!categoryGender || categoryGender === targetGender) return normalized;
+  return pickGenderedCategoryFallback(normalized, targetGender, broadCat);
 }
 
 function syncMercariCategoryForProductGender() {
@@ -409,6 +494,14 @@ function getSelectedMercariCategoryPath() {
   return getMercariCategoryPathByKey(getSelectedMercariCategoryKey());
 }
 
+function isManualMercariCategoryAllowed_(
+  categoryKey = getSelectedMercariCategoryKey(),
+  productGender = getSelectedProductGender(),
+) {
+  return isNonApparelProductAudience(productGender)
+    && normalizeMercariCategoryKey(categoryKey) === 'unknown';
+}
+
 function renderMercariCategoryOptions() {
   const select = el('m-category');
   if (!select) return;
@@ -422,6 +515,13 @@ function renderMercariCategoryOptions() {
 function renderMercariCategoryLevelSelects(selectedKey = getSelectedMercariCategoryKey(), pendingPath = null) {
   const root = el('m-category-levels');
   if (!root) return;
+  const nonApparel = isNonApparelProductAudience();
+  root.hidden = nonApparel;
+  if (nonApparel) {
+    root.innerHTML = '';
+    updateMercariCategoryPath();
+    return;
+  }
   const selectedPath = Array.isArray(pendingPath) ? pendingPath : getMercariCategoryPathByKey(selectedKey);
   const levels = [];
   let prefix = [];
@@ -493,6 +593,11 @@ function setSelectedMercariCategoryKey(key, { notify = false, pendingPath = null
 function updateMercariCategoryPath(pendingPath = null) {
   const path = el('m-category-path');
   if (!path) return;
+  if (isNonApparelProductAudience()) {
+    path.textContent = '工具などは下書き後にメルカリで詳細カテゴリを選択';
+    path.classList.add('unknown');
+    return;
+  }
   const option = getMercariCategoryOption(getSelectedMercariCategoryKey());
   if (Array.isArray(pendingPath) && pendingPath.length && !option.path.length) {
     path.textContent = `選択中: ${pendingPath.join(' > ')}`;
@@ -568,7 +673,14 @@ function normalizeMercariSizeLabel(raw, categoryKey) {
   return MERCARI_SIZE_OPTION_VALUES.has(mercari) ? mercari : '';
 }
 
-function deriveMercariSize(aiData, categoryKey = getSelectedMercariCategoryKey()) {
+function deriveMercariSize(
+  aiData,
+  categoryKey = getSelectedMercariCategoryKey(),
+  productGender = getSelectedProductGender(),
+) {
+  if (isNonApparelProductAudience(productGender)) {
+    return { value: '', source: 'none', note: 'アパレル以外のためサイズ選択は不要です' };
+  }
   const tagRaw = aiData?.tag_size || '';
   const tagSize = normalizeMercariSizeLabel(tagRaw, categoryKey);
   const measurement = computeMeasurementSize();
@@ -729,14 +841,19 @@ async function init() {
   el('settings-btn').addEventListener('click', openSettings);
   el('reset-btn').addEventListener('click', resetAll);
   el('photo-input').addEventListener('change', handlePhotoSelect);
+  setSelectedProductGender(localStorage.getItem(PRODUCT_GENDER_STORAGE_KEY));
   renderMercariCategoryOptions();
   renderMercariSizeOptions();
-  setSelectedProductGender(localStorage.getItem(PRODUCT_GENDER_STORAGE_KEY));
+  syncBroadCategoryForProductGenderChange_(getSelectedProductGender());
   document.querySelectorAll('input[name="product-gender"]').forEach(input => {
     input.addEventListener('change', () => {
       if (!input.checked) return;
+      invalidateGeneratedResultAfterInputChange_('対象');
       setSelectedProductGender(input.value);
+      syncBroadCategoryForProductGenderChange_(input.value);
       syncMercariCategoryForProductGender();
+      renderMercariCategoryLevelSelects();
+      updateMercariCategoryPath();
       updateSizeSuggestion();
       if (lastAiData && el('final-size-badge') && !el('final-size-badge').hidden) {
         renderFinalSize(lastAiData);
@@ -751,8 +868,11 @@ async function init() {
     });
   });
   el('category').addEventListener('change', () => {
+    invalidateGeneratedResultAfterInputChange_('カテゴリ');
     renderMeasurements();
     syncMercariCategoryForProductGender();
+    renderMercariCategoryLevelSelects();
+    updateMercariCategoryPath();
     scheduleSave();
   });
   el('temporary-save-btn').addEventListener('click', () => {
@@ -1379,6 +1499,8 @@ function renderMeasurements() {
   voiceBar.className = 'multi-voice-bar';
   const voiceHint = cat === 'tie'
     ? '例:「長さ 145」「大剣幅 8」… 続けて話せます'
+    : cat === 'other'
+      ? '例:「縦 30」「横 20」「高さ 10」… 続けて話せます'
     : '例:「肩幅 45」「袖丈 60.5」… 続けて話せます';
   voiceBar.innerHTML = `
     <button type="button" id="multi-voice-btn" class="multi-voice-btn">🎤 まとめて音声入力</button>
@@ -1556,8 +1678,8 @@ function updateGenerateButton() {
 }
 
 // ----- AIコール -----
-const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
-アップロードされた古着の写真を分析し、以下の情報をJSON形式で返してください。
+const SYSTEM_PROMPT = `あなたはメルカリ出品のプロです。
+アップロードされた商品の写真を分析し、以下の情報をJSON形式で返してください。
 
 抽出する情報:
 1. brand — ブランド名のカタカナ表記（タグから読み取る。読み取れなければ "---"）
@@ -1570,8 +1692,8 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 1a. brand_en — ブランド名の英語（アルファベット）表記（タグに記載の原文をそのまま出力。読み取れなければ "---"）
    - 例: BURBERRY / Paul Smith / POLO RALPH LAUREN / UNIQLO / BEAMS
    - 日本語ブランドでアルファベット表記がない場合は "---"
-2. item — アイテム名（テーラードジャケット、トレンチコート、チノパンなど）
-3. tag_size — タグ表記のサイズ（S/M/L/XL/46/48等。読み取れなければ "---"）
+2. item — 商品名・アイテム名（テーラードジャケット、トレンチコート、電動工具、生活用品など）
+3. tag_size — 衣類や靴の場合はタグ表記のサイズ（S/M/L/XL/46/48等）。サイズ表記がない商品は "---"
 4. color — カラー。カタカナ＋漢字のペアで（例: "ネイビー 紺色"）
    - 暗い色は特に慎重に判断すること:
      * 黒に見えても、わずかに青みがあれば「ネイビー 紺色」
@@ -1583,15 +1705,15 @@ const SYSTEM_PROMPT = `あなたはメルカリ古着出品のプロです。
 5. material — 素材（タグから読み取る。表地/裏地がある場合は分ける。読み取れなければ "---"）
 6. condition — 状態。ダメージがなければ "目立った傷や汚れのない美品です。詳細は写真をご確認ください"。ダメージがあれば具体的に記載
 7. appeal — 商品の特徴・訴求ポイント2〜3文。以下を自然に含める:
-   - デザインや素材の特徴
-   - 季節感は、現在の販売時期に合う言葉だけを使う
-   - 使えるシーン（ビジネス、カジュアル、セレモニーなど）
-   - 商品の事実（素材・シルエット・カラー・シーン）を軸にしながら、「手に取った瞬間から違いがわかる」「着るだけで雰囲気が変わる」「なかなか出回らない」など感情に訴える一言を自然に散りばめる
+   - デザイン、素材、機能、用途など商品の特徴
+   - 季節感は衣類の場合のみ、現在の販売時期に合う言葉を使う
+   - 衣類は着用場面、アパレル以外は用途や使い方
+   - 商品の事実を軸にしながら、商品種別に合う範囲で感情に訴える一言を自然に散りばめる
    - ウール・カシミヤ・リネン・シルク・コーデュロイ・綿100％などアピールできる素材であれば、その質感や着心地にも触れる。素材の訴求力はアイテムや文脈で判断すること（例：綿100％はトレンチコートでは高品質の証として積極的に触れる）。ポリエステルが主体など訴求力の低い素材は触れなくてよい
    - ただし「ぜひ」「いかがでしょうか」「手放せない」「激レア」「一着」のような過剰なセールストーク・定型文は使わない
    - 「なかなか出回らない」は商品・モデルの希少性に使う場合のみ。雰囲気・質感など抽象的なものにかけない
    - ブランド名・アイテム名は含めない（直後の【商品名】欄に記載されるため）
-   - トレンチコートにライナー（取り外し可能な裏地）が付いている場合は必ず触れる（着回しの幅が広がる重要な訴求ポイントのため）
+   - 衣類がトレンチコートで、ライナー（取り外し可能な裏地）が付いている場合は必ず触れる（着回しの幅が広がる重要な訴求ポイントのため）
 8. mercari_condition — 商品の状態（メルカリUI用）。以下の6択から1つ選ぶ: "新品、未使用" / "未使用に近い" / "目立った傷や汚れなし" / "やや傷や汚れあり" / "傷や汚れあり" / "全体的に状態が悪い"
 9. mercari_category_key — メルカリ詳細カテゴリ。写真・タグ・商品種別から最も近いキーを1つだけ選ぶ。性別やアイテムが判断できない場合は "unknown" を選ぶ。
    候補:
@@ -1619,22 +1741,43 @@ function buildPastListingStylePrompt(stylePrompt) {
 }
 
 function buildDescriptionSystemPrompt(stylePrompt = '') {
-  const genderLabel = getSelectedProductGenderLabel();
+  const productGender = getSelectedProductGender();
+  const audiencePrompt = buildProductAudiencePrompt_(productGender);
+  const nonApparel = isNonApparelProductAudience(productGender);
   const seasonRule = getSeasonMarketingRule();
   return `${SYSTEM_PROMPT}
 
-今回の商品対象:
-- 対象は「${genderLabel}」として扱う
-- mercari_category_key は、明らかに写真と矛盾しない限り「${genderLabel}」側のカテゴリから選ぶ
-- サイズ推定やタグサイズの解釈も「${genderLabel}」向けとして扱う
+${audiencePrompt}
 
 今回の季節ワードルール:
-- 現在日付: ${formatSeasonRuleDate()}。販売訴求では「${seasonRule.label}」に合う季節ワードだけを使う
+- 現在日付: ${formatSeasonRuleDate()}
+${nonApparel
+    ? '- アパレル以外では季節に合わせた着用訴求を加えず、写真で確認できる用途・仕様だけを書く'
+    : `- 販売訴求では「${seasonRule.label}」に合う季節ワードだけを使う
 - 使ってよい季節ワード例: ${seasonRule.allowedWords.join('、')}
 - 使わない季節外れワード: ${seasonRule.disallowedWords.join('、')}
-- appeal には季節外れワードを入れない
+- appeal には季節外れワードを入れない`}
 - title_keywords には、販売時期に合うかどうかに関係なく季節ワードを一切入れない
 - title_keywords には、カジュアル、ビジネス、フォーマル、セレモニーなどの着用場面・雰囲気語も一切入れない${buildPastListingStylePrompt(stylePrompt)}`;
+}
+
+function buildProductAudiencePrompt_(productGender = getSelectedProductGender()) {
+  const normalized = normalizeProductGender(productGender);
+  if (isNonApparelProductAudience(normalized)) {
+    return `今回の商品対象:
+- 対象は「その他（アパレル以外）」として扱う
+- 工具・家電・生活用品など、写真に写る実物を優先し、衣類と決めつけない
+- item には商品の種類を、material には写真で確認できる素材・型番・品番・電源仕様などを簡潔に含める
+- tag_size は "---" とし、衣類用のサイズ推定を行わない
+- 現在の自動カテゴリ候補はアパレル用のため、mercari_category_key は必ず "unknown" にする
+- appeal は着用場面ではなく、用途・機能・付属品・確認できる仕様を中心に書く`;
+  }
+
+  const genderLabel = PRODUCT_GENDER_LABELS[normalized] || PRODUCT_GENDER_LABELS.men;
+  return `今回の商品対象:
+- 対象は「${genderLabel}」として扱う
+- mercari_category_key は、明らかに写真と矛盾しない限り「${genderLabel}」側のカテゴリから選ぶ
+- サイズ推定やタグサイズの解釈も「${genderLabel}」向けとして扱う`;
 }
 
 /**
@@ -2401,13 +2544,38 @@ function buildDescriptionProductName(aiData, mercariTitle = '') {
   return parts.length ? parts.join(' ') : '---';
 }
 
-function buildDescription(aiData, measurementText, mercariTitle = '') {
+function buildDescription(
+  aiData,
+  measurementText,
+  mercariTitle = '',
+  productGender = getSelectedProductGender(),
+) {
   const productName = buildDescriptionProductName(aiData, mercariTitle);
   const tagSize = aiData.tag_size || '---';
   const color = aiData.color || '---';
   const material = aiData.material || '---';
   const condition = aiData.condition || '---';
   const appeal = aiData.appeal || '';
+  const nonApparel = isNonApparelProductAudience(productGender);
+  const sizeBlock = nonApparel
+    ? `【寸法】
+${measurementText || '---'}`
+    : `【サイズ】${tagSize}（平置き採寸）
+${measurementText}
+※多少の誤差はご了承ください。`;
+  const materialLabel = nonApparel ? '素材・仕様' : '素材';
+  const closingBlock = nonApparel
+    ? `✅即購入OKです！
+✅丁寧に梱包して発送いたします。
+※状態・付属品・仕様は、写真と説明文をご確認ください。`
+    : `✅即購入OKです！
+✅丁寧に梱包して発送いたします。
+※あくまで自宅保管の中古品ですので、ご理解のある方のご購入をお願いいたします。
+
+【購入元】
+大手リユースストア
+日本流通自主管理協会加盟店（AACD）
+    質屋・古物市場`;
 
   return `〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜
 ✨フォロー割あり✨
@@ -2425,24 +2593,15 @@ ${appeal}
 
 【商品名】${productName}
 
-【サイズ】${tagSize}（平置き採寸）
-${measurementText}
-※多少の誤差はご了承ください。
+${sizeBlock}
 
 【カラー】${color}
 
-【素材】${material}
+【${materialLabel}】${material}
 
 【状態】${condition}
 
-✅即購入OKです！
-✅丁寧に梱包して発送いたします。
-※あくまで自宅保管の中古品ですので、ご理解のある方のご購入をお願いいたします。
-
-【購入元】
-大手リユースストア
-日本流通自主管理協会加盟店（AACD）
-    質屋・古物市場`;
+${closingBlock}`;
 }
 
 function syncDescriptionProductNameFromTitle_() {
@@ -3372,7 +3531,11 @@ function temporaryDraftDisplayName_(record = {}) {
   const snapshot = record.snapshot || {};
   const title = normalizeMercariTitle(snapshot.title || snapshot.lastAiData?.title || '');
   if (title) return title;
-  const gender = PRODUCT_GENDER_LABELS[normalizeProductGender(snapshot.productGender)] || '';
+  const normalizedGender = normalizeProductGender(snapshot.productGender);
+  if (isNonApparelProductAudience(normalizedGender) && snapshot.category === 'other') {
+    return 'その他（アパレル以外）';
+  }
+  const gender = PRODUCT_GENDER_LABELS[normalizedGender] || '';
   const category = CATEGORY_JP[snapshot.category] || 'カテゴリ未選択';
   return `${gender} ${category}`.trim();
 }
@@ -3718,6 +3881,18 @@ function collectState() {
   };
 }
 
+function resolveRestoredProductGender_(state = {}) {
+  const storedValues = [
+    state.productGender,
+    state.lastAiData?.product_gender,
+  ];
+  const direct = storedValues.find(value => ['men', 'women', 'other'].includes(value));
+  if (direct) return direct;
+  const categoryGender = getMercariCategoryGender(state.mercariCategoryKey);
+  if (categoryGender) return categoryGender;
+  return normalizeProductGender(localStorage.getItem(PRODUCT_GENDER_STORAGE_KEY));
+}
+
 let _saveTimer = null;
 let _sessionWriteChain = Promise.resolve();
 async function saveCurrentSessionNow_() {
@@ -3747,13 +3922,17 @@ function scheduleSave() {
 function restoreState(s) {
   if (!s) return;
   activeTemporaryDraftId = s.temporaryDraftId || null;
-  setSelectedProductGender(s.productGender || localStorage.getItem(PRODUCT_GENDER_STORAGE_KEY));
+  const restoredProductGender = resolveRestoredProductGender_(s);
+  setSelectedProductGender(restoredProductGender);
   if (Array.isArray(s.photos) && s.photos.length) {
     uploadedImages = s.photos.map(hydrateTemporaryDraftPhoto_);
     renderPreviews();
   }
-  if (s.category) {
-    el('category').value = s.category;
+  const restoredCategory = isNonApparelProductAudience(restoredProductGender)
+    ? 'other'
+    : s.category;
+  if (restoredCategory) {
+    el('category').value = restoredCategory;
     renderMeasurements();
     if (s.raglanChecked && el('raglan-toggle')) {
       el('raglan-toggle').checked = true;
@@ -3778,8 +3957,10 @@ function restoreState(s) {
       ...(s.lastAiData || {}),
       title: normalizeMercariTitle(s.title || s.lastAiData?.title || ''),
       description: s.result || s.lastAiData?.description || '',
-      category: s.lastAiData?.category || s.category || '',
-      product_gender: s.lastAiData?.product_gender || s.productGender || getSelectedProductGender(),
+      category: isNonApparelProductAudience(restoredProductGender)
+        ? 'other'
+        : (s.lastAiData?.category || s.category || ''),
+      product_gender: restoredProductGender,
       measurements: s.lastAiData?.measurements || s.measurements || {},
       images: uploadedImages,
     };
@@ -3789,11 +3970,22 @@ function restoreState(s) {
   if (s.mercariSettingsVisible) {
     el('mercari-settings').hidden = false;
     if (s.mercariCondition) el('m-condition').value = s.mercariCondition;
-    if (s.mercariCategoryKey) setSelectedMercariCategoryKey(s.mercariCategoryKey);
+    setSelectedMercariCategoryKey(
+      isNonApparelProductAudience(restoredProductGender)
+        ? 'unknown'
+        : (s.mercariCategoryKey || 'unknown')
+    );
     if (s.mercariBrand) el('m-brand').value = s.mercariBrand;
-    if (s.mercariSize) el('m-size').value = s.mercariSize;
-    el('m-size').dataset.userEdited = s.mercariSizeUserEdited ? '1' : '';
-    updateMercariSizeNote({ note: s.mercariSize ? `保存済み: ${s.mercariSize}` : 'サイズなし、または手動で選んでください' });
+    const restoredMercariSize = isNonApparelProductAudience(restoredProductGender)
+      ? ''
+      : (s.mercariSize || '');
+    el('m-size').value = restoredMercariSize;
+    el('m-size').dataset.userEdited = restoredMercariSize && s.mercariSizeUserEdited ? '1' : '';
+    updateMercariSizeNote({
+      note: isNonApparelProductAudience(restoredProductGender)
+        ? 'アパレル以外のためサイズ選択は不要です'
+        : (restoredMercariSize ? `保存済み: ${restoredMercariSize}` : 'サイズなし、または手動で選んでください'),
+    });
   }
   updateGenerateButton();
   updatePhotoSummary();
@@ -5448,7 +5640,7 @@ async function clearCurrentProduct_({ clearSession = true, scroll = false } = {}
   activeTemporaryDraftId = null;
   renderPreviews();
   const photoInput = el('photo-input'); if (photoInput) photoInput.value = '';
-  el('category').value = '';
+  el('category').value = isNonApparelProductAudience() ? 'other' : '';
   renderMeasurements();
   el('title-text').value = '';
   el('result-text').value = '';
@@ -6094,11 +6286,16 @@ function scoreLength(v)   { return scoreByCenters(v, SIZE_PROFILES.tops.fields.l
 function scoreWaist(v)    { return scoreByCenters(v, SIZE_PROFILES.bottoms.fields.waist.centers); }
 function scoreInseam(v)   { return scoreByCenters(v, SIZE_PROFILES.bottoms.fields.inseam.centers); }
 
-function getSizeProfileKey(categoryKey = getSelectedMercariCategoryKey(), broadCat = el('category')?.value) {
+function getSizeProfileKey(
+  categoryKey = getSelectedMercariCategoryKey(),
+  broadCat = el('category')?.value,
+  productGender = getSelectedProductGender(),
+) {
   if (!broadCat) return '';
+  if (isNonApparelProductAudience(productGender)) return '';
   const option = getMercariCategoryOption(categoryKey);
   const pathText = [...(option.path || []), option.label || ''].join(' ');
-  const isWomen = getSelectedProductGender() === 'women';
+  const isWomen = normalizeProductGender(productGender) === 'women';
   if (broadCat === 'suit') return isWomen ? 'womenSuit' : 'suit';
   if (broadCat === 'bottoms') return isWomen ? 'womenBottoms' : 'bottoms';
   if (broadCat !== 'tops') return '';
@@ -6261,6 +6458,10 @@ function normalizeTagSize(raw) {
 function renderFinalSize(aiData) {
   const badge = el('final-size-badge');
   if (!badge) return;
+  if (isNonApparelProductAudience()) {
+    badge.hidden = true;
+    return;
+  }
   const measurement = computeMeasurementSize();
   const tagRaw = aiData?.tag_size || '';
   const tagNorm = normalizeTagSize(tagRaw);
@@ -7279,7 +7480,9 @@ function updateDraftChecklist() {
   const hasPrice = Number.isInteger(price) && price >= 300 && price <= 9999999;
   const hasCondition = !el('mercari-settings').hidden && !!el('m-condition').value;
   const categoryOption = getMercariCategoryOption(getSelectedMercariCategoryKey());
-  const hasMercariCategory = !el('mercari-settings').hidden && categoryOption.path.length > 0;
+  const manualCategoryAfterDraft = isManualMercariCategoryAllowed_(categoryOption.key);
+  const hasMercariCategory = !el('mercari-settings').hidden
+    && (categoryOption.path.length > 0 || manualCategoryAfterDraft);
   const mercariBrand = el('m-brand').value.trim();
   const mercariSize = getSelectedMercariSize();
   const sizeRequired = isMercariSizeRequiredForCategoryKey(getSelectedMercariCategoryKey());
@@ -7298,7 +7501,12 @@ function updateDraftChecklist() {
     { ok: hasDesc, label: hasDesc ? '説明文があります' : '先に説明文を生成してください' },
     { ok: hasPrice, label: hasPrice ? '価格が入力されています' : '販売価格は300〜9,999,999円で入力してください' },
     { ok: hasCondition, label: hasCondition ? '状態が選択されています' : '商品の状態を確認してください' },
-    { ok: hasMercariCategory, label: hasMercariCategory ? `カテゴリ: ${categoryOption.label}` : 'メルカリ詳細カテゴリを確認してください' },
+    {
+      ok: hasMercariCategory,
+      label: manualCategoryAfterDraft
+        ? 'カテゴリ: 下書き後にメルカリで手動選択'
+        : (hasMercariCategory ? `カテゴリ: ${categoryOption.label}` : 'メルカリ詳細カテゴリを確認してください'),
+    },
     { ok: true, label: mercariBrand ? `ブランド: ${mercariBrand}` : 'ブランド: 空欄（見つからない場合はOK）' },
     { ok: hasRequiredSize, label: mercariSize ? `サイズ: ${mercariSize}` : (sizeRequired ? 'サイズを確認してください' : 'サイズ: 不要/手動') },
   ];
@@ -7575,6 +7783,17 @@ globalThis.MercariAppTestHooks = {
   isRetryableJobStatusError_,
   isRetryableDraftStartError_,
   formatDraftSaveError_,
+  normalizeProductGender,
+  isNonApparelProductAudience,
+  setSelectedProductGender,
+  invalidateGeneratedResultAfterInputChange_,
+  buildProductAudiencePrompt_,
+  coerceMercariCategoryForProductGender,
+  isManualMercariCategoryAllowed_,
+  sanitizeAiDataForSeason,
+  buildDescription,
+  getSizeProfileKey,
+  deriveMercariSize,
   buildDescriptionProductName,
   buildMercariTitle,
   cleanMercariTitleMarketingWords,
@@ -7588,6 +7807,7 @@ globalThis.MercariAppTestHooks = {
   hydrateTemporaryDraftPhoto_,
   compactTemporaryDraftState_,
   hydrateTemporaryDraftState_,
+  resolveRestoredProductGender_,
   temporaryDraftMeasurementCount_,
   inferTemporaryDraftStatus_,
   temporaryDraftSummaryFromRecord_,

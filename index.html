@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260726b">
+  <link rel="stylesheet" href="styles.css?v=20260726c">
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -25,7 +25,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260726b / 下書き送信の自動復旧</p>
+      <p class="settings-version" id="settings-version">v20260726c / アパレル以外に対応</p>
     </section>
 
     <!-- メイン画面 -->
@@ -110,7 +110,14 @@
               <input type="radio" name="product-gender" value="women">
               <span>レディース</span>
             </label>
+            <label>
+              <input type="radio" name="product-gender" value="other">
+              <span>その他</span>
+            </label>
           </div>
+          <p id="product-gender-note" class="product-gender-note note small" hidden>
+            工具などアパレル以外として生成します。メルカリ詳細カテゴリは下書き後に手動で選びます。
+          </p>
         </div>
         <label for="category">カテゴリ</label>
         <select id="category">
@@ -186,9 +193,11 @@
             <input type="text" id="m-brand" placeholder="例: BURBERRY">
             <p class="note small">メルカリで候補が見つからない場合は空欄で続けます</p>
 
-            <label for="m-size">サイズ</label>
-            <select id="m-size"></select>
-            <p id="m-size-note" class="mercari-size-note">未判定</p>
+            <div id="m-size-field">
+              <label for="m-size">サイズ</label>
+              <select id="m-size"></select>
+              <p id="m-size-note" class="mercari-size-note">未判定</p>
+            </div>
 
             <label for="price-input">販売価格</label>
             <div class="price-row">
@@ -540,8 +549,8 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260726b"></script>
-  <script src="app.js?v=20260726b"></script>
+  <script src="catalog-data.js?v=20260726c"></script>
+  <script src="app.js?v=20260726c"></script>
   <script>
     if (window.lucide) window.lucide.createIcons();
     if ('serviceWorker' in navigator) {

@@ -104,12 +104,12 @@ assert.match(indexHtml, />次へ：確認</);
 assert.match(indexHtml, />調査依頼を保存</);
 assert.match(indexHtml, />保存済みの依頼を見る</);
 assert.match(indexHtml, /id="research-saved-section"/);
-assert.match(indexHtml, /styles\.css\?v=20260726b/);
-assert.match(indexHtml, /app\.js\?v=20260726b/);
-assert.match(indexHtml, /v20260726b \/ 下書き送信の自動復旧/);
+assert.match(indexHtml, /styles\.css\?v=20260726c/);
+assert.match(indexHtml, /app\.js\?v=20260726c/);
+assert.match(indexHtml, /v20260726c \/ アパレル以外に対応/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260726b/);
+assert.match(serviceWorker, /mercari-description-v20260726c/);
 
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
 assert.match(pairHtml, /mercari_api_auth_token/);
