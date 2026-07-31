@@ -1,16 +1,16 @@
 const CACHE_PREFIX = 'mercari-description-';
-const CACHE_NAME = 'mercari-description-v20260731a';
+const CACHE_NAME = 'mercari-description-v20260731b';
 const ASSETS = [
   './',
   './index.html',
   './pair.html',
-  './styles.css',
-  './catalog-data.js',
-  './app.js',
+  './styles.css?v=20260731b',
+  './catalog-data.js?v=20260731b',
+  './app.js?v=20260731b',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './vendor/lucide/lucide.min.js',
+  './vendor/lucide/lucide.min.js?v=1.24.0',
   './vendor/lucide/LICENSE',
 ];
 
@@ -41,6 +41,11 @@ self.addEventListener('fetch', event => {
     fetch(request).then(response => {
       if (response.ok) caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
       return response;
-    }).catch(() => caches.match(event.request))
+    }).catch(async () => {
+      const cached = await caches.match(event.request, { ignoreSearch: true });
+      if (cached) return cached;
+      if (event.request.mode === 'navigate') return caches.match('./index.html');
+      throw new Error('offline asset unavailable');
+    })
   );
 });

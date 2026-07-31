@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f23d4a">
   <title>端末を接続</title>
-  <link rel="stylesheet" href="styles.css?v=20260731a">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css?v=20260731b">
 </head>
 <body>
   <main id="app">
@@ -22,12 +23,18 @@
       const open = document.getElementById('pair-open');
       const params = new URLSearchParams(location.hash.slice(1));
       const token = String(params.get('token') || '').trim();
-      if (token.length < 24) {
+      if (token.length < 24 || token.length > 512 || !/^[A-Za-z0-9._~-]+$/.test(token)) {
         status.textContent = '接続コードが見つかりません。新しいQRコードを読み取ってください。';
         status.className = 'status error';
         return;
       }
-      localStorage.setItem(key, token);
+      try {
+        localStorage.setItem(key, token);
+      } catch (_) {
+        status.textContent = '接続コードを保存できません。ブラウザの保存容量と設定を確認してください。';
+        status.className = 'status error';
+        return;
+      }
       history.replaceState(null, '', location.pathname);
       status.textContent = 'この端末を安全に接続しました。';
       status.className = 'status success';

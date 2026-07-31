@@ -29,6 +29,14 @@ const MAX_DRAFT_PHOTOS = 20;         // メルカリ下書き保存に送れる�
 const MAX_AI_PHOTOS = 12;            // AI分析に送る写真枚数。通信安定のため下書き枚数より少なくする
 const MAX_AI_PAYLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_MERCARI_TITLE_LENGTH = 40; // メルカリの商品名上限
+const AI_REQUIRED_STRING_FIELDS = [
+  'brand', 'brand_en', 'item', 'tag_size', 'color', 'material',
+  'condition', 'appeal', 'mercari_category_key', 'mercari_condition',
+];
+const MERCARI_CONDITION_VALUES = new Set([
+  '新品、未使用', '未使用に近い', '目立った傷や汚れなし',
+  'やや傷や汚れあり', '傷や汚れあり', '全体的に状態が悪い',
+]);
 const MERCARI_TITLE_EXCLUDED_MARKETING_PATTERNS = [
   /(?:オールシーズン|通年|春夏|秋冬|春物|夏物|秋物|冬物|春先|初夏|盛夏|秋口|冬場|真冬|3シーズン|３シーズン|三シーズン)(?:向け|用|物|シーズン|対応)?/gi,
   /(?:^|[\s・、,／/｜|])(?:春|夏|秋|冬)(?:向け|用|物|シーズン)?(?=$|[\s・、,／/｜|])/g,
@@ -208,6 +216,8 @@ let descriptionGenerationInProgress = false;
 let photoProcessingInProgress = false;
 let photoProcessingOperationId = 0;
 let macServiceDiscoveryPromise = null;
+let pendingResearchRequest = null;
+let gridComposeRenderOperationId = 0;
 
 // ----- 画面制御 -----
 const el = (id) => document.getElementById(id);
@@ -264,6 +274,36 @@ function syncBroadCategoryForProductGenderChange_(productGender) {
   categorySelect.value = nextCategory;
   renderMeasurements();
   return true;
+}
+
+function generationSourceFingerprint_() {
+  const measurements = {};
+  document.querySelectorAll('#measurement-fields input[type="number"]').forEach(input => {
+    measurements[input.id] = String(input.value || '');
+  });
+  const photos = uploadedImages.map(photo => {
+    const base64 = String(photo.base64 || photo.base64HQ || '');
+    return {
+      mediaType: String(photo.mediaType || ''),
+      length: base64.length,
+      head: base64.slice(0, 64),
+      tail: base64.slice(-64),
+      adjust: photo.adjust || null,
+    };
+  });
+  return draftPayloadFingerprint_({
+    photos,
+    category: el('category')?.value || '',
+    productGender: getSelectedProductGender(),
+    raglanChecked: !!el('raglan-toggle')?.checked,
+    measurements,
+  });
+}
+
+function isGeneratedResultCurrent_() {
+  if (!lastAiData) return false;
+  const expected = String(lastAiData.generation_input_fingerprint || '');
+  return !!expected && expected === generationSourceFingerprint_();
 }
 
 function invalidateGeneratedResultAfterInputChange_(changedFieldLabel) {
@@ -842,7 +882,7 @@ function updateTemporarySaveButton_() {
 
 function setDescriptionGenerationLock_(locked) {
   const controls = document.querySelectorAll(
-    '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #reset-btn, #settings-btn'
+    '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #reset-btn, #settings-btn'
   );
   controls.forEach(control => {
     if (locked) {
@@ -866,7 +906,8 @@ function setDescriptionGenerationLock_(locked) {
 
 function setPhotoProcessingLock_(locked) {
   const controls = document.querySelectorAll(
-    '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #reset-btn, #settings-btn'
+    '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, '
+      + '#compose-modal button, #compose-modal input, #compose-modal select, #reset-btn, #settings-btn'
   );
   controls.forEach(control => {
     if (locked) {
@@ -1182,6 +1223,7 @@ async function handlePhotoSelect(e) {
     return;
   }
   uploadedImages.push(...processedImages);
+  if (processedImages.length) invalidateGeneratedResultAfterInputChange_('写真');
   renderPreviews();
   updateGenerateButton();
   hideStatus('status');
@@ -1250,7 +1292,7 @@ function renderPreviews() {
     item.dataset.idx = idx;
     item.innerHTML = `
       <img src="${img.dataUrl}" alt="">
-      <button class="remove" data-idx="${idx}" title="削除">×</button>
+      <button class="remove" type="button" data-idx="${idx}" title="削除" aria-label="${idx + 1}枚目の写真を削除">×</button>
       <span class="preview-num">${idx + 1}</span>
     `;
     grid.appendChild(item);
@@ -1260,6 +1302,7 @@ function renderPreviews() {
     b.addEventListener('click', () => {
       if (descriptionGenerationInProgress || photoProcessingInProgress) return;
       uploadedImages.splice(Number(b.dataset.idx), 1);
+      invalidateGeneratedResultAfterInputChange_('写真');
       renderPreviews();
       updateGenerateButton();
       scheduleSave();
@@ -1278,6 +1321,7 @@ function removeUploadedImagesByIndices(indices) {
     .sort((a, b) => b - a);
   if (!targets.length) return false;
   targets.forEach(idx => uploadedImages.splice(idx, 1));
+  invalidateGeneratedResultAfterInputChange_('写真');
   renderPreviews();
   updateGenerateButton();
   scheduleSave();
@@ -1360,6 +1404,7 @@ function setupDragSort(grid) {
     }
     const moved = uploadedImages.splice(fromIdx, 1)[0];
     uploadedImages.splice(Math.max(0, Math.min(toIdx, uploadedImages.length)), 0, moved);
+    invalidateGeneratedResultAfterInputChange_('写真の順番');
     renderPreviews();
     scheduleSave();
     return true;
@@ -1642,6 +1687,7 @@ function renderMeasurements() {
     `;
     container.appendChild(raglanDiv);
     el('raglan-toggle').addEventListener('change', (e) => {
+      invalidateGeneratedResultAfterInputChange_('採寸');
       el('raglan-field').hidden = !e.target.checked;
       scheduleSave();
     });
@@ -1650,6 +1696,7 @@ function renderMeasurements() {
   // 採寸値入力イベント（サイズ推定＋保存）
   container.querySelectorAll('input[type="number"]').forEach(inp => {
     inp.addEventListener('input', () => {
+      invalidateGeneratedResultAfterInputChange_('採寸');
       updateSizeSuggestion();
       scheduleSave();
     });
@@ -1971,6 +2018,28 @@ function parseAiJson(rawText) {
   throw new Error('not a parseable JSON');
 }
 
+function validateAiResponseData_(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('AI応答がJSONオブジェクトではありません');
+  }
+  const missing = AI_REQUIRED_STRING_FIELDS.filter(field =>
+    typeof data[field] !== 'string' || !data[field].trim()
+  );
+  if (!Array.isArray(data.title_keywords) || !data.title_keywords.length) {
+    missing.push('title_keywords');
+  }
+  if (missing.length) {
+    throw new Error(`AI応答の必須項目が不足しています: ${[...new Set(missing)].join(', ')}`);
+  }
+  if (!MERCARI_CONDITION_VALUES.has(data.mercari_condition)) {
+    throw new Error('AI応答の商品状態が選択肢と一致しません');
+  }
+  if (!MERCARI_CATEGORY_OPTION_MAP[data.mercari_category_key]) {
+    throw new Error('AI応答のカテゴリが正しくありません');
+  }
+  return data;
+}
+
 function fetchWithTimeout(url, opts = {}, ms = 15000) {
   const ctrl = new AbortController();
   let timedOut = false;
@@ -2287,18 +2356,41 @@ async function readJsonResponse(response, label) {
 }
 
 function normalizeGasUrl(url) {
-  return String(url || '').trim().replace(/\/+$/, '');
+  const value = String(url || '').trim();
+  if (!value) return '';
+  try {
+    const parsed = new URL(value);
+    if (
+      parsed.protocol !== 'https:'
+      || parsed.hostname !== 'script.google.com'
+      || parsed.username
+      || parsed.password
+      || parsed.search
+      || parsed.hash
+      || !/^\/macros\/s\/[^/]+\/exec\/?$/.test(parsed.pathname)
+    ) return '';
+    return `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`;
+  } catch (_) {
+    return '';
+  }
 }
 
 function normalizeMacServiceUrl_(url) {
-  const normalized = normalizeGasUrl(url);
+  const normalized = String(url || '').trim().replace(/\/+$/, '');
   if (!normalized) return '';
   try {
     const parsed = new URL(normalized);
     const localHttp = parsed.protocol === 'http:'
       && ['localhost', '127.0.0.1'].includes(parsed.hostname);
-    if (parsed.protocol !== 'https:' && !localHttp) return '';
-    return normalized;
+    if (
+      (parsed.protocol !== 'https:' && !localHttp)
+      || parsed.username
+      || parsed.password
+      || parsed.search
+      || parsed.hash
+      || !/^\/?$/.test(parsed.pathname)
+    ) return '';
+    return parsed.origin;
   } catch (_) {
     return '';
   }
@@ -2488,6 +2580,13 @@ async function getMercariServiceUrl(statusCallback) {
       macServiceDiscoveryPromise = null;
     }
   }
+}
+
+function createMacServiceUrlRefresher_(statusCallback) {
+  return async () => {
+    clearCachedMacServiceUrl_();
+    return getMercariServiceUrl(statusCallback);
+  };
 }
 
 function inventoryCandidateLabel_(candidate = {}) {
@@ -2810,6 +2909,9 @@ async function refreshListingStyleFromMac() {
     const tunnelUrl = await getMercariServiceUrl((message) => {
       if (status) status.textContent = message;
     });
+    const refreshMacServiceUrl = createMacServiceUrlRefresher_(message => {
+      if (status) status.textContent = message;
+    });
     if (status) status.textContent = 'メルカリの過去出品を全件読み込み中...';
     const resp = await fetchWithTimeout(
       `${tunnelUrl}/listing-style/refresh`,
@@ -2832,6 +2934,7 @@ async function refreshListingStyleFromMac() {
         if (status) status.textContent = statusData.message || '処理中...';
       },
       signal: waitControl.signal,
+      refreshUrl: refreshMacServiceUrl,
     });
     const style = job.style || {};
     saveListingStyleSummary(style);
@@ -3316,6 +3419,7 @@ async function generateDescription() {
   }
 
   const generationUiState = captureGenerationUiState_();
+  const generationInputFingerprint = generationSourceFingerprint_();
   el('generate-btn').disabled = true;
   lastAiData = null;
 
@@ -3340,21 +3444,10 @@ async function generateDescription() {
 
     let aiData;
     try {
-      aiData = sanitizeAiDataForSeason(parseAiJson(rawText));
+      aiData = sanitizeAiDataForSeason(validateAiResponseData_(parseAiJson(rawText)));
     } catch (e) {
       console.error('AI応答パース失敗:', e, 'rawText:', rawText);
-      showStatus('status', '⚠️ AIの応答がJSON形式でなかったため、そのまま表示しました。ブラウザのコンソールで詳細を確認できます。', 'error');
-      if (temporaryDraftId) {
-        await finalizeTemporaryDraftGeneration_(
-          temporaryDraftId,
-          temporaryDraftGenerationToken,
-          { status: 'failed', errorMessage: 'AIの応答を読み取れませんでした' },
-        ).then(() => refreshTemporaryDrafts_()).catch(error => {
-          console.warn('一時保存の失敗状態を更新できませんでした:', error);
-        });
-      }
-      el('generate-btn').disabled = false;
-      return;
+      throw new Error('AIの応答が空か不完全だったため、生成結果として保存しませんでした。もう一度生成してください。');
     }
     const measurementText = formatMeasurements(measurements);
     const title = buildMercariTitle(aiData);
@@ -3377,6 +3470,7 @@ async function generateDescription() {
       description: description,
       category: measurements.category,
       product_gender: getSelectedProductGender(),
+      generation_input_fingerprint: generationInputFingerprint,
       mercari_category_key: mercariCategoryKey,
       brand: aiData.brand || '',
       brand_en: aiData.brand_en || '',
@@ -3387,6 +3481,9 @@ async function generateDescription() {
       measurements: measurements,
       images: uploadedImages,
     };
+    if (!lastAiData.generation_input_fingerprint) {
+      lastAiData.generation_input_fingerprint = generationSourceFingerprint_();
+    }
     renderResultMetadata_(lastAiData);
     renderFinalSize(aiData);
     // メルカリ設定をAIデータで自動入力
@@ -3505,6 +3602,26 @@ async function saveSession(state) {
       reject(tx.error || new Error('入力内容の自動保存が中断されました'));
     };
   });
+}
+
+function formatCurrentSessionSaveError_(error) {
+  const quota = error?.name === 'QuotaExceededError'
+    || /quota|容量|storage full/i.test(String(error?.message || ''));
+  return quota
+    ? '端末の保存容量が不足し、現在の入力を自動保存できませんでした。入力はこの画面に残っています。不要な一時保存を削除してください。'
+    : `現在の入力を自動保存できませんでした。入力はこの画面に残っています。${error?.message || ''}`.trim();
+}
+
+async function saveSessionWithFeedback_(state) {
+  try {
+    await saveSession(state);
+    const status = el('session-save-status');
+    if (status && !status.hidden) status.hidden = true;
+  } catch (error) {
+    console.warn('現在の入力の保存失敗:', error);
+    showStatus('session-save-status', formatCurrentSessionSaveError_(error), 'error');
+    throw error;
+  }
 }
 
 async function loadSession() {
@@ -4320,7 +4437,7 @@ async function saveCurrentSessionNow_() {
   const state = collectState();
   _sessionWriteChain = _sessionWriteChain
     .catch(() => {})
-    .then(() => saveSession(state));
+    .then(() => saveSessionWithFeedback_(state));
   await _sessionWriteChain;
 }
 
@@ -4331,8 +4448,8 @@ function scheduleSave() {
     const state = collectState();
     _sessionWriteChain = _sessionWriteChain
       .catch(() => {})
-      .then(() => saveSession(state));
-    _sessionWriteChain.catch(e => console.warn('保存失敗:', e));
+      .then(() => saveSessionWithFeedback_(state));
+    _sessionWriteChain.catch(() => {});
   }, 400);
 }
 
@@ -4729,14 +4846,23 @@ async function saveResearchRequest() {
     setResearchWizardStep(2);
     return;
   }
-  const request = collectResearchForm();
-  const list = readJsonList(RESEARCH_REQUESTS_KEY);
-  list.unshift(request);
-  writeJsonList(RESEARCH_REQUESTS_KEY, list.slice(0, 50));
-  clearResearchForm(false);
-  setResearchWizardStep(1, { scroll: false });
-  renderResearchData();
-  await syncResearchRequestToMac(request);
+  const collected = collectResearchForm();
+  const request = pendingResearchRequest
+    ? { ...collected, id: pendingResearchRequest.id, createdAt: pendingResearchRequest.createdAt }
+    : collected;
+  const button = el('research-save-btn');
+  if (button) button.disabled = true;
+  upsertLocalResearchRequest({ ...request, status: '送信待ち', syncPending: true });
+  const synced = await syncResearchRequestToMac(request);
+  if (synced) {
+    pendingResearchRequest = null;
+    clearResearchForm(false);
+    setResearchWizardStep(1, { scroll: false });
+  } else {
+    pendingResearchRequest = request;
+    setResearchWizardStep(3, { scroll: false });
+  }
+  if (button) button.disabled = false;
 }
 
 function clearResearchForm(keepBrand) {
@@ -4832,22 +4958,44 @@ function upsertLocalResearchRequest(request) {
   renderResearchRequests();
 }
 
+function buildResearchMacPayload_(request = {}) {
+  const payload = {};
+  [
+    'id', 'createdAt', 'title', 'brand', 'keyword', 'keywordInput',
+    'category', 'categoryLabel', 'genre', 'size', 'condition', 'gender',
+    'saleStatus', 'minPrice', 'maxPrice', 'sampleSize', 'sort',
+    'periodMonths', 'excludes', 'note',
+  ].forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(request, key)) payload[key] = request[key];
+  });
+  // Mac側 research_store.pending_requests() の正式な待機状態に揃える。
+  // syncPending と「送信待ち」はPWAの表示・再送管理専用のためMacへは送らない。
+  payload.status = '待機中';
+  return payload;
+}
+
 async function syncResearchRequestToMac(request) {
   setResearchStatus('Macへ調査依頼を送信中...');
   try {
     const tunnelUrl = await getMercariServiceUrl((message) => setResearchStatus(message));
+    const macPayload = buildResearchMacPayload_(request);
     const resp = await fetchWithTimeout(`${tunnelUrl}/research/requests`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
+      body: JSON.stringify(macPayload),
     }, 20000);
     const data = await resp.json();
     if (!data.ok) throw new Error(data.error || '送信に失敗しました');
-    if (data.request) upsertLocalResearchRequest(data.request);
+    const saved = { ...(data.request || macPayload), syncPending: false };
+    if (!saved.status || saved.status === '送信待ち') saved.status = '待機中';
+    upsertLocalResearchRequest(saved);
     setResearchStatus('Macへ保存しました。夜間に自動リサーチされます。', 'success');
+    return true;
   } catch (e) {
     console.warn(e);
-    setResearchStatus(`アプリ内には保存しました。Mac同期は未完了: ${e.message}`, 'warn');
+    upsertLocalResearchRequest({ ...request, status: '送信待ち', syncPending: true });
+    setResearchStatus(`Macへ送れませんでした。入力内容は残しています。「調査依頼を保存」または一覧の「再送」でやり直せます: ${e.message}`, 'warn');
+    return false;
   }
 }
 
@@ -4891,6 +5039,7 @@ async function runResearchNow() {
   setResearchStatus('Macで相場リサーチを開始しています...');
   try {
     const tunnelUrl = await getMercariServiceUrl((message) => setResearchStatus(message));
+    const refreshMacServiceUrl = createMacServiceUrlRefresher_(message => setResearchStatus(message));
     const resp = await fetchWithTimeout(`${tunnelUrl}/research/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4905,6 +5054,7 @@ async function runResearchNow() {
       timeoutMs: 20 * 60 * 1000,
       onStatus: statusData => setResearchStatus(statusData.message || '処理中...'),
       signal: waitControl.signal,
+      refreshUrl: refreshMacServiceUrl,
     });
     await refreshResearchResultsFromMac({ silent: true });
     setResearchStatus('相場リサーチが完了しました。結果メモを更新しました。', 'success');
@@ -4937,6 +5087,17 @@ async function handleResearchRequestAction(event) {
     return;
   }
 
+  if (action === 'retry-sync') {
+    button.disabled = true;
+    try {
+      const synced = await syncResearchRequestToMac(item);
+      if (synced && pendingResearchRequest?.id === item.id) pendingResearchRequest = null;
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
   if (action === 'toggle') {
     item.status = item.status === '調査済み' ? '未調査' : '調査済み';
     writeJsonList(RESEARCH_REQUESTS_KEY, list);
@@ -4946,6 +5107,7 @@ async function handleResearchRequestAction(event) {
 
   if (action === 'delete') {
     if (!confirm('この調査依頼を削除しますか？')) return;
+    if (pendingResearchRequest?.id === id) pendingResearchRequest = null;
     writeJsonList(RESEARCH_REQUESTS_KEY, list.filter((request) => request.id !== id));
     renderResearchRequests();
   }
@@ -4998,7 +5160,7 @@ function renderResearchRequests() {
     <article class="research-card research-request-card">
       <div class="research-card-header">
         <h3>${escapeHtml(r.title)}</h3>
-        <span class="research-status ${getResearchStatusClass(r.status)}">${escapeHtml(r.status || '未調査')}</span>
+        <span class="research-status ${getResearchStatusClass(r.status)}">${escapeHtml(r.syncPending ? '送信待ち' : (r.status || '未調査'))}</span>
       </div>
       <p class="research-card-primary">${escapeHtml(buildResearchCondition(r) || '条件未設定')}</p>
       ${renderResearchChipRow([
@@ -5018,6 +5180,7 @@ function renderResearchRequests() {
         <span>Mac保存後に自動調査</span>
       </div>
       <div class="research-mini-actions">
+        ${r.syncPending ? `<button type="button" data-research-action="retry-sync" data-research-id="${escapeHtml(r.id)}">Macへ再送</button>` : ''}
         <button type="button" data-research-action="copy" data-research-id="${escapeHtml(r.id)}">依頼文コピー</button>
         <button type="button" data-research-action="toggle" data-research-id="${escapeHtml(r.id)}">${r.status === '調査済み' ? '未調査へ戻す' : '調査済みにする'}</button>
         <button class="danger" type="button" data-research-action="delete" data-research-id="${escapeHtml(r.id)}">削除</button>
@@ -5052,6 +5215,21 @@ function renderResearchResults() {
   `).join('');
 }
 
+function safeResearchUrl_(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (
+      url.protocol !== 'https:'
+      || url.hostname !== 'jp.mercari.com'
+      || url.username
+      || url.password
+    ) return '';
+    return url.href;
+  } catch (_) {
+    return '';
+  }
+}
+
 function renderResearchResultBody(result) {
   const stats = result.stats && typeof result.stats === 'object' ? result.stats : {};
   const samples = Array.isArray(result.samples) ? result.samples : [];
@@ -5075,6 +5253,7 @@ function renderResearchResultBody(result) {
   const maxConditionCount = Math.max(1, ...conditionEntries.map(([, count]) => Number(count) || 0));
   const buyingNote = extractBuyingNote(result.text);
   const itemCount = Number(result.itemCount || stats.count || stats.sampleCount || 0);
+  const safeSearchUrl = safeResearchUrl_(result.searchUrl);
 
   return `
     ${brandStats.length ? renderResearchBrandRanking(brandStats) : ''}
@@ -5108,7 +5287,7 @@ function renderResearchResultBody(result) {
         <div class="research-section-title">高単価サンプル</div>
         <div class="research-sample-list">
           ${sortedSamples.map(sample => `
-            <a class="research-sample" href="${escapeHtml(sample.url || '#')}" target="_blank" rel="noopener">
+            <a class="research-sample" href="${escapeHtml(safeResearchUrl_(sample.url) || '#')}" target="_blank" rel="noopener">
               <span class="research-sample-price">${formatYen(sample.price)}</span>
               <span class="research-sample-main">
                 <span class="research-sample-title">${escapeHtml(sample.title || 'タイトル未取得')}</span>
@@ -5122,7 +5301,7 @@ function renderResearchResultBody(result) {
     <details class="research-raw-details">
       <summary>詳細テキストを見る</summary>
       <p class="research-result-text">${escapeHtml(result.text || '').replace(/\n/g, '<br>')}</p>
-      ${result.searchUrl ? `<a class="research-search-link" href="${escapeHtml(result.searchUrl)}" target="_blank" rel="noopener">検索結果を開く</a>` : ''}
+      ${safeSearchUrl ? `<a class="research-search-link" href="${escapeHtml(safeSearchUrl)}" target="_blank" rel="noopener">検索結果を開く</a>` : ''}
     </details>
   `;
 }
@@ -5158,7 +5337,7 @@ function renderResearchBrandSamples(samples) {
   return `
     <div class="research-brand-samples">
       ${rows.map(sample => `
-        <a href="${escapeHtml(sample.url || '#')}" target="_blank" rel="noopener">
+        <a href="${escapeHtml(safeResearchUrl_(sample.url) || '#')}" target="_blank" rel="noopener">
           <span>${formatYen(sample.price)}</span>
           <small>${escapeHtml(sample.title || 'タイトル未取得')}</small>
         </a>
@@ -5385,7 +5564,9 @@ function markdownLikeMetrics(row) {
 
 function formatMarkdownLikeDelta(value) {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
-  return `+${Math.max(0, Number(value))}`;
+  const number = Number(value);
+  if (number > 0) return `+${number}`;
+  return String(number);
 }
 
 function mergeMarkdownRows(listings, settings) {
@@ -5536,6 +5717,7 @@ async function syncMarkdownListingsNow() {
       throw new Error('自動保存に失敗した設定があります。「再保存」を押してから、もう一度お試しください。');
     }
     const tunnelUrl = await getMercariServiceUrl((message) => setMarkdownStatus(message));
+    const refreshMacServiceUrl = createMacServiceUrlRefresher_(message => setMarkdownStatus(message));
     const resp = await fetchWithTimeout(`${tunnelUrl}/markdown/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -5552,6 +5734,7 @@ async function syncMarkdownListingsNow() {
         setMarkdownStatus(current.message || 'メルカリから最新の商品一覧を取得しています...');
       },
       signal: waitControl.signal,
+      refreshUrl: refreshMacServiceUrl,
     });
     const summary = statusData.run?.summary || {};
     const synced = Number(summary.synced || 0);
@@ -5798,6 +5981,7 @@ async function runMarkdownNow({ dryRun }) {
     const saved = await saveMarkdownSettings({ silent: true });
     if (!saved) throw new Error('設定保存に失敗したため実行を止めました');
     const tunnelUrl = await getMercariServiceUrl((message) => setMarkdownStatus(message));
+    const refreshMacServiceUrl = createMacServiceUrlRefresher_(message => setMarkdownStatus(message));
     const resp = await fetchWithTimeout(`${tunnelUrl}/markdown/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -5813,6 +5997,7 @@ async function runMarkdownNow({ dryRun }) {
       setMarkdownStatus(statusData.message || '処理中...');
       },
       signal: waitControl.signal,
+      refreshUrl: refreshMacServiceUrl,
     }).then(async statusData => {
         const summary = statusData.run?.summary || {};
         const finalStatus = buildMarkdownRunStatus({ dryRun, summary, run: statusData.run });
@@ -7022,6 +7207,7 @@ function openImageCompose() {
 }
 
 function closeImageCompose() {
+  gridComposeRenderOperationId += 1;
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
@@ -7617,33 +7803,46 @@ function renderComposePreview(canvas) {
 }
 
 async function addComposedImageToApp(dataUrl, options = {}) {
+  if (photoProcessingInProgress) return false;
   if (uploadedImages.length >= MAX_SELECT_PHOTOS) {
     alert(`写真選択は最大${MAX_SELECT_PHOTOS}枚までです`); return false;
   }
-  const img = await loadImage(dataUrl);
-  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
-  const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  c.getContext('2d').drawImage(img, 0, 0, w, h);
-  const smallDataUrl = c.toDataURL('image/jpeg', 0.85);
+  let added = false;
+  photoProcessingInProgress = true;
+  setPhotoProcessingLock_(true);
+  try {
+    const img = await loadImage(dataUrl);
+    const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    const smallDataUrl = c.toDataURL('image/jpeg', 0.85);
 
-  const scaleHQ = Math.min(1, MAX_MERCARI_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
-  const wHQ = Math.round(img.naturalWidth * scaleHQ), hHQ = Math.round(img.naturalHeight * scaleHQ);
-  const cHQ = document.createElement('canvas'); cHQ.width = wHQ; cHQ.height = hHQ;
-  cHQ.getContext('2d').drawImage(img, 0, 0, wHQ, hHQ);
-  const base64HQ = cHQ.toDataURL('image/jpeg', 0.92).split(',')[1];
-  const thumbnailBase64 = createThumbnailBase64FromCanvas_(c);
+    const scaleHQ = Math.min(1, MAX_MERCARI_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+    const wHQ = Math.round(img.naturalWidth * scaleHQ), hHQ = Math.round(img.naturalHeight * scaleHQ);
+    const cHQ = document.createElement('canvas'); cHQ.width = wHQ; cHQ.height = hHQ;
+    cHQ.getContext('2d').drawImage(img, 0, 0, wHQ, hHQ);
+    const base64HQ = cHQ.toDataURL('image/jpeg', 0.92).split(',')[1];
+    const thumbnailBase64 = createThumbnailBase64FromCanvas_(c);
 
-  const composedImage = {
-    dataUrl: smallDataUrl, mediaType: 'image/jpeg',
-    base64: smallDataUrl.split(',')[1], base64HQ, thumbnailBase64,
-    originalDataUrl: smallDataUrl, adjust: { brightness: 0, temp: 0, contrast: 0 },
-  };
-  if (options.insertAt === 'front') {
-    uploadedImages.unshift(composedImage);
-  } else {
-    uploadedImages.push(composedImage);
+    const composedImage = {
+      dataUrl: smallDataUrl, mediaType: 'image/jpeg',
+      base64: smallDataUrl.split(',')[1], base64HQ, thumbnailBase64,
+      originalDataUrl: smallDataUrl, adjust: { brightness: 0, temp: 0, contrast: 0 },
+    };
+    if (options.insertAt === 'front') {
+      uploadedImages.unshift(composedImage);
+    } else {
+      uploadedImages.push(composedImage);
+    }
+    added = true;
+  } finally {
+    photoProcessingInProgress = false;
+    setPhotoProcessingLock_(false);
   }
+  if (!added) return false;
+  // ロック解除後にボタンを作り直し、新しい削除ボタンがdisabledのまま残るのを防ぐ。
+  invalidateGeneratedResultAfterInputChange_('写真');
   renderPreviews(); updateGenerateButton(); scheduleSave(); updateDraftChecklist();
   return true;
 }
@@ -7789,8 +7988,8 @@ function renderGridPreviewStep() {
   wrap.appendChild(canvas);
   body.appendChild(wrap);
 
-  // Canvas に合成描画
-  renderGridCanvas(canvas, mode, gridComposeState.selected).then(() => {});
+  const renderOperationId = ++gridComposeRenderOperationId;
+  label.textContent = '合成画像を作成中です。完了までお待ちください。';
 
   // 戻る
   const backBtn = document.createElement('button');
@@ -7802,6 +8001,7 @@ function renderGridPreviewStep() {
   const saveDevBtn2 = document.createElement('button');
   saveDevBtn2.className = 'btn';
   saveDevBtn2.textContent = '📥 保存のみ';
+  saveDevBtn2.disabled = true;
   saveDevBtn2.addEventListener('click', async () => {
     const blob = await (await fetch(canvas.toDataURL('image/jpeg', 0.90))).blob();
     await saveBlobToDevice(blob, `mercari-grid${mode}-${Date.now()}.jpg`);
@@ -7811,6 +8011,7 @@ function renderGridPreviewStep() {
   const applyBtn = document.createElement('button');
   applyBtn.className = 'btn primary';
   applyBtn.textContent = '➕ アプリに追加';
+  applyBtn.disabled = true;
   applyBtn.addEventListener('click', async () => {
     const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
     const sourceIndices = [...gridComposeState.selected];
@@ -7831,6 +8032,17 @@ function renderGridPreviewStep() {
     }
   });
   actions.appendChild(applyBtn);
+  renderGridCanvas(canvas, mode, gridComposeState.selected).then(() => {
+    if (renderOperationId !== gridComposeRenderOperationId || !canvas.isConnected) return;
+    label.textContent = '合成プレビュー。問題なければ「追加」を押してください。';
+    saveDevBtn2.disabled = false;
+    applyBtn.disabled = false;
+  }).catch(error => {
+    console.error('画像合成プレビュー失敗:', error);
+    if (renderOperationId === gridComposeRenderOperationId && canvas.isConnected) {
+      label.textContent = '合成画像を作成できませんでした。戻って写真を選び直してください。';
+    }
+  });
 }
 
 // 各セルに画像を中央クロップして描画（object-fit: cover 相当）
@@ -7916,6 +8128,7 @@ function updateDraftChecklist() {
   const hasRequiredSize = !sizeRequired || !!mercariSize;
   const missingTitleWords = missingTitleWordsInDescription_();
   const titleSynced = missingTitleWords.length === 0;
+  const generatedResultCurrent = isGeneratedResultCurrent_();
   const inventoryState = updateInventoryLinkNote_();
   const photoLabel = !hasPhotos
     ? '写真を選んでください'
@@ -7924,6 +8137,7 @@ function updateDraftChecklist() {
       : `写真 ${photoCount}枚：下書き保存は${MAX_DRAFT_PHOTOS}枚までです`;
   const items = [
     { ok: hasDraftPhotoCount, label: photoLabel },
+    { ok: generatedResultCurrent, label: generatedResultCurrent ? '現在の写真・採寸で生成済みです' : '写真・採寸の変更後に説明文を再確認してください' },
     { ok: hasTitle, label: hasTitle ? '商品名があります' : '商品名を確認してください' },
     { ok: titleSynced, label: titleSynced ? '商品名の言葉を説明文にも反映済みです' : `説明文の商品名に不足: ${missingTitleWords.join('、')}` },
     { ok: hasDesc, label: hasDesc ? '説明文があります' : '先に説明文を生成してください' },
@@ -8107,6 +8321,18 @@ async function saveDraft() {
     alert('先に説明文を生成してください');
     return;
   }
+  if (!isGeneratedResultCurrent_()) {
+    const confirmed = confirm(
+      '写真・採寸・対象・カテゴリが、説明文を生成した時点から変わっています。\n'
+      + '現在表示している商品名と説明文が変更後の商品に合うことを確認しましたか？'
+    );
+    if (!confirmed) {
+      showStatus('draft-status', '下書き保存を止めました。説明文を再生成するか、内容を確認してからもう一度保存してください。', 'warn');
+      return;
+    }
+    lastAiData.generation_input_fingerprint = generationSourceFingerprint_();
+    scheduleSave();
+  }
   syncDescriptionProductNameFromTitle_();
   const validation = updateDraftChecklist();
   if (!validation?.ok) {
@@ -8237,6 +8463,8 @@ globalThis.MercariAppTestHooks = {
   buildProductAudiencePrompt_,
   buildAppealWritingRules_,
   buildDescriptionSystemPrompt,
+  parseAiJson,
+  validateAiResponseData_,
   coerceMercariCategoryForProductGender,
   isManualMercariCategoryAllowed_,
   cleanSeasonMarketingSentences,
@@ -8253,6 +8481,10 @@ globalThis.MercariAppTestHooks = {
   defaultNewMinPrice: price => Math.max(300, Math.floor(Number(price || 0) * 0.7)),
   normalizeResearchWizardStep,
   isResearchPriceRangeValid,
+  buildResearchMacPayload_,
+  safeResearchUrl_,
+  formatMarkdownLikeDelta,
+  formatCurrentSessionSaveError_,
   setResearchWizardStep,
   compactTemporaryDraftPhoto_,
   hydrateTemporaryDraftPhoto_,
@@ -8264,6 +8496,7 @@ globalThis.MercariAppTestHooks = {
   temporaryDraftSummaryFromRecord_,
   safeTemporaryThumbnailBase64_,
   normalizeMacServiceUrl_,
+  normalizeGasUrl,
   getCachedMacServiceUrl_,
   cacheMacServiceUrl_,
   clearCachedMacServiceUrl_,

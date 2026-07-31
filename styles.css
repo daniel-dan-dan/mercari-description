@@ -1,5 +1,6 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+[hidden] { display: none !important; }
 .sr-only {
   position: absolute;
   width: 1px;
@@ -365,17 +366,33 @@ textarea.streaming {
   position: absolute;
   top: 4px;
   right: 4px;
-  background: rgba(26, 10, 50, 0.72);
-  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  color: transparent;
   border: none;
-  width: 26px;
-  height: 26px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  font-size: 14px;
+  font-size: 0;
   cursor: pointer;
   line-height: 1;
-  backdrop-filter: blur(4px);
   z-index: 2;
+}
+.preview-item .remove::before {
+  content: '×';
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(26, 10, 50, 0.78);
+  color: white;
+  font-size: 14px;
+  backdrop-filter: blur(4px);
 }
 .preview-num {
   position: absolute;
@@ -460,6 +477,11 @@ textarea.streaming {
   cursor: pointer;
   padding: 6px 10px;
   transition: background 0.12s;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .icon-btn:hover { background: white; }
 
@@ -1322,7 +1344,7 @@ textarea.streaming {
   background: #fff7f8;
   color: #7e3944;
   border-radius: 999px;
-  min-height: 30px;
+  min-height: 44px;
   padding: 0 10px;
   font-size: 11px;
   font-weight: 800;
@@ -1480,7 +1502,7 @@ textarea.streaming {
 }
 .markdown-filter-control button {
   min-width: 0;
-  min-height: 40px;
+  min-height: 44px;
   padding: 6px 4px;
   border: 0;
   border-right: 1px solid #e5d4d8;
@@ -2453,7 +2475,7 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
 
 .btn.small {
   width: auto;
-  min-height: 36px;
+  min-height: 44px;
   padding: 8px 12px;
   font-size: 13px;
 }
@@ -3561,7 +3583,7 @@ select {
 }
 
 .temporary-draft-actions .btn.small {
-  min-height: 32px;
+  min-height: 44px;
   padding: 6px 9px;
   border-radius: 8px;
   font-size: 11px;
@@ -3588,6 +3610,10 @@ select {
 
 .temporary-draft-status {
   margin: -4px 0 14px;
+}
+
+.session-save-status {
+  margin: 10px 14px 14px;
 }
 
 .temporary-save-action {

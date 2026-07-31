@@ -6,8 +6,9 @@
   <meta name="theme-color" content="#f23d4a">
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260731a">
+  <link rel="stylesheet" href="styles.css?v=20260731b">
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -25,7 +26,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260731a / 在庫との自動連携に対応</p>
+      <p class="settings-version" id="settings-version">v20260731b / 保存・再送の安全対策を更新</p>
     </section>
 
     <!-- メイン画面 -->
@@ -43,6 +44,7 @@
         <button id="research-tab-btn" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="research-panel">相場リサーチ</button>
         <button id="markdown-tab-btn" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="markdown-panel">価格改定</button>
       </div>
+      <p id="session-save-status" class="status session-save-status" role="alert" aria-live="assertive" hidden></p>
 
       <div id="description-panel" class="tab-panel active" role="tabpanel" aria-labelledby="description-tab-btn">
 
@@ -594,8 +596,8 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260731a"></script>
-  <script src="app.js?v=20260731a"></script>
+  <script src="catalog-data.js?v=20260731b"></script>
+  <script src="app.js?v=20260731b"></script>
   <script>
     if (window.lucide) window.lucide.createIcons();
     if ('serviceWorker' in navigator) {
