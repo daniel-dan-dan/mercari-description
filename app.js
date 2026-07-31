@@ -19,6 +19,8 @@ const DRAFT_START_RETRY_DELAY_MS = 1200;
 const JOB_STATUS_MAX_CONSECUTIVE_ERRORS = 3;
 const JOB_STATUS_RETRY_DELAY_MS = 1500;
 const DRAFT_OPERATION_TTL_MS = 6 * 60 * 60 * 1000;
+const INVENTORY_UUID_PATTERN = /^inv_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const INVENTORY_CANDIDATE_LIMIT = 50;
 const MAX_DRAFT_PAYLOAD_BYTES = 28 * 1024 * 1024;
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（AI分析用・コスト節約）
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
@@ -998,6 +1000,38 @@ async function init() {
     scheduleSave();
     updateDraftChecklist();
   });
+  el('inventory-reference-input').addEventListener('input', event => {
+    setInventoryReference_(event.target.value, {
+      label: '在庫を指定済み',
+      meta: '在庫管理から貼り付けた情報を使用します',
+      showReference: true,
+    });
+  });
+  el('inventory-clear-btn').addEventListener('click', () => clearInventorySelection_());
+  el('inventory-candidates-btn').addEventListener('click', () => {
+    const panel = el('inventory-candidate-panel');
+    if (!panel) return;
+    if (!panel.hidden) {
+      panel.hidden = true;
+      return;
+    }
+    loadInventoryCandidates_().catch(error => {
+      console.error('[inventory-candidates]', error);
+    });
+  });
+  el('inventory-search-btn').addEventListener('click', () => {
+    loadInventoryCandidates_().catch(error => {
+      console.error('[inventory-candidates]', error);
+    });
+  });
+  el('inventory-search-input').addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    loadInventoryCandidates_().catch(error => {
+      console.error('[inventory-candidates]', error);
+    });
+  });
+  el('inventory-candidate-list').addEventListener('click', handleInventoryCandidateSelection_);
   el('description-tab-btn').addEventListener('click', () => switchMainTab('description'));
   el('research-tab-btn').addEventListener('click', () => switchMainTab('research'));
   el('markdown-tab-btn').addEventListener('click', () => switchMainTab('markdown'));
@@ -1048,6 +1082,8 @@ async function init() {
       console.warn('セッション復元失敗:', e);
     }
   }
+  applyInventoryUuidFromPageUrl_();
+  updateInventoryLinkNote_();
   try {
     await refreshTemporaryDrafts_({ recoverInterrupted: true });
   } catch (e) {
@@ -1999,6 +2035,166 @@ function createOperationId_(label = 'operation') {
   return `${String(label).replace(/[^a-z0-9_-]+/gi, '-').slice(0, 30)}-${suffix}`;
 }
 
+function parseInventoryReference_(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return { raw: '', uuid: '', valid: true, empty: true, fromUrl: false };
+
+  let candidate = raw;
+  let fromUrl = false;
+  if (/^https?:\/\//i.test(raw)) {
+    fromUrl = true;
+    try {
+      candidate = new URL(raw).searchParams.get('inventoryUuid') || '';
+    } catch (_) {
+      candidate = '';
+    }
+  }
+  const uuid = String(candidate || '').trim().toLowerCase();
+  return {
+    raw,
+    uuid,
+    valid: INVENTORY_UUID_PATTERN.test(uuid),
+    empty: false,
+    fromUrl,
+  };
+}
+
+function normalizeInventoryUuid_(value) {
+  const parsed = parseInventoryReference_(value);
+  return parsed.valid && !parsed.empty ? parsed.uuid : '';
+}
+
+function getInventoryReferenceState_() {
+  const hiddenUuid = normalizeInventoryUuid_(el('inventory-uuid-input')?.value || '');
+  const reference = String(el('inventory-reference-input')?.value || '').trim();
+  const referenceState = parseInventoryReference_(reference);
+  if (reference) {
+    return {
+      ...referenceState,
+      label: String(el('inventory-label-input')?.value || '').trim(),
+      meta: String(el('inventory-meta-input')?.value || '').trim(),
+    };
+  }
+  if (hiddenUuid) {
+    return {
+      raw: '',
+      uuid: hiddenUuid,
+      valid: true,
+      empty: false,
+      fromUrl: false,
+      label: String(el('inventory-label-input')?.value || '').trim(),
+      meta: String(el('inventory-meta-input')?.value || '').trim(),
+    };
+  }
+  return {
+    raw: '',
+    uuid: '',
+    valid: true,
+    empty: true,
+    fromUrl: false,
+    label: '',
+    meta: '',
+  };
+}
+
+function updateInventoryLinkNote_() {
+  const note = el('inventory-link-note');
+  const summary = el('inventory-selected-summary');
+  const clearButton = el('inventory-clear-btn');
+  if (!note) return getInventoryReferenceState_();
+  const state = getInventoryReferenceState_();
+  note.className = 'note small inventory-link-note';
+  if (summary) {
+    summary.className = 'inventory-selected-summary';
+    const name = state.label || (state.empty ? '在庫はまだ選ばれていません' : '在庫を指定済み');
+    const meta = state.meta || (state.empty ? '未選択でも下書き保存できます' : '出品確定後に自動連携を確認します');
+    summary.innerHTML = `<span>${escapeHtml(name)}</span><small>${escapeHtml(meta)}</small>`;
+    summary.classList.add(state.empty ? 'unselected' : (state.valid ? 'selected' : 'invalid'));
+  }
+  if (clearButton) clearButton.hidden = state.empty;
+  if (state.empty) {
+    note.textContent = '未選択でも従来どおり下書き保存できますが、自動在庫連携の対象外です。';
+    note.classList.add('unselected');
+  } else if (state.valid) {
+    note.textContent = '出品確定後、「価格改定」の最新取得で商品名と価格を照合して自動連携します。';
+    note.classList.add('selected');
+  } else {
+    note.textContent = '貼り付けた在庫情報を確認できません。内容を確認するか、入力を空にしてください。';
+    note.classList.add('invalid');
+  }
+  return state;
+}
+
+function setInventoryReference_(value, {
+  persist = true,
+  label = '',
+  meta = '',
+  showReference = true,
+} = {}) {
+  const uuidInput = el('inventory-uuid-input');
+  const referenceInput = el('inventory-reference-input');
+  if (!uuidInput || !referenceInput) {
+    return { raw: '', uuid: '', valid: true, empty: true };
+  }
+  const parsed = parseInventoryReference_(value);
+  uuidInput.value = parsed.valid && !parsed.empty ? parsed.uuid : '';
+  referenceInput.value = showReference ? String(value || '').trim() : '';
+  el('inventory-label-input').value = parsed.valid && !parsed.empty
+    ? (String(label || '').trim() || '在庫を指定済み')
+    : '';
+  el('inventory-meta-input').value = parsed.valid && !parsed.empty
+    ? (String(meta || '').trim() || '在庫管理から受け取りました')
+    : '';
+  const state = updateInventoryLinkNote_();
+  updateDraftChecklist();
+  if (persist) scheduleSave();
+  return state;
+}
+
+function clearInventorySelection_({ persist = true } = {}) {
+  el('inventory-uuid-input').value = '';
+  el('inventory-reference-input').value = '';
+  el('inventory-label-input').value = '';
+  el('inventory-meta-input').value = '';
+  const state = updateInventoryLinkNote_();
+  updateDraftChecklist();
+  if (persist) scheduleSave();
+  return state;
+}
+
+function applyInventoryUuidFromPageUrl_() {
+  const input = el('inventory-uuid-input');
+  const referenceInput = el('inventory-reference-input');
+  if (
+    !input
+    || input.value.trim()
+    || referenceInput?.value.trim()
+    || !window.location?.href
+  ) return '';
+  try {
+    const incoming = new URL(window.location.href).searchParams.get('inventoryUuid') || '';
+    const parsed = parseInventoryReference_(incoming);
+    if (!parsed.valid || parsed.empty) return '';
+    setInventoryReference_(parsed.uuid, {
+      label: '在庫管理から受け取り済み',
+      meta: '候補から選んだ場合と同じ安全条件で連携します',
+      showReference: false,
+    });
+    if (window.history?.replaceState) {
+      const cleanedUrl = new URL(window.location.href);
+      cleanedUrl.searchParams.delete('inventoryUuid');
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${cleanedUrl.pathname}${cleanedUrl.search}${cleanedUrl.hash}`,
+      );
+    }
+    return parsed.uuid;
+  } catch (_) {
+    return '';
+  }
+}
+
 function draftPayloadFingerprint_(payload) {
   const text = JSON.stringify(payload);
   let hash = 0x811c9dc5;
@@ -2292,6 +2488,102 @@ async function getMercariServiceUrl(statusCallback) {
       macServiceDiscoveryPromise = null;
     }
   }
+}
+
+function inventoryCandidateLabel_(candidate = {}) {
+  const name = String(candidate.productName || '').trim() || '商品名未登録';
+  const identifiers = [
+    candidate.sku ? `SKU ${candidate.sku}` : '',
+    candidate.asin ? `ASIN ${candidate.asin}` : '',
+  ].filter(Boolean);
+  return {
+    name,
+    meta: identifiers.join(' / ') || 'SKU・ASIN未登録',
+  };
+}
+
+function renderInventoryCandidates_(items) {
+  const list = el('inventory-candidate-list');
+  if (!list) return;
+  const candidates = Array.isArray(items)
+    ? items.filter(item => {
+      const parsed = parseInventoryReference_(item?.inventoryUuid);
+      return parsed.valid && !parsed.empty;
+    })
+    : [];
+  if (!candidates.length) {
+    list.innerHTML = '<div class="inventory-candidate-empty">条件に合う在庫候補はありません</div>';
+    return;
+  }
+  list.innerHTML = candidates.map(candidate => {
+    const uuid = normalizeInventoryUuid_(candidate.inventoryUuid);
+    const label = inventoryCandidateLabel_(candidate);
+    return `
+      <button
+        type="button"
+        class="inventory-candidate-item"
+        data-inventory-candidate-uuid="${escapeHtml(uuid)}"
+        data-inventory-candidate-name="${escapeHtml(label.name)}"
+        data-inventory-candidate-meta="${escapeHtml(label.meta)}"
+      >
+        <span>
+          <strong>${escapeHtml(label.name)}</strong>
+          <small>${escapeHtml(label.meta)}</small>
+        </span>
+        <em>選択</em>
+      </button>
+    `;
+  }).join('');
+}
+
+async function loadInventoryCandidates_() {
+  const panel = el('inventory-candidate-panel');
+  const status = el('inventory-candidate-status');
+  if (panel) panel.hidden = false;
+  if (status) status.textContent = 'Mac経由で在庫候補を取得しています...';
+  try {
+    const tunnelUrl = await getMercariServiceUrl(message => {
+      if (status) status.textContent = message;
+    });
+    const query = String(el('inventory-search-input')?.value || '').trim();
+    const url = (
+      `${tunnelUrl}/inventory/candidates`
+      + `?query=${encodeURIComponent(query)}&limit=${INVENTORY_CANDIDATE_LIMIT}`
+    );
+    const response = await fetchWithTimeout(url, {}, 30000);
+    const data = await readJsonResponse(response, '在庫候補取得');
+    if (!response.ok || !data.ok || !Array.isArray(data.items)) {
+      throw new Error(data.error || '在庫候補を取得できませんでした');
+    }
+    renderInventoryCandidates_(data.items);
+    if (status) {
+      status.textContent = data.items.length
+        ? `${data.items.length}件を表示中です。商品名から自動選択せず、対象を手動で選んでください。`
+        : '条件に合う在庫候補はありません。検索語を変えるか、詳細設定から在庫管理の情報を貼り付けてください。';
+    }
+    return data.items;
+  } catch (error) {
+    renderInventoryCandidates_([]);
+    if (status) status.textContent = `在庫候補を取得できませんでした: ${error.message || error}`;
+    throw error;
+  }
+}
+
+function handleInventoryCandidateSelection_(event) {
+  const button = event.target.closest('[data-inventory-candidate-uuid]');
+  if (!button) return;
+  const uuid = normalizeInventoryUuid_(button.dataset.inventoryCandidateUuid);
+  if (!uuid) return;
+  const name = String(button.dataset.inventoryCandidateName || '在庫を選択済み');
+  const meta = String(button.dataset.inventoryCandidateMeta || '');
+  setInventoryReference_(uuid, {
+    label: name,
+    meta,
+    showReference: false,
+  });
+  const status = el('inventory-candidate-status');
+  if (status) status.textContent = `「${name}」を選択しました。商品名からの自動選択は行っていません。`;
+  el('inventory-candidate-panel').hidden = true;
 }
 
 function readListingStyleSummary() {
@@ -3750,7 +4042,13 @@ function showTemporaryDraftError_(error) {
 
 function hasMeaningfulCurrentInput_() {
   if (uploadedImages.length || el('category')?.value) return true;
-  if (el('title-text')?.value.trim() || el('result-text')?.value.trim() || el('price-input')?.value) return true;
+  if (
+    el('title-text')?.value.trim()
+    || el('result-text')?.value.trim()
+    || el('price-input')?.value
+    || el('inventory-uuid-input')?.value.trim()
+    || el('inventory-reference-input')?.value.trim()
+  ) return true;
   return [...document.querySelectorAll('#measurement-fields input[type="number"]')]
     .some(input => String(input.value || '').trim() !== '');
 }
@@ -3986,6 +4284,10 @@ function collectState() {
     mercariSize: getSelectedMercariSize(),
     mercariSizeUserEdited: el('m-size').dataset.userEdited === '1',
     price: el('price-input').value,
+    inventoryUuid: normalizeInventoryUuid_(el('inventory-uuid-input')?.value || ''),
+    inventoryReference: el('inventory-reference-input')?.value || '',
+    inventoryLabel: el('inventory-label-input')?.value || '',
+    inventoryMeta: el('inventory-meta-input')?.value || '',
     temporaryDraftId: activeTemporaryDraftId,
     lastAiData: lastAiData ? {
       ...lastAiData,
@@ -4067,6 +4369,12 @@ function restoreState(s) {
     el('result-section').hidden = false;
   }
   if (s.price) el('price-input').value = s.price;
+  setInventoryReference_(s.inventoryReference || s.inventoryUuid || '', {
+    persist: false,
+    label: s.inventoryLabel || '',
+    meta: s.inventoryMeta || '',
+    showReference: !!s.inventoryReference,
+  });
   if (s.lastAiData || (s.result && s.title)) {
     lastAiData = {
       ...(s.lastAiData || {}),
@@ -5760,6 +6068,10 @@ async function clearCurrentProduct_({ clearSession = true, scroll = false } = {}
   el('title-text').value = '';
   el('result-text').value = '';
   el('price-input').value = '';
+  clearInventorySelection_({ persist: false });
+  el('inventory-search-input').value = '';
+  el('inventory-candidate-panel').hidden = true;
+  el('inventory-candidate-list').innerHTML = '';
   el('result-section').hidden = true;
   el('mercari-settings').hidden = true;
   el('m-condition').value = '目立った傷や汚れなし';
@@ -7604,6 +7916,7 @@ function updateDraftChecklist() {
   const hasRequiredSize = !sizeRequired || !!mercariSize;
   const missingTitleWords = missingTitleWordsInDescription_();
   const titleSynced = missingTitleWords.length === 0;
+  const inventoryState = updateInventoryLinkNote_();
   const photoLabel = !hasPhotos
     ? '写真を選んでください'
     : photoCount <= MAX_DRAFT_PHOTOS
@@ -7624,12 +7937,23 @@ function updateDraftChecklist() {
     },
     { ok: true, label: mercariBrand ? `ブランド: ${mercariBrand}` : 'ブランド: 空欄（見つからない場合はOK）' },
     { ok: hasRequiredSize, label: mercariSize ? `サイズ: ${mercariSize}` : (sizeRequired ? 'サイズを確認してください' : 'サイズ: 不要/手動') },
+    {
+      ok: inventoryState.valid,
+      kind: inventoryState.empty ? 'neutral' : (inventoryState.valid ? 'ok' : 'ng'),
+      label: inventoryState.empty
+        ? '在庫未選択: 自動連携対象外（下書き保存はできます）'
+        : (
+          inventoryState.valid
+            ? `在庫連携: ${inventoryState.label || '在庫を選択済み'}${inventoryState.meta ? ` / ${inventoryState.meta}` : ''}`
+            : '貼り付けた在庫情報を確認するか、入力を空にしてください'
+        ),
+    },
   ];
   checklist.hidden = false;
   checklist.innerHTML = items.map(item =>
-    `<div class="draft-check-item ${item.ok ? 'ok' : 'ng'}">
-      <span class="draft-check-mark">${item.ok ? '✓' : '○'}</span>
-      <span>${item.label}</span>
+    `<div class="draft-check-item ${item.kind || (item.ok ? 'ok' : 'ng')}">
+      <span class="draft-check-mark">${item.kind === 'neutral' ? '—' : (item.ok ? '✓' : '○')}</span>
+      <span>${escapeHtml(item.label)}</span>
     </div>`
   ).join('');
   return { ok: items.every(item => item.ok), items };
@@ -7648,6 +7972,7 @@ function buildDraftPayload_(input) {
     mercari_category: [...(input.mercariCategoryPath || [])],
     mercari_brand: String(input.mercariBrand || '').trim(),
     mercari_size: input.mercariSize || '',
+    inventoryUuid: normalizeInventoryUuid_(input.inventoryUuid),
     photos: (input.photos || []).map(img => ({
       base64: preferHighQuality
         ? (img.base64HQ || img.base64)
@@ -7829,6 +8154,7 @@ async function saveDraft() {
     draftStatus.textContent = '下書き情報を送信中...';
     const mercariCategoryKey = getSelectedMercariCategoryKey();
     const mercariCategoryOption = getMercariCategoryOption(mercariCategoryKey);
+    const inventoryState = getInventoryReferenceState_();
     const draftPayload = buildDraftPayloadWithinLimit_({
       title: el('title-text').value || lastAiData.title,
       description: el('result-text').value.trim() || lastAiData.description,
@@ -7841,6 +8167,7 @@ async function saveDraft() {
       mercariSize: getSelectedMercariSize(),
       photos: uploadedImages,
       mercariCondition: el('m-condition').value,
+      inventoryUuid: inventoryState.uuid,
     });
     if (draftPayload.optimized) {
       draftStatus.textContent = '写真データを通信向けに最適化して送信中...';
@@ -7871,7 +8198,9 @@ async function saveDraft() {
       signal: waitControl.signal,
       refreshUrl: refreshMacServiceUrl,
     });
-    draftStatus.textContent = '下書き保存が完了しました。メルカリアプリで確認してください。';
+    draftStatus.textContent = inventoryState.uuid
+      ? '下書き保存が完了しました。出品確定後、「価格改定」の最新取得で在庫連携を確認します。'
+      : '下書き保存が完了しました。在庫未選択のため自動連携対象外です。メルカリアプリで確認してください。';
     clearDraftOperation_(draftOperationId);
   } catch (e) {
     console.error('[draft-save]', e);
@@ -7890,6 +8219,9 @@ globalThis.MercariAppTestHooks = {
   buildDraftPayload_,
   buildDraftPayloadWithinLimit_,
   draftPayloadFingerprint_,
+  parseInventoryReference_,
+  normalizeInventoryUuid_,
+  inventoryCandidateLabel_,
   getOrCreateDraftOperation_,
   clearDraftOperation_,
   shouldPreserveDraftOperation_,

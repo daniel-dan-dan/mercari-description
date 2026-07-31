@@ -2224,6 +2224,157 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
   color: #5f5f63;
   font-weight: 800;
 }
+.inventory-link-field {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #efd9dd;
+}
+.inventory-selected-summary {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0 9px;
+  padding: 10px 12px;
+  border: 1px solid #caefd6;
+  border-radius: 10px;
+  background: #f2fbf5;
+}
+.inventory-selected-summary span {
+  color: #174f30;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.inventory-selected-summary small {
+  color: #4e6758;
+  overflow-wrap: anywhere;
+}
+.inventory-selected-summary.unselected {
+  border-color: #e7dde0;
+  background: #f8f5f6;
+}
+.inventory-selected-summary.unselected span,
+.inventory-selected-summary.unselected small {
+  color: #665d60;
+}
+.inventory-selected-summary.invalid {
+  border-color: #ffd6df;
+  background: #fff6f7;
+}
+.inventory-selected-summary.invalid span,
+.inventory-selected-summary.invalid small {
+  color: #7a1028;
+}
+.inventory-link-row,
+.inventory-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+.inventory-link-row input {
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+.inventory-link-row .btn,
+.inventory-search-row .btn {
+  margin: 0;
+  white-space: nowrap;
+}
+.inventory-link-row .btn:first-child {
+  min-height: 44px;
+}
+.inventory-link-note {
+  margin: 7px 0 0;
+}
+.inventory-link-note.selected {
+  color: #0d5c2f;
+}
+.inventory-link-note.invalid {
+  color: #8e1931;
+}
+.inventory-link-note.unselected {
+  color: #6f6467;
+}
+.inventory-candidate-panel {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #efd9dd;
+  border-radius: 12px;
+  background: #fffafa;
+}
+.inventory-candidate-panel > .note {
+  margin: 8px 0;
+}
+.inventory-candidate-list {
+  display: grid;
+  gap: 7px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.inventory-candidate-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #ead7da;
+  border-radius: 10px;
+  background: #fff;
+  color: #2b2426;
+  text-align: left;
+}
+.inventory-candidate-item span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.inventory-candidate-item strong,
+.inventory-candidate-item small {
+  overflow-wrap: anywhere;
+}
+.inventory-candidate-item small {
+  color: #776c70;
+}
+.inventory-candidate-item em {
+  flex: none;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #f2fbf5;
+  color: #0d5c2f;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+.inventory-candidate-item:focus-visible,
+.inventory-candidate-item:hover {
+  border-color: #db7d88;
+  background: #fff6f7;
+}
+.inventory-candidate-empty {
+  padding: 12px;
+  border-radius: 9px;
+  background: #f8f4f5;
+  color: #70666a;
+  text-align: center;
+}
+.inventory-link-advanced {
+  margin-top: 10px;
+  border-top: 1px dashed #e7d9dc;
+  padding-top: 8px;
+}
+.inventory-link-advanced summary {
+  color: #6f6467;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.inventory-link-advanced label {
+  margin-top: 10px;
+}
+.inventory-link-advanced input {
+  font-size: 13px;
+}
 .mercari-category-label {
   margin: 0 0 6px;
   font-size: 14px;
@@ -2705,6 +2856,7 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
 }
 .draft-check-item.ok { color: #0d5c2f; background: #f0fbf4; border-color: #c8efd6; }
 .draft-check-item.ng { color: #7a1028; background: #fff6f7; border-color: #ffd6df; }
+.draft-check-item.neutral { color: #5f5558; background: #f8f5f6; border-color: #e7dde0; }
 .draft-check-mark {
   display: inline-flex;
   align-items: center;
@@ -2718,6 +2870,14 @@ a:hover { color: #ff4757; border-bottom-color: #ff6b7e; }
 
 /* ========== モバイル最適化 ========== */
 @media (max-width: 480px) {
+  .inventory-link-row,
+  .inventory-search-row {
+    grid-template-columns: 1fr;
+  }
+  .inventory-link-row .btn,
+  .inventory-search-row .btn {
+    width: 100%;
+  }
   .app-tabs {
     gap: 0;
     padding: 0;

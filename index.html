@@ -7,7 +7,7 @@
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260726f">
+  <link rel="stylesheet" href="styles.css?v=20260731a">
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -25,7 +25,7 @@
         <button id="save-key" class="btn primary">保存</button>
       </div>
       <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260726f / 訴求文の文体を改善</p>
+      <p class="settings-version" id="settings-version">v20260731a / 在庫との自動連携に対応</p>
     </section>
 
     <!-- メイン画面 -->
@@ -203,6 +203,51 @@
             <div class="price-row">
               <input type="number" id="price-input" placeholder="例: 3000" min="300" max="9999999">
               <span class="yen-label">円</span>
+            </div>
+
+            <div class="inventory-link-field">
+              <div class="field-label">在庫連携（任意）</div>
+              <div id="inventory-selected-summary" class="inventory-selected-summary unselected">
+                <span>在庫はまだ選ばれていません</span>
+                <small>未選択でも下書き保存できます</small>
+              </div>
+              <div class="inventory-link-row">
+                <button id="inventory-candidates-btn" class="btn small" type="button">在庫から選ぶ</button>
+                <button id="inventory-clear-btn" class="btn small" type="button" hidden>選択を外す</button>
+              </div>
+              <p id="inventory-link-note" class="note small inventory-link-note">
+                未選択でも従来どおり下書き保存できますが、自動在庫連携の対象外です。
+              </p>
+              <input type="hidden" id="inventory-uuid-input" value="">
+              <input type="hidden" id="inventory-label-input" value="">
+              <input type="hidden" id="inventory-meta-input" value="">
+              <div id="inventory-candidate-panel" class="inventory-candidate-panel" hidden>
+                <div class="inventory-search-row">
+                  <input
+                    type="search"
+                    id="inventory-search-input"
+                    placeholder="SKU・ASIN・商品名で検索"
+                    autocomplete="off"
+                  >
+                  <button id="inventory-search-btn" class="btn small" type="button">検索</button>
+                </div>
+                <p id="inventory-candidate-status" class="note small" role="status" aria-live="polite">
+                  候補を取得すると、ここから手動で1件選べます。
+                </p>
+                <div id="inventory-candidate-list" class="inventory-candidate-list"></div>
+              </div>
+              <details class="inventory-link-advanced">
+                <summary>在庫管理から受け取った情報を貼り付ける</summary>
+                <label for="inventory-reference-input">在庫管理の番号またはURL</label>
+                <input
+                  type="text"
+                  id="inventory-reference-input"
+                  placeholder="在庫管理からコピーした内容を貼り付け"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                >
+              </details>
             </div>
           </div>
 
@@ -549,8 +594,8 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260726f"></script>
-  <script src="app.js?v=20260726f"></script>
+  <script src="catalog-data.js?v=20260731a"></script>
+  <script src="app.js?v=20260731a"></script>
   <script>
     if (window.lucide) window.lucide.createIcons();
     if ('serviceWorker' in navigator) {
