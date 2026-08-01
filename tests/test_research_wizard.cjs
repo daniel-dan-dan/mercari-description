@@ -29,10 +29,15 @@ const hooks = context.MercariAppTestHooks;
 const authStorage = new Map([['daniel_api_auth_token', 'legacy-route-token']]);
 context.localStorage.getItem = key => authStorage.get(key) || null;
 context.localStorage.setItem = (key, value) => authStorage.set(key, value);
-assert.equal(context.getApiAuthToken(), 'legacy-route-token');
-assert.equal(authStorage.get('mercari_api_auth_token'), 'legacy-route-token');
+context.localStorage.removeItem = key => authStorage.delete(key);
+assert.equal(hooks.getApiAuthToken(), '');
+assert.equal(hooks.getPairingCode_(), 'legacy-route-token');
+assert.equal(authStorage.has('mercari_api_auth_token'), false);
 authStorage.set('mercari_api_auth_token', 'dedicated-mercari-token');
-assert.equal(context.getApiAuthToken(), 'dedicated-mercari-token');
+assert.equal(hooks.getApiAuthToken(), '');
+assert.equal(hooks.getPairingCode_(), 'dedicated-mercari-token');
+authStorage.set('mercari_device_auth_v1', 'device-only-token');
+assert.equal(hooks.getApiAuthToken(), 'device-only-token');
 
 assert.equal(hooks.normalizeResearchWizardStep(1), 1);
 assert.equal(hooks.normalizeResearchWizardStep('2'), 2);
@@ -104,12 +109,12 @@ assert.match(indexHtml, />次へ：確認</);
 assert.match(indexHtml, />調査依頼を保存</);
 assert.match(indexHtml, />保存済みの依頼を見る</);
 assert.match(indexHtml, /id="research-saved-section"/);
-assert.match(indexHtml, /styles\.css\?v=20260731b/);
-assert.match(indexHtml, /app\.js\?v=20260731b/);
-assert.match(indexHtml, /v20260731b \/ 保存・再送の安全対策を更新/);
+assert.match(indexHtml, /styles\.css\?v=20260801a/);
+assert.match(indexHtml, /app\.js\?v=20260801a/);
+assert.match(indexHtml, /v20260801a \/ 端末接続を自動更新/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260731b/);
+assert.match(serviceWorker, /mercari-description-v20260801a/);
 
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
 assert.match(pairHtml, /mercari_api_auth_token/);
@@ -144,5 +149,5 @@ console.log(JSON.stringify({
   invalidStepFallback: 1,
   priceRangeGuard: true,
   preservedResearchFields: 17,
-  authStorageMigrated: true,
+  authStorageSeparated: true,
 }));

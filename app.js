@@ -6,8 +6,13 @@
 
 const LEGACY_API_KEY_STORAGE_KEY = 'mercari_desc_api_key';
 const SERVICE_URL_KEY = 'gasUrl';
+// 旧共有コードは初回の端末登録にだけ使い、通常のAPI通信には端末専用鍵を使う。
 const API_AUTH_TOKEN_KEY = 'mercari_api_auth_token';
 const LEGACY_SHARED_API_AUTH_TOKEN_KEY = 'daniel_api_auth_token';
+const MERCARI_DEVICE_TOKEN_KEY = 'mercari_device_auth_v1';
+const MERCARI_DEVICE_ID_KEY = 'mercari_device_id_v1';
+const MERCARI_PENDING_DEVICE_TOKEN_KEY = 'mercari_pending_device_auth_v1';
+const MERCARI_PENDING_DEVICE_ID_KEY = 'mercari_pending_device_id_v1';
 const MAC_SERVICE_URL_CACHE_KEY = 'mercari_mac_service_url_cache';
 const DRAFT_OPERATION_STORAGE_KEY = 'mercari_pending_draft_operation';
 const FALLBACK_GAS_URL = 'https://script.google.com/macros/s/AKfycbwYfwDG7Kqplk2oVeX7kF_gsAKTlK087ToE4LGp5R7PglTFMARP2lrA6ZV9m3MD0LEs/exec';
@@ -931,7 +936,17 @@ function setPhotoProcessingLock_(locked) {
 
 // ----- 初期起動判定 -----
 async function init() {
-  const serviceUrl = getPreferredGasUrl();
+  let serviceUrl = getPreferredGasUrl();
+  let migrationError = null;
+  if (!hasMercariDeviceCredential_() && getPairingCode_()) {
+    try {
+      await ensureMercariDeviceCredential_();
+    } catch (error) {
+      migrationError = error;
+      console.warn('端末接続の自動更新を次回へ延期しました:', error);
+    }
+  }
+  serviceUrl = getPreferredGasUrl();
   const authToken = getApiAuthToken();
   if (localStorage.getItem(LEGACY_API_KEY_STORAGE_KEY)) {
     localStorage.removeItem(LEGACY_API_KEY_STORAGE_KEY);
@@ -1111,7 +1126,20 @@ async function init() {
   const gasUrlInput = el('gas-url-input');
   if (gasUrlInput) gasUrlInput.value = serviceUrl || '';
   const authTokenInput = el('auth-token-input');
-  if (authTokenInput) authTokenInput.value = authToken || '';
+  if (authTokenInput) {
+    authTokenInput.value = '';
+    authTokenInput.placeholder = authToken
+      ? 'この端末は接続済みです'
+      : '接続コードを入力してください';
+  }
+  const setupNote = el('setup-note');
+  if (setupNote) {
+    setupNote.textContent = migrationError
+      ? '接続情報は消さずに保存しています。通信が戻ったらもう一度「接続する」を押してください。'
+      : (authToken
+        ? 'この端末は接続済みです。アプリ更新後も接続コードの再入力は不要です。'
+        : '最初の1回だけ端末接続コードを入力してください。AI用のAPIキーはMac側に保存します。');
+  }
   renderListingStyleStatus(readListingStyleSummary());
 
   // 前回のセッションを復元
@@ -1145,25 +1173,55 @@ async function init() {
 }
 
 // ----- 設定 -----
-function saveSettings() {
+async function saveSettings() {
   const gasUrlInput = el('gas-url-input');
   const gasUrl = normalizeGasUrl(gasUrlInput ? gasUrlInput.value : '');
-  const authToken = String(el('auth-token-input')?.value || '').trim();
+  const enteredPairingCode = String(el('auth-token-input')?.value || '').trim();
+  const pairingCode = enteredPairingCode || getPairingCode_();
   if (!gasUrl) { alert('GAS URLを入力してください'); return; }
-  if (authToken.length < 24) { alert('端末接続コードが正しくありません'); return; }
-  localStorage.setItem(SERVICE_URL_KEY, gasUrl);
-  localStorage.setItem(API_AUTH_TOKEN_KEY, authToken);
-  if (localStorage.getItem(LEGACY_API_KEY_STORAGE_KEY)) {
-    localStorage.removeItem(LEGACY_API_KEY_STORAGE_KEY);
+  if (!enteredPairingCode && hasMercariDeviceCredential_()) {
+    localStorage.setItem(SERVICE_URL_KEY, gasUrl);
+    showScreen('main-screen');
+    return;
   }
-  showScreen('main-screen');
+  if (!validatePairingCode_(pairingCode)) { alert('端末接続コードが正しくありません'); return; }
+  const saveButton = el('save-key');
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.textContent = '接続中...';
+  }
+  try {
+    await pairMercariDevice_(pairingCode, gasUrl);
+    if (localStorage.getItem(LEGACY_API_KEY_STORAGE_KEY)) {
+      localStorage.removeItem(LEGACY_API_KEY_STORAGE_KEY);
+    }
+    const input = el('auth-token-input');
+    if (input) {
+      input.value = '';
+      input.placeholder = 'この端末は接続済みです';
+    }
+    showScreen('main-screen');
+  } catch (error) {
+    console.warn('端末接続に失敗しました:', error);
+    alert(`${error.message || '端末を接続できませんでした'}\n接続情報は消さずに保存しています。`);
+  } finally {
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = '接続する';
+    }
+  }
 }
 
 function openSettings() {
   const gasUrlInput = el('gas-url-input');
   if (gasUrlInput) gasUrlInput.value = getPreferredGasUrl();
   const authTokenInput = el('auth-token-input');
-  if (authTokenInput) authTokenInput.value = getApiAuthToken();
+  if (authTokenInput) {
+    authTokenInput.value = '';
+    authTokenInput.placeholder = hasMercariDeviceCredential_()
+      ? 'この端末は接続済みです'
+      : '接続コードを入力してください';
+  }
   showScreen('setup-screen');
 }
 
@@ -2085,16 +2143,158 @@ function fetchWithTimeout(url, opts = {}, ms = 15000) {
 }
 
 function getApiAuthToken() {
-  const currentToken = String(localStorage.getItem(API_AUTH_TOKEN_KEY) || '').trim();
-  if (currentToken) return currentToken;
+  return String(localStorage.getItem(MERCARI_DEVICE_TOKEN_KEY) || '').trim();
+}
 
-  // GitHub Pages配下の別PWAと共有していた旧キーから一度だけ移行する。
-  // 旧キーは店舗巡回アプリが引き続き使うため、削除しない。
-  const legacyToken = String(localStorage.getItem(LEGACY_SHARED_API_AUTH_TOKEN_KEY) || '').trim();
-  if (legacyToken) {
-    localStorage.setItem(API_AUTH_TOKEN_KEY, legacyToken);
+function getPairingCode_() {
+  const dedicated = String(localStorage.getItem(API_AUTH_TOKEN_KEY) || '').trim();
+  if (dedicated) return dedicated;
+  // 店舗巡回アプリの旧キーは、両アプリの初回移行が終わるまで削除しない。
+  return String(localStorage.getItem(LEGACY_SHARED_API_AUTH_TOKEN_KEY) || '').trim();
+}
+
+function hasMercariDeviceCredential_() {
+  return Boolean(
+    String(localStorage.getItem(MERCARI_DEVICE_ID_KEY) || '').trim()
+    && getApiAuthToken()
+  );
+}
+
+function secureRandomBase64Url_(byteLength) {
+  if (!window.crypto?.getRandomValues) {
+    throw new Error('このブラウザでは安全な端末接続情報を作成できません');
   }
-  return legacyToken;
+  const bytes = new Uint8Array(byteLength);
+  window.crypto.getRandomValues(bytes);
+  let binary = '';
+  bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function getOrCreatePendingMercariCredential_() {
+  const savedId = String(localStorage.getItem(MERCARI_PENDING_DEVICE_ID_KEY) || '').trim();
+  const savedToken = String(localStorage.getItem(MERCARI_PENDING_DEVICE_TOKEN_KEY) || '').trim();
+  if (/^[A-Za-z0-9._~-]{16,128}$/.test(savedId)
+      && /^[A-Za-z0-9._~-]{32,256}$/.test(savedToken)) {
+    return { deviceId: savedId, deviceToken: savedToken };
+  }
+  const currentId = String(localStorage.getItem(MERCARI_DEVICE_ID_KEY) || '').trim();
+  const deviceId = /^[A-Za-z0-9._~-]{16,128}$/.test(currentId)
+    ? currentId
+    : `mercari-${secureRandomBase64Url_(18)}`;
+  const deviceToken = `dev_${secureRandomBase64Url_(48)}`;
+  localStorage.setItem(MERCARI_PENDING_DEVICE_ID_KEY, deviceId);
+  localStorage.setItem(MERCARI_PENDING_DEVICE_TOKEN_KEY, deviceToken);
+  return { deviceId, deviceToken };
+}
+
+function validatePairingCode_(value) {
+  const normalized = String(value || '').trim();
+  return normalized.length >= 24
+    && normalized.length <= 512
+    && /^[A-Za-z0-9._~-]+$/.test(normalized)
+    ? normalized
+    : '';
+}
+
+async function registerMercariDeviceWithGas_(gasUrl, pairingCode, credential) {
+  const response = await fetchWithTimeout(gasUrl, {
+    method: 'POST',
+    mode: 'cors',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      action: 'registerMercariDevice',
+      auth_token: pairingCode,
+      device_id: credential.deviceId,
+      device_token: credential.deviceToken,
+    }),
+  }, 15000);
+  const data = await readJsonResponse(response, '端末接続');
+  if (!response.ok || data.success !== true || data.data?.registered !== true) {
+    throw new Error(data.error || 'GASへ端末情報を登録できませんでした');
+  }
+  if (String(data.data.device_id || '') !== credential.deviceId) {
+    throw new Error('GASの端末確認結果が一致しません');
+  }
+  const serviceUrl = normalizeMacServiceUrl_(data.data.url);
+  if (!serviceUrl) {
+    throw new Error('Macのメルカリ自動入力サービスが起動していません');
+  }
+  return serviceUrl;
+}
+
+async function registerMercariDeviceWithMac_(serviceUrl, pairingCode, credential) {
+  const response = await fetchWithTimeout(`${serviceUrl}/auth/register-device`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${pairingCode}`,
+    },
+    body: JSON.stringify({
+      device_id: credential.deviceId,
+      device_token: credential.deviceToken,
+    }),
+  }, 15000);
+  const data = await readJsonResponse(response, 'Mac端末接続');
+  if (!response.ok || data.ok !== true || data.registered !== true) {
+    throw new Error(data.error || 'Macへ端末情報を登録できませんでした');
+  }
+  if (String(data.device_id || '') !== credential.deviceId) {
+    throw new Error('Macの端末確認結果が一致しません');
+  }
+}
+
+async function pairMercariDevice_(pairingCode, gasUrl = getPreferredGasUrl()) {
+  const normalizedPairing = validatePairingCode_(pairingCode);
+  const normalizedGasUrl = normalizeGasUrl(gasUrl);
+  if (!normalizedPairing) throw new Error('端末接続コードが正しくありません');
+  if (!normalizedGasUrl) throw new Error('GAS URLが正しくありません');
+
+  // 途中で通信が切れても同じ候補を再送する。既存端末の鍵は両方の登録成功まで変更しない。
+  const credential = getOrCreatePendingMercariCredential_();
+  const serviceUrl = await registerMercariDeviceWithGas_(
+    normalizedGasUrl,
+    normalizedPairing,
+    credential,
+  );
+  await registerMercariDeviceWithMac_(serviceUrl, normalizedPairing, credential);
+
+  const previous = {
+    id: String(localStorage.getItem(MERCARI_DEVICE_ID_KEY) || ''),
+    token: String(localStorage.getItem(MERCARI_DEVICE_TOKEN_KEY) || ''),
+  };
+  try {
+    localStorage.setItem(MERCARI_DEVICE_ID_KEY, credential.deviceId);
+    localStorage.setItem(MERCARI_DEVICE_TOKEN_KEY, credential.deviceToken);
+    if (!hasMercariDeviceCredential_()
+        || localStorage.getItem(MERCARI_DEVICE_ID_KEY) !== credential.deviceId
+        || localStorage.getItem(MERCARI_DEVICE_TOKEN_KEY) !== credential.deviceToken) {
+      throw new Error('端末専用の接続情報を保存できませんでした');
+    }
+  } catch (error) {
+    if (previous.id) localStorage.setItem(MERCARI_DEVICE_ID_KEY, previous.id);
+    else localStorage.removeItem(MERCARI_DEVICE_ID_KEY);
+    if (previous.token) localStorage.setItem(MERCARI_DEVICE_TOKEN_KEY, previous.token);
+    else localStorage.removeItem(MERCARI_DEVICE_TOKEN_KEY);
+    throw error;
+  }
+  localStorage.removeItem(MERCARI_PENDING_DEVICE_ID_KEY);
+  localStorage.removeItem(MERCARI_PENDING_DEVICE_TOKEN_KEY);
+  localStorage.removeItem(API_AUTH_TOKEN_KEY);
+  if (String(localStorage.getItem('daniel_route_device_auth_v1') || '').trim()) {
+    localStorage.removeItem(LEGACY_SHARED_API_AUTH_TOKEN_KEY);
+  }
+  localStorage.setItem(SERVICE_URL_KEY, normalizedGasUrl);
+  cacheMacServiceUrl_(serviceUrl);
+  return { deviceId: credential.deviceId, serviceUrl };
+}
+
+async function ensureMercariDeviceCredential_() {
+  if (hasMercariDeviceCredential_()) return true;
+  const pairingCode = getPairingCode_();
+  if (!pairingCode) return false;
+  await pairMercariDevice_(pairingCode, getPreferredGasUrl());
+  return true;
 }
 
 function createOperationId_(label = 'operation') {
@@ -2382,8 +2582,10 @@ function normalizeMacServiceUrl_(url) {
     const parsed = new URL(normalized);
     const localHttp = parsed.protocol === 'http:'
       && ['localhost', '127.0.0.1'].includes(parsed.hostname);
+    const cloudflareHttps = parsed.protocol === 'https:'
+      && /^[a-z0-9-]+\.trycloudflare\.com$/i.test(parsed.hostname);
     if (
-      (parsed.protocol !== 'https:' && !localHttp)
+      (!cloudflareHttps && !localHttp)
       || parsed.username
       || parsed.password
       || parsed.search
@@ -2439,7 +2641,7 @@ function isTransientServiceDiscoveryError_(error) {
 
 async function fetchTunnelUrlFromGasOnce_(gasUrl) {
   const authToken = getApiAuthToken();
-  if (!authToken) throw new Error('端末接続コードが未設定です。設定画面で接続してください。');
+  if (!authToken) throw new Error('この端末は未接続です。設定画面で接続してください。');
   const gasResp = await fetchWithTimeout(
     gasUrl,
     {
@@ -8497,6 +8699,15 @@ globalThis.MercariAppTestHooks = {
   safeTemporaryThumbnailBase64_,
   normalizeMacServiceUrl_,
   normalizeGasUrl,
+  getApiAuthToken,
+  getPairingCode_,
+  hasMercariDeviceCredential_,
+  getOrCreatePendingMercariCredential_,
+  validatePairingCode_,
+  registerMercariDeviceWithGas_,
+  registerMercariDeviceWithMac_,
+  pairMercariDevice_,
+  ensureMercariDeviceCredential_,
   getCachedMacServiceUrl_,
   cacheMacServiceUrl_,
   clearCachedMacServiceUrl_,

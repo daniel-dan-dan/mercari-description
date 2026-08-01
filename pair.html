@@ -6,39 +6,169 @@
   <meta name="theme-color" content="#f23d4a">
   <title>端末を接続</title>
   <link rel="icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260731b">
+  <link rel="stylesheet" href="styles.css?v=20260801a">
 </head>
 <body>
   <main id="app">
     <section class="screen pairing-screen">
       <h1>端末を接続</h1>
       <p id="pair-status" class="status" role="status" aria-live="polite">接続コードを確認しています...</p>
+      <button id="pair-retry" class="btn primary large" type="button" hidden>もう一度接続</button>
       <a id="pair-open" class="btn primary large" href="./" hidden>メルカリAI出品を開く</a>
     </section>
   </main>
   <script>
     (() => {
-      const key = 'mercari_api_auth_token';
+      const GAS_URL = 'https://script.google.com/macros/s/AKfycbwYfwDG7Kqplk2oVeX7kF_gsAKTlK087ToE4LGp5R7PglTFMARP2lrA6ZV9m3MD0LEs/exec';
+      const PAIRING_KEY = 'mercari_api_auth_token';
+      const DEVICE_ID_KEY = 'mercari_device_id_v1';
+      const DEVICE_TOKEN_KEY = 'mercari_device_auth_v1';
+      const PENDING_ID_KEY = 'mercari_pending_device_id_v1';
+      const PENDING_TOKEN_KEY = 'mercari_pending_device_auth_v1';
+      const GAS_URL_KEY = 'gasUrl';
+      const MAC_URL_KEY = 'mercari_mac_service_url_cache';
       const status = document.getElementById('pair-status');
+      const retry = document.getElementById('pair-retry');
       const open = document.getElementById('pair-open');
       const params = new URLSearchParams(location.hash.slice(1));
       const token = String(params.get('token') || '').trim();
+      // 接続コードをブラウザ履歴や画面共有に残さない。
+      history.replaceState(null, '', `${location.pathname}${location.search}`);
       if (token.length < 24 || token.length > 512 || !/^[A-Za-z0-9._~-]+$/.test(token)) {
         status.textContent = '接続コードが見つかりません。新しいQRコードを読み取ってください。';
         status.className = 'status error';
         return;
       }
-      try {
-        localStorage.setItem(key, token);
-      } catch (_) {
-        status.textContent = '接続コードを保存できません。ブラウザの保存容量と設定を確認してください。';
-        status.className = 'status error';
-        return;
-      }
-      history.replaceState(null, '', location.pathname);
-      status.textContent = 'この端末を安全に接続しました。';
-      status.className = 'status success';
-      open.hidden = false;
+
+      const randomBase64Url = byteLength => {
+        if (!crypto?.getRandomValues) throw new Error('安全な端末情報を作成できません');
+        const bytes = new Uint8Array(byteLength);
+        crypto.getRandomValues(bytes);
+        let binary = '';
+        bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+        return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+      };
+      const getPendingCredential = () => {
+        const savedId = String(localStorage.getItem(PENDING_ID_KEY) || '').trim();
+        const savedToken = String(localStorage.getItem(PENDING_TOKEN_KEY) || '').trim();
+        if (/^[A-Za-z0-9._~-]{16,128}$/.test(savedId)
+            && /^[A-Za-z0-9._~-]{32,256}$/.test(savedToken)) {
+          return { deviceId: savedId, deviceToken: savedToken };
+        }
+        const currentId = String(localStorage.getItem(DEVICE_ID_KEY) || '').trim();
+        const deviceId = /^[A-Za-z0-9._~-]{16,128}$/.test(currentId)
+          ? currentId
+          : `mercari-${randomBase64Url(18)}`;
+        const deviceToken = `dev_${randomBase64Url(48)}`;
+        localStorage.setItem(PENDING_ID_KEY, deviceId);
+        localStorage.setItem(PENDING_TOKEN_KEY, deviceToken);
+        return { deviceId, deviceToken };
+      };
+      const normalizeMacUrl = value => {
+        try {
+          const parsed = new URL(String(value || '').trim());
+          if (parsed.protocol !== 'https:'
+              || !/^[a-z0-9-]+\.trycloudflare\.com$/i.test(parsed.hostname)
+              || parsed.username || parsed.password || parsed.search || parsed.hash
+              || !/^\/?$/.test(parsed.pathname)) return '';
+          return parsed.origin;
+        } catch (_) {
+          return '';
+        }
+      };
+      const fetchWithTimeout = async (url, options, timeoutMs = 15000) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+      const register = async () => {
+        const credential = getPendingCredential();
+        const gasResponse = await fetchWithTimeout(GAS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'registerMercariDevice',
+            auth_token: token,
+            device_id: credential.deviceId,
+            device_token: credential.deviceToken,
+          }),
+        }, 15000);
+        const gasData = await gasResponse.json();
+        if (!gasResponse.ok || gasData.success !== true || gasData.data?.registered !== true) {
+          throw new Error(gasData.error || 'GASへ端末情報を登録できませんでした');
+        }
+        if (String(gasData.data.device_id || '') !== credential.deviceId) {
+          throw new Error('GASの端末確認結果が一致しません');
+        }
+        const macUrl = normalizeMacUrl(gasData.data.url);
+        if (!macUrl) throw new Error('Macのメルカリ自動入力サービスが起動していません');
+        const macResponse = await fetchWithTimeout(`${macUrl}/auth/register-device`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            device_id: credential.deviceId,
+            device_token: credential.deviceToken,
+          }),
+        }, 15000);
+        const macData = await macResponse.json();
+        if (!macResponse.ok || macData.ok !== true || macData.registered !== true) {
+          throw new Error(macData.error || 'Macへ端末情報を登録できませんでした');
+        }
+        if (String(macData.device_id || '') !== credential.deviceId) {
+          throw new Error('Macの端末確認結果が一致しません');
+        }
+
+        const previousId = String(localStorage.getItem(DEVICE_ID_KEY) || '');
+        const previousToken = String(localStorage.getItem(DEVICE_TOKEN_KEY) || '');
+        try {
+          localStorage.setItem(DEVICE_ID_KEY, credential.deviceId);
+          localStorage.setItem(DEVICE_TOKEN_KEY, credential.deviceToken);
+          if (localStorage.getItem(DEVICE_ID_KEY) !== credential.deviceId
+              || localStorage.getItem(DEVICE_TOKEN_KEY) !== credential.deviceToken) {
+            throw new Error('端末専用の接続情報を保存できませんでした');
+          }
+        } catch (error) {
+          if (previousId) localStorage.setItem(DEVICE_ID_KEY, previousId);
+          else localStorage.removeItem(DEVICE_ID_KEY);
+          if (previousToken) localStorage.setItem(DEVICE_TOKEN_KEY, previousToken);
+          else localStorage.removeItem(DEVICE_TOKEN_KEY);
+          throw error;
+        }
+        localStorage.removeItem(PENDING_ID_KEY);
+        localStorage.removeItem(PENDING_TOKEN_KEY);
+        localStorage.removeItem(PAIRING_KEY);
+        if (String(localStorage.getItem('daniel_route_device_auth_v1') || '').trim()) {
+          localStorage.removeItem('daniel_api_auth_token');
+        }
+        localStorage.setItem(GAS_URL_KEY, GAS_URL);
+        localStorage.setItem(MAC_URL_KEY, macUrl);
+      };
+
+      const attempt = async () => {
+        retry.hidden = true;
+        status.textContent = 'この端末を安全に接続しています...';
+        status.className = 'status';
+        try {
+          await register();
+          status.textContent = 'この端末を安全に接続しました。今後のアプリ更新では再入力不要です。';
+          status.className = 'status success';
+          open.hidden = false;
+        } catch (error) {
+          console.warn('端末接続に失敗しました:', error);
+          status.textContent = `${error.message || '端末を接続できませんでした'}。接続情報は消さず、もう一度試せます。`;
+          status.className = 'status error';
+          retry.hidden = false;
+        }
+      };
+      retry.addEventListener('click', attempt);
+      attempt();
     })();
   </script>
 </body>
