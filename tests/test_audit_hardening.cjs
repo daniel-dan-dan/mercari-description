@@ -105,10 +105,10 @@ const styles = fs.readFileSync('styles.css', 'utf8');
 assert.match(indexHtml, /id="session-save-status"/);
 assert.match(pairHtml, /token\.length > 512/);
 assert.match(pairHtml, /\^\[A-Za-z0-9\._~-\]\+\$/);
-assert.match(serviceWorker, /mercari-description-v20260814a/);
-assert.match(serviceWorker, /styles\.css\?v=20260814a/);
-assert.match(serviceWorker, /catalog-data\.js\?v=20260814a/);
-assert.match(serviceWorker, /app\.js\?v=20260814a/);
+assert.match(serviceWorker, /mercari-description-v20260814b/);
+assert.match(serviceWorker, /styles\.css\?v=20260814b/);
+assert.match(serviceWorker, /catalog-data\.js\?v=20260814b/);
+assert.match(serviceWorker, /app\.js\?v=20260814b/);
 assert.match(serviceWorker, /ignoreSearch: true/);
 assert.match(serviceWorker, /event\.request\.mode === 'navigate'/);
 assert.match(styles, /\.preview-item \.remove \{[\s\S]{0,220}width: 44px;[\s\S]{0,80}height: 44px;/);
@@ -123,5 +123,5 @@ console.log(JSON.stringify({
   researchRetry: true,
   likesDecreaseVisible: true,
   urlSafety: true,
-  version: 'v20260814a',
+  version: 'v20260814b',
 }));

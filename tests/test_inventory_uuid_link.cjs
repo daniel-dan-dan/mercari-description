@@ -94,14 +94,17 @@ assert.equal(restoredState.inventoryMeta, 'SKU ABC-001');
 const candidateLabel = hooks.inventoryCandidateLabel_({
   productName: '候補商品',
   sku: 'ABC-001',
-  asin: 'B000000001',
+  asin: 'なし',
   purchaseDate: '2026-07-30',
   status: '在庫',
 });
 assert.equal(candidateLabel.name, '候補商品');
 assert.match(candidateLabel.meta, /SKU ABC-001/);
-assert.match(candidateLabel.meta, /ASIN B000000001/);
+assert.doesNotMatch(candidateLabel.meta, /ASIN/);
 assert.doesNotMatch(candidateLabel.meta, /2026-07-30|在庫/);
+assert.equal(hooks.isMercariInventoryCandidate_({ asin: ' なし ' }), true);
+assert.equal(hooks.isMercariInventoryCandidate_({ asin: 'Ｂ００００００００１' }), false);
+assert.equal(hooks.isMercariInventoryCandidate_({ asin: '' }), false);
 
 const indexHtml = fs.readFileSync('index.html', 'utf8');
 const styles = fs.readFileSync('styles.css', 'utf8');
@@ -122,6 +125,9 @@ assert.doesNotMatch(indexHtml, /placeholder="inv_/);
 assert.doesNotMatch(indexHtml, /inventoryUuid付きURL/);
 assert.doesNotMatch(indexHtml, /UUID/);
 assert.match(indexHtml, /在庫から選ぶ/);
+assert.match(indexHtml, /ASINが「なし」の在庫から/);
+assert.match(indexHtml, /placeholder="SKU・商品名で検索"/);
+assert.doesNotMatch(indexHtml, /placeholder="SKU・ASIN・商品名で検索"/);
 assert.match(indexHtml, /未選択でも下書き保存できます/);
 assert.match(source, /\/inventory\/candidates/);
 assert.match(source, /商品名からの自動選択は行っていません/);
@@ -131,12 +137,12 @@ assert.match(source, /inventoryMeta:/);
 assert.match(source, /clearInventorySelection_\(\{ persist: false \}\)/);
 assert.match(styles, /\.inventory-selected-summary/);
 assert.match(styles, /\.inventory-candidate-item/);
-assert.match(serviceWorker, /mercari-description-v20260814a/);
+assert.match(serviceWorker, /mercari-description-v20260814b/);
 
 console.log(JSON.stringify({
   ok: true,
   inventorySelection: 'manual-only',
   temporaryDraftPreserved: true,
   fingerprintIncludesInventory: true,
-  version: 'v20260814a',
+  version: 'v20260814b',
 }));

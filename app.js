@@ -3069,15 +3069,20 @@ function createMacServiceUrlRefresher_(statusCallback) {
   };
 }
 
+function isMercariInventoryCandidate_(candidate = {}) {
+  let asin = String(candidate.asin || '').trim();
+  try { asin = asin.normalize('NFKC'); } catch (_) {}
+  return asin === 'なし';
+}
+
 function inventoryCandidateLabel_(candidate = {}) {
   const name = String(candidate.productName || '').trim() || '商品名未登録';
   const identifiers = [
     candidate.sku ? `SKU ${candidate.sku}` : '',
-    candidate.asin ? `ASIN ${candidate.asin}` : '',
   ].filter(Boolean);
   return {
     name,
-    meta: identifiers.join(' / ') || 'SKU・ASIN未登録',
+    meta: identifiers.join(' / ') || 'SKU未登録',
   };
 }
 
@@ -3087,7 +3092,7 @@ function renderInventoryCandidates_(items) {
   const candidates = Array.isArray(items)
     ? items.filter(item => {
       const parsed = parseInventoryReference_(item?.inventoryUuid);
-      return parsed.valid && !parsed.empty;
+      return parsed.valid && !parsed.empty && isMercariInventoryCandidate_(item);
     })
     : [];
   if (!candidates.length) {
@@ -3134,13 +3139,14 @@ async function loadInventoryCandidates_() {
     if (!response.ok || !data.ok || !Array.isArray(data.items)) {
       throw new Error(data.error || '在庫候補を取得できませんでした');
     }
-    renderInventoryCandidates_(data.items);
+    const candidates = data.items.filter(isMercariInventoryCandidate_);
+    renderInventoryCandidates_(candidates);
     if (status) {
-      status.textContent = data.items.length
-        ? `${data.items.length}件を表示中です。商品名から自動選択せず、対象を手動で選んでください。`
+      status.textContent = candidates.length
+        ? `${candidates.length}件を表示中です。ASINが「なし」の対象を手動で選んでください。`
         : '条件に合う在庫候補はありません。検索語を変えるか、詳細設定から在庫管理の情報を貼り付けてください。';
     }
-    return data.items;
+    return candidates;
   } catch (error) {
     renderInventoryCandidates_([]);
     if (status) status.textContent = `在庫候補を取得できませんでした: ${error.message || error}`;
@@ -8951,6 +8957,7 @@ globalThis.MercariAppTestHooks = {
   draftPayloadFingerprint_,
   parseInventoryReference_,
   normalizeInventoryUuid_,
+  isMercariInventoryCandidate_,
   inventoryCandidateLabel_,
   getOrCreateDraftOperation_,
   clearDraftOperation_,
