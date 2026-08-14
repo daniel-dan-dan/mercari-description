@@ -109,12 +109,12 @@ assert.match(indexHtml, />次へ：確認</);
 assert.match(indexHtml, />調査依頼を保存</);
 assert.match(indexHtml, />保存済みの依頼を見る</);
 assert.match(indexHtml, /id="research-saved-section"/);
-assert.match(indexHtml, /styles\.css\?v=20260801a/);
-assert.match(indexHtml, /app\.js\?v=20260801a/);
-assert.match(indexHtml, /v20260801a \/ 端末接続を自動更新/);
+assert.match(indexHtml, /styles\.css\?v=20260814a/);
+assert.match(indexHtml, /app\.js\?v=20260814a/);
+assert.match(indexHtml, /v20260814a \/ AIエラー表示を改善/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260801a/);
+assert.match(serviceWorker, /mercari-description-v20260814a/);
 
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
 assert.match(pairHtml, /mercari_api_auth_token/);

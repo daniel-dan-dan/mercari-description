@@ -23,6 +23,11 @@ const DRAFT_START_TIMEOUT_MS = 120000;
 const DRAFT_START_RETRY_DELAY_MS = 1200;
 const JOB_STATUS_MAX_CONSECUTIVE_ERRORS = 3;
 const JOB_STATUS_RETRY_DELAY_MS = 1500;
+const DESCRIPTION_RESULT_POLL_TIMEOUT_MS = 180000;
+const DESCRIPTION_RESULT_POLL_INTERVAL_MS = 5000;
+const DESCRIPTION_RESULT_REQUEST_TIMEOUT_MS = 10000;
+const DESCRIPTION_RESULT_MAX_CONSECUTIVE_ERRORS = 3;
+const DESCRIPTION_RESULT_MAX_AGE_MS = 10 * 60 * 1000;
 const DRAFT_OPERATION_TTL_MS = 6 * 60 * 60 * 1000;
 const INVENTORY_UUID_PATTERN = /^inv_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const INVENTORY_CANDIDATE_LIMIT = 50;
@@ -2536,12 +2541,285 @@ function formatNetworkError(err, label) {
     (err && (err.name === 'AbortError' || err.name === 'TimeoutError'))
     || /fetch is aborted|the operation was aborted/i.test(raw)
   ) {
-    return `${label}がタイムアウトしました。写真枚数を減らすか、少し時間を置いて再実行してください。`;
+    return `${label}がタイムアウトしました。入力した写真と採寸はこの端末に残っています。少し時間を置いて再実行してください。`;
   }
   if (/load failed|failed to fetch|networkerror/i.test(raw)) {
-    return `${label}に失敗しました。Macサービスまたはトンネルの通信が切れた可能性があります。写真が多い場合は、先頭12枚までに減らして再実行してください。`;
+    return `${label}に失敗しました。Macサービスまたはトンネルの通信が一時的に切れた可能性があります。入力した写真と採寸はこの端末に残っています。`;
   }
   return `${label}に失敗しました: ${raw}`;
+}
+
+function makeDescriptionApiError_(data = {}, status = 0) {
+  const code = String(data.code || '').trim();
+  const raw = String(data.error || data.message || '').trim();
+  const requestId = String(data.requestId || '').trim();
+  const httpStatus = Number(status || data.status || 0);
+  const hasExplicitCode = Boolean(code);
+  const billingError = code === 'OPENAI_BILLING_REQUIRED'
+    || (
+      !hasExplicitCode
+      && /利用枠または請求設定|quota|billing|credits|insufficient_quota/i.test(raw)
+    );
+  const rateLimitError = !billingError && (
+    code === 'OPENAI_RATE_LIMITED'
+    || (
+      !hasExplicitCode
+      && (
+        httpStatus === 429
+        || /rate[ _-]?limit|too many requests|混み合って/i.test(raw)
+      )
+    )
+  );
+  let message = raw || `AI APIエラー (${status || '不明'})`;
+
+  if (billingError) {
+    message = (
+      'OpenAI APIの利用枠または請求設定で停止しています。'
+      + '写真を減らしても解消しません。入力した写真と採寸はこの端末に残っています。'
+      + 'OpenAI Platformの「Billing」でAPIクレジット残高と利用上限を確認し、利用できる状態に戻した後、もう一度「説明文を生成」を押してください。'
+    );
+  } else if (rateLimitError) {
+    message = 'OpenAI APIが混み合っています。入力内容は残っています。数分待って再実行してください。';
+  } else if (code === 'OPENAI_TEMPORARY_UNAVAILABLE') {
+    message = 'OpenAI APIに一時的な障害が発生しています。入力内容は残っています。少し待って再実行してください。';
+  }
+
+  if (requestId) message += `（管理ID: ${requestId.slice(0, 8)}）`;
+  const error = new Error(message);
+  error.code = code || (
+    billingError
+      ? 'OPENAI_BILLING_REQUIRED'
+      : (rateLimitError ? 'OPENAI_RATE_LIMITED' : 'DESCRIPTION_FAILED')
+  );
+  error.httpStatus = httpStatus;
+  error.requestId = requestId;
+  return error;
+}
+
+function matchingRecentDescriptionFailure_(health, clientRequestId, nowMs = Date.now()) {
+  const failure = health && typeof health === 'object' ? health.lastFailure : null;
+  if (!failure || typeof failure !== 'object') return null;
+  const expectedId = String(clientRequestId || '').trim();
+  const actualId = String(failure.clientRequestId || '').trim();
+  if (!expectedId || !actualId || expectedId !== actualId) return null;
+  const occurredAt = Number(failure.atEpochMs || 0);
+  if (!Number.isFinite(occurredAt) || occurredAt <= 0) return null;
+  const ageMs = Number(nowMs) - occurredAt;
+  if (ageMs < -30000 || ageMs > DESCRIPTION_RESULT_MAX_AGE_MS) return null;
+  return failure;
+}
+
+function matchesDescriptionOperationId_(record, clientRequestId) {
+  if (!record || typeof record !== 'object') return false;
+  const expectedId = String(clientRequestId || '').trim();
+  if (!expectedId) return false;
+  const ids = [record.operationId, record.clientRequestId]
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+  return ids.length > 0 && ids.every(value => value === expectedId);
+}
+
+function normalizeDescriptionOperationResult_(data, clientRequestId, nowMs = Date.now()) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    const error = new Error('AI生成結果の応答形式が不正です');
+    error.retryableDescriptionResult = true;
+    throw error;
+  }
+  if (!matchesDescriptionOperationId_(data, clientRequestId)) {
+    return { status: 'unknown', reason: 'operation-id-mismatch' };
+  }
+
+  const status = String(data.status || '').trim().toLowerCase();
+  if (status === 'processing') return { status, data };
+  if (status === 'unknown') return { status, data };
+
+  if (status === 'failed') {
+    const failure = data.failure;
+    const matched = matchesDescriptionOperationId_(failure, clientRequestId)
+      && matchingRecentDescriptionFailure_({ lastFailure: failure }, clientRequestId, nowMs);
+    if (!matched) return { status: 'unknown', reason: 'failure-stale-or-mismatch', data };
+    return { status, failure: matched, data };
+  }
+
+  if (status === 'success') {
+    const result = data.result;
+    if (!result || typeof result !== 'object' || Array.isArray(result)) {
+      const error = new Error('保存されたAI生成結果の形式が不正です');
+      error.retryableDescriptionResult = true;
+      throw error;
+    }
+    if (!matchesDescriptionOperationId_(result, clientRequestId)) {
+      return { status: 'unknown', reason: 'success-operation-id-mismatch', data };
+    }
+    if (!String(result.text || '').trim()) {
+      const error = new Error('保存されたAI生成結果が空でした');
+      error.retryableDescriptionResult = true;
+      throw error;
+    }
+    return { status, result, data };
+  }
+
+  const error = new Error('AI生成結果の状態が不正です');
+  error.retryableDescriptionResult = true;
+  throw error;
+}
+
+function isRetryableDescriptionResultError_(error) {
+  const status = Number(error?.httpStatus || 0);
+  return !!error?.retryableDescriptionResult
+    || isTransientServiceDiscoveryError_(error)
+    || [408, 425, 429, 500, 502, 503, 504].includes(status);
+}
+
+async function fetchDescriptionOperationResultOnce_(
+  tunnelUrl,
+  clientRequestId,
+  { requestTimeoutMs = DESCRIPTION_RESULT_REQUEST_TIMEOUT_MS, nowMs = Date.now() } = {},
+) {
+  const url = `${tunnelUrl}/describe/result?operationId=${encodeURIComponent(clientRequestId)}`;
+  const response = await fetchWithTimeout(url, {}, requestTimeoutMs);
+  let data;
+  try {
+    data = await readJsonResponse(response, 'AI生成結果確認');
+  } catch (error) {
+    error.httpStatus = response.status;
+    error.retryableDescriptionResult = !!response.ok
+      || [408, 425, 429, 500, 502, 503, 504].includes(Number(response.status || 0));
+    throw error;
+  }
+  if (!response.ok) {
+    const error = new Error(data.error || data.message || `AI生成結果を確認できませんでした (${response.status})`);
+    error.httpStatus = response.status;
+    error.retryableDescriptionResult = [408, 425, 429, 500, 502, 503, 504]
+      .includes(Number(response.status || 0));
+    throw error;
+  }
+  return normalizeDescriptionOperationResult_(data, clientRequestId, nowMs);
+}
+
+async function pollDescriptionOperationResult_(
+  initialTunnelUrl,
+  clientRequestId,
+  {
+    timeoutMs = DESCRIPTION_RESULT_POLL_TIMEOUT_MS,
+    intervalMs = DESCRIPTION_RESULT_POLL_INTERVAL_MS,
+    requestTimeoutMs = DESCRIPTION_RESULT_REQUEST_TIMEOUT_MS,
+    maxConsecutiveNetworkErrors = DESCRIPTION_RESULT_MAX_CONSECUTIVE_ERRORS,
+    onStatus,
+    refreshUrl,
+    waitFn = waitForPoll_,
+    nowFn = Date.now,
+  } = {},
+) {
+  const startedAt = nowFn();
+  let currentTunnelUrl = normalizeMacServiceUrl_(initialTunnelUrl) || initialTunnelUrl;
+  let consecutiveNetworkErrors = 0;
+
+  while (true) {
+    let outcome;
+    try {
+      outcome = await fetchDescriptionOperationResultOnce_(currentTunnelUrl, clientRequestId, {
+        requestTimeoutMs,
+        nowMs: nowFn(),
+      });
+      consecutiveNetworkErrors = 0;
+    } catch (error) {
+      if (!isRetryableDescriptionResultError_(error)) {
+        error.tunnelUrl = currentTunnelUrl;
+        throw error;
+      }
+      consecutiveNetworkErrors += 1;
+      if (consecutiveNetworkErrors >= maxConsecutiveNetworkErrors) {
+        error.tunnelUrl = currentTunnelUrl;
+        throw error;
+      }
+      onStatus?.(
+        `MacではAI生成が続いている可能性があります。結果確認へ再接続中... `
+        + `(${consecutiveNetworkErrors + 1}/${maxConsecutiveNetworkErrors})`
+      );
+      if (typeof refreshUrl === 'function') {
+        try {
+          const refreshed = normalizeMacServiceUrl_(await refreshUrl());
+          if (refreshed) currentTunnelUrl = refreshed;
+        } catch (_) {
+          // 接続先を再取得できなくても、同じ受付IDのGET確認だけを続ける。
+        }
+      }
+      if (nowFn() - startedAt >= timeoutMs) {
+        return { status: 'timeout', tunnelUrl: currentTunnelUrl };
+      }
+      await waitFn(intervalMs);
+      continue;
+    }
+
+    if (outcome.status !== 'processing') {
+      return { ...outcome, tunnelUrl: currentTunnelUrl };
+    }
+    onStatus?.('MacでAI生成が続いています。同じ受付IDで結果を確認中...');
+    if (nowFn() - startedAt >= timeoutMs) {
+      return { status: 'timeout', tunnelUrl: currentTunnelUrl };
+    }
+    await waitFn(intervalMs);
+  }
+}
+
+async function findDescriptionFailureViaHealth_(tunnelUrl, clientRequestId) {
+  try {
+    const healthUrl = `${tunnelUrl}/describe/health?operationId=${encodeURIComponent(clientRequestId)}`;
+    const healthResponse = await fetchWithTimeout(healthUrl, {}, 8000);
+    const health = await readJsonResponse(healthResponse, 'AI生成状態確認');
+    const failure = matchingRecentDescriptionFailure_(health, clientRequestId);
+    return healthResponse.ok && failure ? failure : null;
+  } catch (healthError) {
+    console.warn('AI生成失敗の原因確認に失敗:', healthError);
+    return null;
+  }
+}
+
+function makeDescriptionAmbiguousError_(originalError, reason = 'unknown') {
+  const error = new Error(
+    'AI生成の最終結果を確認できませんでした。Macで処理が続いている可能性があるため、'
+    + 'すぐに「説明文を生成」を押し直さないでください。入力した写真と採寸はこの端末に残っています。'
+  );
+  error.code = 'DESCRIPTION_RESULT_UNKNOWN';
+  error.ambiguousDescriptionResult = true;
+  error.reason = reason;
+  error.cause = originalError;
+  return error;
+}
+
+async function recoverDescriptionNetworkFailure_(
+  tunnelUrl,
+  clientRequestId,
+  originalError,
+  { onStatus, refreshUrl, pollOptions = {} } = {},
+) {
+  let outcome = null;
+  let recoveryError = null;
+  try {
+    outcome = await pollDescriptionOperationResult_(tunnelUrl, clientRequestId, {
+      ...pollOptions,
+      onStatus,
+      refreshUrl,
+    });
+  } catch (error) {
+    recoveryError = error;
+  }
+
+  if (outcome?.status === 'success') return outcome.result;
+  if (outcome?.status === 'failed') {
+    throw makeDescriptionApiError_(outcome.failure, outcome.failure.status || 0);
+  }
+
+  const lastTunnelUrl = outcome?.tunnelUrl || recoveryError?.tunnelUrl || tunnelUrl;
+  const healthFailure = await findDescriptionFailureViaHealth_(lastTunnelUrl, clientRequestId);
+  if (healthFailure) {
+    throw makeDescriptionApiError_(healthFailure, healthFailure.status || 0);
+  }
+  throw makeDescriptionAmbiguousError_(
+    recoveryError || originalError,
+    outcome?.reason || outcome?.status || 'result-check-failed',
+  );
 }
 
 async function readJsonResponse(response, label) {
@@ -3179,26 +3457,50 @@ async function callDescriptionAi(images, onChunk) {
     onChunk(`AIが画像を分析中...${suffix}`);
   }
 
+  const clientRequestId = createOperationId_('describe');
+  const recoverResult = async originalError => {
+    const recovered = await recoverDescriptionNetworkFailure_(
+      tunnelUrl,
+      clientRequestId,
+      originalError,
+      {
+        onStatus: onChunk,
+        refreshUrl: () => getMercariServiceUrl((message) => onChunk?.(message)),
+      },
+    );
+    return completeDescriptionAiResponse_(recovered, onChunk);
+  };
   let res;
   try {
     res = await fetchWithTimeout(
       `${tunnelUrl}/describe`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Operation-Id': clientRequestId,
+        },
         body: JSON.stringify(payload),
       },
       120000
     );
   } catch (err) {
-    throw new Error(formatNetworkError(err, 'AI生成通信'));
+    return recoverResult(err);
   }
 
-  const data = await readJsonResponse(res, 'AI生成');
-  if (!res.ok) {
-    const requestId = data.requestId ? `（管理ID: ${String(data.requestId).slice(0, 8)}）` : '';
-    throw new Error((data.error || `AI APIエラー (${res.status})`) + requestId);
+  let data;
+  try {
+    data = await readJsonResponse(res, 'AI生成');
+  } catch (err) {
+    return recoverResult(err);
   }
+  if (!res.ok) {
+    throw makeDescriptionApiError_(data, res.status);
+  }
+  return completeDescriptionAiResponse_(data, onChunk);
+}
+
+function completeDescriptionAiResponse_(data, onChunk) {
   if (!data.text) {
     throw new Error('AI応答が空でした');
   }
@@ -8712,5 +9014,17 @@ globalThis.MercariAppTestHooks = {
   cacheMacServiceUrl_,
   clearCachedMacServiceUrl_,
   isTransientServiceDiscoveryError_,
+  makeDescriptionApiError_,
+  matchingRecentDescriptionFailure_,
+  matchesDescriptionOperationId_,
+  normalizeDescriptionOperationResult_,
+  isRetryableDescriptionResultError_,
+  fetchDescriptionOperationResultOnce_,
+  pollDescriptionOperationResult_,
+  findDescriptionFailureViaHealth_,
+  makeDescriptionAmbiguousError_,
+  recoverDescriptionNetworkFailure_,
+  completeDescriptionAiResponse_,
+  callDescriptionAi,
 };
 if (!globalThis.__MERCARI_TEST__) init();
