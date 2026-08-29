@@ -1012,14 +1012,23 @@ async function init() {
   el('retry-btn').addEventListener('click', retryGeneration);
   const listingStyleRefreshBtn = el('listing-style-refresh-btn');
   if (listingStyleRefreshBtn) listingStyleRefreshBtn.addEventListener('click', refreshListingStyleFromMac);
-  el('title-text').addEventListener('input', () => {
-    const titleInput = el('title-text');
-    const cappedTitle = capMercariTitleInput(titleInput.value);
-    if (titleInput.value !== cappedTitle) titleInput.value = cappedTitle;
-    syncDescriptionProductNameFromTitle_();
-    if (lastAiData) lastAiData.title = normalizeMercariTitle(titleInput.value);
-    scheduleSave();
-    updateDraftChecklist();
+  const titleInput = el('title-text');
+  titleInput.addEventListener('compositionstart', () => {
+    mercariTitleCompositionActive_ = true;
+  });
+  titleInput.addEventListener('compositionend', () => {
+    mercariTitleCompositionActive_ = false;
+    syncMercariTitleEditingState_();
+  });
+  titleInput.addEventListener('input', event => {
+    // iPhoneの日本語変換中にvalueを書き戻すと、変換が切れてカーソルが末尾へ移動する。
+    // 編集中は表示値を一切書き換えず、保存用データだけを正規化する。
+    if (event.isComposing || mercariTitleCompositionActive_) return;
+    syncMercariTitleEditingState_();
+  });
+  titleInput.addEventListener('blur', () => {
+    mercariTitleCompositionActive_ = false;
+    finalizeMercariTitleEditing_();
   });
   el('result-text').addEventListener('input', () => {
     if (lastAiData) lastAiData.description = el('result-text').value;
@@ -3687,8 +3696,28 @@ function normalizeMercariTitle(value) {
   return Array.from(cleaned).slice(0, MAX_MERCARI_TITLE_LENGTH).join('').trim();
 }
 
-function capMercariTitleInput(value) {
-  return normalizeMercariTitle(value);
+function normalizeMercariTitleEditingValue_(value, { finalize = false } = {}) {
+  const editingValue = String(value || '');
+  return finalize ? normalizeMercariTitle(editingValue) : editingValue;
+}
+
+let mercariTitleCompositionActive_ = false;
+
+function syncMercariTitleEditingState_() {
+  const titleInput = el('title-text');
+  if (!titleInput) return;
+  syncDescriptionProductNameFromTitle_();
+  if (lastAiData) lastAiData.title = normalizeMercariTitle(titleInput.value);
+  scheduleSave();
+  updateDraftChecklist();
+}
+
+function finalizeMercariTitleEditing_() {
+  const titleInput = el('title-text');
+  if (!titleInput) return;
+  const finalizedTitle = normalizeMercariTitleEditingValue_(titleInput.value, { finalize: true });
+  if (titleInput.value !== finalizedTitle) titleInput.value = finalizedTitle;
+  syncMercariTitleEditingState_();
 }
 
 function cleanTitleSegment(value) {
@@ -8989,6 +9018,7 @@ globalThis.MercariAppTestHooks = {
   cleanMercariTitleMarketingWords,
   isExcludedMercariTitleMarketingText,
   normalizeMercariTitle,
+  normalizeMercariTitleEditingValue_,
   defaultNewMinPrice: price => Math.max(300, Math.floor(Number(price || 0) * 0.7)),
   normalizeResearchWizardStep,
   isResearchPriceRangeValid,

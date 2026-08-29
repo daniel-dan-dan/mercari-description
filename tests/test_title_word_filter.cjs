@@ -27,6 +27,28 @@ vm.runInContext(source, context, { filename: 'app.js' });
 
 const hooks = context.MercariAppTestHooks;
 const screenshotTitle = '✨美品✨ アルコディオ リネンプルオーバーシャツ 麻100% 春夏 カジュアル';
+const indexHtml = fs.readFileSync('index.html', 'utf8');
+
+assert.equal(
+  hooks.normalizeMercariTitleEditingValue_('✨美品✨ 途中  入力中 ', { finalize: false }),
+  '✨美品✨ 途中  入力中 ',
+  '編集中の文字列は空白やカーソル位置に影響する加工をしない',
+);
+assert.equal(
+  hooks.normalizeMercariTitleEditingValue_('✨美品✨ 途中  入力中 ', { finalize: true }),
+  '✨美品✨ 途中 入力中',
+  '入力完了時だけ空白整理と40文字制限を適用する',
+);
+assert.doesNotMatch(
+  indexHtml,
+  /id="title-text"[^>]*maxlength=/,
+  'iPhone Safariが40文字の商品名を途中編集できるよう、HTML側では入力を遮断しない',
+);
+assert.match(source, /titleInput\.addEventListener\('compositionstart'/);
+assert.match(source, /titleInput\.addEventListener\('compositionend'/);
+assert.match(source, /if \(event\.isComposing \|\| mercariTitleCompositionActive_\) return;/);
+assert.match(source, /titleInput\.addEventListener\('blur',[\s\S]{0,160}finalizeMercariTitleEditing_\(\)/);
+assert.doesNotMatch(source, /titleInput\.value\s*=\s*capMercariTitleInput/);
 
 assert.equal(
   hooks.normalizeMercariTitle(screenshotTitle),
