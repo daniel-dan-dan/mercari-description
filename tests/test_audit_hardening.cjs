@@ -55,8 +55,9 @@ assert.equal(hooks.formatMarkdownLikeDelta(3), '+3');
 assert.equal(hooks.formatMarkdownLikeDelta(0), '0');
 assert.equal(hooks.formatMarkdownLikeDelta(-2), '-2');
 
-const gasUrl = 'https://script.google.com/macros/s/TEST_DEPLOYMENT/exec';
+const gasUrl = 'https://script.google.com/macros/s/AKfycbwYfwDG7Kqplk2oVeX7kF_gsAKTlK087ToE4LGp5R7PglTFMARP2lrA6ZV9m3MD0LEs/exec';
 assert.equal(hooks.normalizeGasUrl(gasUrl), gasUrl);
+assert.equal(hooks.normalizeGasUrl('https://script.google.com/macros/s/OTHER_DEPLOYMENT/exec'), '');
 assert.equal(hooks.normalizeGasUrl('https://evil.example/collect'), '');
 assert.equal(hooks.normalizeGasUrl(`${gasUrl}?next=https://evil.example`), '');
 assert.equal(hooks.normalizeMacServiceUrl_('https://user:pass@example.trycloudflare.com'), '');
@@ -100,15 +101,18 @@ assert.ok(refreshUrlCalls.length >= 6, '長時間処理と下書き処理で接�
 
 const indexHtml = fs.readFileSync('index.html', 'utf8');
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
+const pairJs = fs.readFileSync('pair.js', 'utf8');
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
 const styles = fs.readFileSync('styles.css', 'utf8');
 assert.match(indexHtml, /id="session-save-status"/);
-assert.match(pairHtml, /token\.length > 512/);
-assert.match(pairHtml, /\^\[A-Za-z0-9\._~-\]\+\$/);
-assert.match(serviceWorker, /mercari-description-v20260829a/);
-assert.match(serviceWorker, /styles\.css\?v=20260829a/);
-assert.match(serviceWorker, /catalog-data\.js\?v=20260829a/);
-assert.match(serviceWorker, /app\.js\?v=20260829a/);
+assert.match(pairJs, /value\.length <= 512/);
+assert.match(pairJs, /\^\[A-Za-z0-9\._~-\]\+\$/);
+assert.doesNotMatch(pairHtml, /<script(?:\s[^>]*)?>\s*(?!<)/);
+assert.match(pairHtml, /Content-Security-Policy/);
+assert.match(serviceWorker, /mercari-description-v20260831a/);
+assert.match(serviceWorker, /styles\.css\?v=20260831a/);
+assert.match(serviceWorker, /catalog-data\.js\?v=20260831a/);
+assert.match(serviceWorker, /app\.js\?v=20260831a/);
 assert.match(serviceWorker, /ignoreSearch: true/);
 assert.match(serviceWorker, /event\.request\.mode === 'navigate'/);
 assert.match(styles, /\.preview-item \.remove \{[\s\S]{0,220}width: 44px;[\s\S]{0,80}height: 44px;/);
@@ -123,5 +127,5 @@ console.log(JSON.stringify({
   researchRetry: true,
   likesDecreaseVisible: true,
   urlSafety: true,
-  version: 'v20260829a',
+  version: 'v20260831a',
 }));

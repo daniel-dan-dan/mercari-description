@@ -13,9 +13,14 @@ const MERCARI_DEVICE_TOKEN_KEY = 'mercari_device_auth_v1';
 const MERCARI_DEVICE_ID_KEY = 'mercari_device_id_v1';
 const MERCARI_PENDING_DEVICE_TOKEN_KEY = 'mercari_pending_device_auth_v1';
 const MERCARI_PENDING_DEVICE_ID_KEY = 'mercari_pending_device_id_v1';
+const MERCARI_PENDING_REVOKE_IDS_KEY = 'mercari_pending_revoke_device_ids_v1';
 const MAC_SERVICE_URL_CACHE_KEY = 'mercari_mac_service_url_cache';
 const DRAFT_OPERATION_STORAGE_KEY = 'mercari_pending_draft_operation';
-const FALLBACK_GAS_URL = 'https://script.google.com/macros/s/AKfycbwYfwDG7Kqplk2oVeX7kF_gsAKTlK087ToE4LGp5R7PglTFMARP2lrA6ZV9m3MD0LEs/exec';
+const OFFICIAL_GAS_URL = String(
+  globalThis.MercariPublicConfig?.gasUrl
+  || 'https://script.google.com/macros/s/AKfycbwYfwDG7Kqplk2oVeX7kF_gsAKTlK087ToE4LGp5R7PglTFMARP2lrA6ZV9m3MD0LEs/exec'
+).trim();
+const FALLBACK_GAS_URL = OFFICIAL_GAS_URL;
 const GAS_DISCOVERY_MAX_ATTEMPTS = 3;
 const GAS_DISCOVERY_RETRY_DELAYS_MS = [700, 1400];
 const DRAFT_START_MAX_ATTEMPTS = 2;
@@ -43,6 +48,7 @@ const AI_REQUIRED_STRING_FIELDS = [
   'brand', 'brand_en', 'item', 'tag_size', 'color', 'material',
   'condition', 'appeal', 'mercari_category_key', 'mercari_condition',
 ];
+const AI_TAG_SIZE_ALLOWLIST_PATTERN = /^(?:---|XS|SS|S|M|L|LL|XL|XXL|XXXL|2L|3L|2XL|3XL|4XL|FREE(?:\s*SIZE)?|ONE\s*SIZE|ONESIZE|F|フリー(?:サイズ)?|W\s*\d{2,3}|(?:(?:SIZE|EU|IT|US|UK|JP)\s*)?\d{1,3}(?:\.\d)?(?:\s*(?:CM|センチ))?)$/i;
 const MERCARI_CONDITION_VALUES = new Set([
   '新品、未使用', '未使用に近い', '目立った傷や汚れなし',
   'やや傷や汚れあり', '傷や汚れあり', '全体的に状態が悪い',
@@ -89,6 +95,7 @@ const DB_VERSION = 2;
 const DB_STORE = 'session';
 const DB_TEMPORARY_DRAFT_STORE = 'inputDrafts';
 const DB_TEMPORARY_DRAFT_SUMMARY_STORE = 'inputDraftSummaries';
+const LOCAL_PHOTO_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const TEMPORARY_DRAFT_GENERATION_STALE_MS = 5 * 60 * 1000;
 const TEMPORARY_DRAFT_GENERATION_HEARTBEAT_MS = 60 * 1000;
 const TEMPORARY_DRAFT_STATUS = {
@@ -468,10 +475,21 @@ function polishAppealText_(value) {
   return sentences.join('');
 }
 
+function sanitizeAiTagSize_(value) {
+  let normalized = String(value || '').trim();
+  try { normalized = normalized.normalize('NFKC'); } catch (_) {}
+  normalized = normalized.replace(/\s+/g, ' ').trim();
+  if (!normalized || normalized.length > 24 || !AI_TAG_SIZE_ALLOWLIST_PATTERN.test(normalized)) {
+    return '---';
+  }
+  return normalized;
+}
+
 function sanitizeAiDataForSeason(aiData = {}, productGender = getSelectedProductGender()) {
   const rule = getSeasonMarketingRule();
   const nonApparel = isNonApparelProductAudience(productGender);
   const sanitized = { ...aiData };
+  sanitized.tag_size = sanitizeAiTagSize_(aiData.tag_size);
   const polishedAppeal = polishAppealText_(aiData.appeal);
   const seasonSafeAppeal = nonApparel
     ? polishedAppeal
@@ -963,8 +981,19 @@ async function init() {
   }
 
   // イベントバインド
-  el('save-key').addEventListener('click', saveSettings);
+  el('device-connect-form')?.addEventListener('submit', event => {
+    event.preventDefault();
+    saveSettings();
+  });
   el('settings-btn').addEventListener('click', openSettings);
+  el('device-auth-refresh')?.addEventListener('click', () => {
+    refreshDeviceAuthPanel_({ showError: true }).catch(() => {});
+  });
+  el('device-auth-revoke')?.addEventListener('click', () => {
+    revokeCurrentDeviceFromSettings_().catch(error => {
+      console.warn('端末接続解除に失敗しました:', error);
+    });
+  });
   el('reset-btn').addEventListener('click', resetAll);
   el('photo-input').addEventListener('change', handlePhotoSelect);
   setSelectedProductGender(localStorage.getItem(PRODUCT_GENDER_STORAGE_KEY));
@@ -1138,7 +1167,7 @@ async function init() {
 
   // GAS URL読み込み
   const gasUrlInput = el('gas-url-input');
-  if (gasUrlInput) gasUrlInput.value = serviceUrl || '';
+  if (gasUrlInput) gasUrlInput.value = FALLBACK_GAS_URL;
   const authTokenInput = el('auth-token-input');
   if (authTokenInput) {
     authTokenInput.value = '';
@@ -1178,6 +1207,12 @@ async function init() {
   renderResearchData();
   renderMarkdownRows();
   setResearchWizardStep(1, { scroll: false });
+  if (serviceUrl && authToken && readPendingDeviceRevocationIds_().length) {
+    const currentDeviceId = String(localStorage.getItem(MERCARI_DEVICE_ID_KEY) || '').trim();
+    getMercariServiceUrl()
+      .then(macUrl => retryPendingDeviceRevocations_(macUrl, authToken, currentDeviceId))
+      .catch(error => console.warn('以前の端末鍵の自動失効を次回へ延期しました:', error));
+  }
   if (serviceUrl && authToken) refreshResearchResultsFromMac({ silent: true }).catch(() => {});
   if (serviceUrl && authToken) refreshListingStyleStatusFromMac({ silent: true }).catch(() => {});
   if (serviceUrl && authToken) loadMarkdownSnapshot({ silent: true }).catch(() => {});
@@ -1189,10 +1224,11 @@ async function init() {
 // ----- 設定 -----
 async function saveSettings() {
   const gasUrlInput = el('gas-url-input');
-  const gasUrl = normalizeGasUrl(gasUrlInput ? gasUrlInput.value : '');
+  const gasUrl = normalizeGasUrl(FALLBACK_GAS_URL);
   const enteredPairingCode = String(el('auth-token-input')?.value || '').trim();
   const pairingCode = enteredPairingCode || getPairingCode_();
-  if (!gasUrl) { alert('GAS URLを入力してください'); return; }
+  if (gasUrlInput) gasUrlInput.value = FALLBACK_GAS_URL;
+  if (!gasUrl) { alert('正規の接続先を確認できません'); return; }
   if (!enteredPairingCode && hasMercariDeviceCredential_()) {
     localStorage.setItem(SERVICE_URL_KEY, gasUrl);
     showScreen('main-screen');
@@ -1205,7 +1241,7 @@ async function saveSettings() {
     saveButton.textContent = '接続中...';
   }
   try {
-    await pairMercariDevice_(pairingCode, gasUrl);
+    const pairingResult = await pairMercariDevice_(pairingCode, gasUrl);
     if (localStorage.getItem(LEGACY_API_KEY_STORAGE_KEY)) {
       localStorage.removeItem(LEGACY_API_KEY_STORAGE_KEY);
     }
@@ -1214,6 +1250,7 @@ async function saveSettings() {
       input.value = '';
       input.placeholder = 'この端末は接続済みです';
     }
+    if (pairingResult.rotationWarning) alert(pairingResult.rotationWarning);
     showScreen('main-screen');
   } catch (error) {
     console.warn('端末接続に失敗しました:', error);
@@ -1228,7 +1265,7 @@ async function saveSettings() {
 
 function openSettings() {
   const gasUrlInput = el('gas-url-input');
-  if (gasUrlInput) gasUrlInput.value = getPreferredGasUrl();
+  if (gasUrlInput) gasUrlInput.value = FALLBACK_GAS_URL;
   const authTokenInput = el('auth-token-input');
   if (authTokenInput) {
     authTokenInput.value = '';
@@ -1236,7 +1273,135 @@ function openSettings() {
       ? 'この端末は接続済みです'
       : '接続コードを入力してください';
   }
+  const panel = el('device-auth-panel');
+  if (panel) panel.hidden = !hasMercariDeviceCredential_();
+  const saveButton = el('save-key');
+  if (saveButton) saveButton.textContent = hasMercariDeviceCredential_()
+    ? '新しい接続コードで鍵を更新'
+    : '接続する';
   showScreen('setup-screen');
+  if (hasMercariDeviceCredential_()) {
+    refreshDeviceAuthPanel_({ showError: false }).catch(() => {});
+  }
+}
+
+function clearLocalMercariDeviceCredential_() {
+  [
+    MERCARI_DEVICE_ID_KEY,
+    MERCARI_DEVICE_TOKEN_KEY,
+    MERCARI_PENDING_DEVICE_ID_KEY,
+    MERCARI_PENDING_DEVICE_TOKEN_KEY,
+    MERCARI_PENDING_REVOKE_IDS_KEY,
+    API_AUTH_TOKEN_KEY,
+    DRAFT_OPERATION_STORAGE_KEY,
+    MAC_SERVICE_URL_CACHE_KEY,
+  ].forEach(key => {
+    try { localStorage.removeItem(key); } catch (_) {}
+  });
+}
+
+async function refreshDeviceAuthPanel_({ showError = true } = {}) {
+  const panel = el('device-auth-panel');
+  const summary = el('device-auth-summary');
+  const status = el('device-auth-status');
+  if (!panel || !summary || !status) return null;
+  const deviceId = String(localStorage.getItem(MERCARI_DEVICE_ID_KEY) || '').trim();
+  const deviceToken = getApiAuthToken();
+  panel.hidden = !deviceId || !deviceToken;
+  if (panel.hidden) return null;
+
+  summary.textContent = 'Mac側の登録を読み戻して確認しています...';
+  status.hidden = true;
+  try {
+    const serviceUrl = await getMercariServiceUrl(message => {
+      summary.textContent = message;
+    });
+    const revocationRetry = await retryPendingDeviceRevocations_(
+      serviceUrl,
+      deviceToken,
+      deviceId,
+    );
+    const readback = await listRegisteredMercariDevices_(serviceUrl, deviceToken);
+    const devices = readback.devices;
+    const expectedFingerprint = await fingerprintDeviceToken_(deviceToken);
+    const current = devices.find(device => String(device.device_id || '') === deviceId);
+    if (!current || String(current.fingerprint || '') !== expectedFingerprint) {
+      throw new Error('この端末の登録内容とMac側の記録が一致しません');
+    }
+    const previousNote = current.previousCredentialActive
+      ? '（以前の鍵が移行期間中です。新しい接続コードで更新すると即時失効できます）'
+      : '';
+    const revocationNote = revocationRetry.failed.length
+      ? `（以前の鍵${revocationRetry.failed.length}件の失効は次回も自動再試行します）`
+      : '';
+    summary.textContent = 'この端末は安全に接続済みです。Mac側の監査記録も確認済みです。接続済み端末は'
+      + devices.length + '台です' + previousNote + revocationNote;
+    return { devices, current };
+  } catch (error) {
+    summary.textContent = '接続状態を確認できませんでした。端末情報は変更していません。';
+    if (showError) {
+      status.textContent = error.message || '接続状態を確認できませんでした';
+      status.className = 'status error';
+      status.hidden = false;
+    }
+    throw error;
+  }
+}
+
+async function revokeCurrentDeviceFromSettings_() {
+  const deviceId = String(localStorage.getItem(MERCARI_DEVICE_ID_KEY) || '').trim();
+  const deviceToken = getApiAuthToken();
+  if (!deviceId || !deviceToken) return false;
+  if (!confirm('この端末の接続を解除しますか？解除後は、新しい接続コードで再接続するまでAI生成と下書き保存を使えません。')) {
+    return false;
+  }
+  const status = el('device-auth-status');
+  const refreshButton = el('device-auth-refresh');
+  const revokeButton = el('device-auth-revoke');
+  if (refreshButton) refreshButton.disabled = true;
+  if (revokeButton) revokeButton.disabled = true;
+  if (status) {
+    status.textContent = 'Mac側の端末登録を解除しています...';
+    status.className = 'status';
+    status.hidden = false;
+  }
+  try {
+    const serviceUrl = await getMercariServiceUrl(message => {
+      if (status) status.textContent = message;
+    });
+    const pendingResult = await retryPendingDeviceRevocations_(
+      serviceUrl,
+      deviceToken,
+      deviceId,
+    );
+    if (pendingResult.failed.length) {
+      throw new Error('以前の端末鍵を先に失効できませんでした。現在の端末接続は残しています');
+    }
+    await revokeMercariDevice_(serviceUrl, deviceId, deviceToken);
+    clearLocalMercariDeviceCredential_();
+    const panel = el('device-auth-panel');
+    if (panel) panel.hidden = true;
+    const authInput = el('auth-token-input');
+    if (authInput) {
+      authInput.value = '';
+      authInput.placeholder = '新しい接続コードを入力してください';
+    }
+    const setupNote = el('setup-note');
+    if (setupNote) setupNote.textContent = 'この端末の接続を解除しました。再利用する時だけ新しい接続コードを入力してください。';
+    const saveButton = el('save-key');
+    if (saveButton) saveButton.textContent = '接続する';
+    return true;
+  } catch (error) {
+    if (status) {
+      status.textContent = '接続を解除できませんでした: '
+        + (error.message || error) + '。端末情報は変更していません。';
+      status.className = 'status error';
+    }
+    throw error;
+  } finally {
+    if (refreshButton) refreshButton.disabled = false;
+    if (revokeButton) revokeButton.disabled = false;
+  }
 }
 
 // ----- 写真アップロード＆リサイズ -----
@@ -2109,6 +2274,8 @@ function validateAiResponseData_(data) {
   if (!MERCARI_CATEGORY_OPTION_MAP[data.mercari_category_key]) {
     throw new Error('AI応答のカテゴリが正しくありません');
   }
+  // AI由来のタグサイズは許可リストへ正規化し、HTMLや説明文を後段へ渡さない。
+  data.tag_size = sanitizeAiTagSize_(data.tag_size);
   return data;
 }
 
@@ -2185,6 +2352,19 @@ function secureRandomBase64Url_(byteLength) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
+async function fingerprintDeviceToken_(token) {
+  if (!window.crypto?.subtle || typeof TextEncoder !== 'function') {
+    throw new Error('端末鍵の安全確認に対応していないブラウザです');
+  }
+  const digest = await window.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(String(token || '')),
+  );
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 12);
+}
+
 function getOrCreatePendingMercariCredential_() {
   const savedId = String(localStorage.getItem(MERCARI_PENDING_DEVICE_ID_KEY) || '').trim();
   const savedToken = String(localStorage.getItem(MERCARI_PENDING_DEVICE_TOKEN_KEY) || '').trim();
@@ -2192,10 +2372,8 @@ function getOrCreatePendingMercariCredential_() {
       && /^[A-Za-z0-9._~-]{32,256}$/.test(savedToken)) {
     return { deviceId: savedId, deviceToken: savedToken };
   }
-  const currentId = String(localStorage.getItem(MERCARI_DEVICE_ID_KEY) || '').trim();
-  const deviceId = /^[A-Za-z0-9._~-]{16,128}$/.test(currentId)
-    ? currentId
-    : `mercari-${secureRandomBase64Url_(18)}`;
+  // 再接続では新しい端末IDと鍵を作り、読戻し成功後に旧IDを失効する。
+  const deviceId = `mercari-${secureRandomBase64Url_(18)}`;
   const deviceToken = `dev_${secureRandomBase64Url_(48)}`;
   localStorage.setItem(MERCARI_PENDING_DEVICE_ID_KEY, deviceId);
   localStorage.setItem(MERCARI_PENDING_DEVICE_TOKEN_KEY, deviceToken);
@@ -2238,11 +2416,13 @@ async function registerMercariDeviceWithGas_(gasUrl, pairingCode, credential) {
 }
 
 async function registerMercariDeviceWithMac_(serviceUrl, pairingCode, credential) {
+  const operationId = createOperationId_('register-device');
   const response = await fetchWithTimeout(`${serviceUrl}/auth/register-device`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${pairingCode}`,
+      'X-Operation-Id': operationId,
     },
     body: JSON.stringify({
       device_id: credential.deviceId,
@@ -2250,12 +2430,135 @@ async function registerMercariDeviceWithMac_(serviceUrl, pairingCode, credential
     }),
   }, 15000);
   const data = await readJsonResponse(response, 'Mac端末接続');
-  if (!response.ok || data.ok !== true || data.registered !== true) {
+  if (!response.ok || data.ok !== true || data.registered !== true
+      || data.auditRecorded !== true || String(data.operationId || '') !== operationId) {
     throw new Error(data.error || 'Macへ端末情報を登録できませんでした');
   }
   if (String(data.device_id || '') !== credential.deviceId) {
     throw new Error('Macの端末確認結果が一致しません');
   }
+  const expectedFingerprint = await fingerprintDeviceToken_(credential.deviceToken);
+  if (String(data.fingerprint || '') !== expectedFingerprint) {
+    throw new Error('Macの端末鍵確認結果が一致しません');
+  }
+  return data;
+}
+
+async function listRegisteredMercariDevices_(serviceUrl, deviceToken = getApiAuthToken()) {
+  const token = String(deviceToken || '').trim();
+  if (!token) throw new Error('この端末は未接続です');
+  const operationId = createOperationId_('list-devices');
+  const response = await fetchWithTimeout(`${serviceUrl}/auth/devices`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'X-Operation-Id': operationId,
+    },
+    cache: 'no-store',
+  }, 15000);
+  const data = await readJsonResponse(response, '接続済み端末確認');
+  if (!response.ok || data.ok !== true || !Array.isArray(data.devices)
+      || data.auditRecorded !== true || String(data.operationId || '') !== operationId) {
+    throw new Error(data.error || '接続済み端末を確認できませんでした');
+  }
+  return data;
+}
+
+async function verifyRegisteredMercariDevice_(serviceUrl, credential) {
+  const expectedFingerprint = await fingerprintDeviceToken_(credential.deviceToken);
+  const readback = await listRegisteredMercariDevices_(serviceUrl, credential.deviceToken);
+  const devices = readback.devices;
+  const current = devices.find(device => String(device.device_id || '') === credential.deviceId);
+  if (!current || String(current.fingerprint || '') !== expectedFingerprint) {
+    throw new Error('登録した端末鍵を読み戻して確認できませんでした');
+  }
+  return current;
+}
+
+async function revokeMercariDevice_(serviceUrl, deviceId, deviceToken = getApiAuthToken()) {
+  const normalizedId = String(deviceId || '').trim();
+  const token = String(deviceToken || '').trim();
+  if (!/^[A-Za-z0-9._~-]{16,128}$/.test(normalizedId) || !token) {
+    throw new Error('失効する端末情報が正しくありません');
+  }
+  const operationId = createOperationId_('revoke-device');
+  const response = await fetchWithTimeout(`${serviceUrl}/auth/revoke-device`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      'X-Operation-Id': operationId,
+    },
+    body: JSON.stringify({ device_id: normalizedId }),
+  }, 15000);
+  const data = await readJsonResponse(response, '端末接続解除');
+  if (!response.ok || data.ok !== true || data.revoked !== true
+      || data.auditRecorded !== true || String(data.operationId || '') !== operationId) {
+    throw new Error(data.error || '端末の接続を解除できませんでした');
+  }
+  return data;
+}
+
+function readPendingDeviceRevocationIds_() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MERCARI_PENDING_REVOKE_IDS_KEY) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return [...new Set(parsed
+      .map(value => String(value || '').trim())
+      .filter(value => /^[A-Za-z0-9._~-]{16,128}$/.test(value)))]
+      .slice(0, 20);
+  } catch (_) {
+    return [];
+  }
+}
+
+function writePendingDeviceRevocationIds_(ids = []) {
+  const normalized = [...new Set(ids
+    .map(value => String(value || '').trim())
+    .filter(value => /^[A-Za-z0-9._~-]{16,128}$/.test(value)))]
+    .slice(0, 20);
+  if (normalized.length) {
+    localStorage.setItem(MERCARI_PENDING_REVOKE_IDS_KEY, JSON.stringify(normalized));
+  } else {
+    localStorage.removeItem(MERCARI_PENDING_REVOKE_IDS_KEY);
+  }
+  return normalized;
+}
+
+function rememberPendingDeviceRevocation_(deviceId) {
+  return writePendingDeviceRevocationIds_([
+    ...readPendingDeviceRevocationIds_(),
+    deviceId,
+  ]);
+}
+
+async function retryPendingDeviceRevocations_(serviceUrl, deviceToken, currentDeviceId = '') {
+  const pending = readPendingDeviceRevocationIds_()
+    .filter(deviceId => deviceId !== currentDeviceId);
+  const failed = [];
+  const revoked = [];
+  for (const deviceId of pending) {
+    try {
+      await revokeMercariDevice_(serviceUrl, deviceId, deviceToken);
+      revoked.push(deviceId);
+    } catch (error) {
+      console.warn('以前の端末鍵の失効を再試行できませんでした:', error);
+      try {
+        const readback = await listRegisteredMercariDevices_(serviceUrl, deviceToken);
+        const stillRegistered = readback.devices
+          .some(device => String(device.device_id || '') === deviceId);
+        if (!stillRegistered) {
+          revoked.push(deviceId);
+          continue;
+        }
+      } catch (readbackError) {
+        console.warn('失効後の端末一覧も確認できませんでした:', readbackError);
+      }
+      failed.push(deviceId);
+    }
+  }
+  writePendingDeviceRevocationIds_(failed);
+  return { revoked, failed };
 }
 
 async function pairMercariDevice_(pairingCode, gasUrl = getPreferredGasUrl()) {
@@ -2264,7 +2567,11 @@ async function pairMercariDevice_(pairingCode, gasUrl = getPreferredGasUrl()) {
   if (!normalizedPairing) throw new Error('端末接続コードが正しくありません');
   if (!normalizedGasUrl) throw new Error('GAS URLが正しくありません');
 
-  // 途中で通信が切れても同じ候補を再送する。既存端末の鍵は両方の登録成功まで変更しない。
+  const previous = {
+    id: String(localStorage.getItem(MERCARI_DEVICE_ID_KEY) || '').trim(),
+    token: String(localStorage.getItem(MERCARI_DEVICE_TOKEN_KEY) || '').trim(),
+  };
+  // 途中で通信が切れても同じ候補を再送する。既存端末の鍵は登録と読戻しが成功するまで変更しない。
   const credential = getOrCreatePendingMercariCredential_();
   const serviceUrl = await registerMercariDeviceWithGas_(
     normalizedGasUrl,
@@ -2272,11 +2579,7 @@ async function pairMercariDevice_(pairingCode, gasUrl = getPreferredGasUrl()) {
     credential,
   );
   await registerMercariDeviceWithMac_(serviceUrl, normalizedPairing, credential);
-
-  const previous = {
-    id: String(localStorage.getItem(MERCARI_DEVICE_ID_KEY) || ''),
-    token: String(localStorage.getItem(MERCARI_DEVICE_TOKEN_KEY) || ''),
-  };
+  await verifyRegisteredMercariDevice_(serviceUrl, credential);
   try {
     localStorage.setItem(MERCARI_DEVICE_ID_KEY, credential.deviceId);
     localStorage.setItem(MERCARI_DEVICE_TOKEN_KEY, credential.deviceToken);
@@ -2292,6 +2595,18 @@ async function pairMercariDevice_(pairingCode, gasUrl = getPreferredGasUrl()) {
     else localStorage.removeItem(MERCARI_DEVICE_TOKEN_KEY);
     throw error;
   }
+  let rotationWarning = '';
+  if (previous.id && previous.id !== credential.deviceId) {
+    rememberPendingDeviceRevocation_(previous.id);
+  }
+  const revocationResult = await retryPendingDeviceRevocations_(
+    serviceUrl,
+    credential.deviceToken,
+    credential.deviceId,
+  );
+  if (revocationResult.failed.length) {
+    rotationWarning = '新しい端末鍵への更新は完了しましたが、以前の鍵の失効は次回接続時に自動再試行します。';
+  }
   localStorage.removeItem(MERCARI_PENDING_DEVICE_ID_KEY);
   localStorage.removeItem(MERCARI_PENDING_DEVICE_TOKEN_KEY);
   localStorage.removeItem(API_AUTH_TOKEN_KEY);
@@ -2300,7 +2615,7 @@ async function pairMercariDevice_(pairingCode, gasUrl = getPreferredGasUrl()) {
   }
   localStorage.setItem(SERVICE_URL_KEY, normalizedGasUrl);
   cacheMacServiceUrl_(serviceUrl);
-  return { deviceId: credential.deviceId, serviceUrl };
+  return { deviceId: credential.deviceId, serviceUrl, rotationWarning };
 }
 
 async function ensureMercariDeviceCredential_() {
@@ -2847,6 +3162,7 @@ function normalizeGasUrl(url) {
   if (!value) return '';
   try {
     const parsed = new URL(value);
+    const normalized = `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`;
     if (
       parsed.protocol !== 'https:'
       || parsed.hostname !== 'script.google.com'
@@ -2855,8 +3171,9 @@ function normalizeGasUrl(url) {
       || parsed.search
       || parsed.hash
       || !/^\/macros\/s\/[^/]+\/exec\/?$/.test(parsed.pathname)
+      || normalized !== OFFICIAL_GAS_URL
     ) return '';
-    return `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`;
+    return normalized;
   } catch (_) {
     return '';
   }
@@ -2911,11 +3228,7 @@ function getPreferredGasUrl() {
 }
 
 function getGasUrlCandidates() {
-  const urls = [
-    normalizeGasUrl(localStorage.getItem(SERVICE_URL_KEY)),
-    FALLBACK_GAS_URL,
-  ].filter(Boolean);
-  return Array.from(new Set(urls));
+  return [FALLBACK_GAS_URL];
 }
 
 function isTransientServiceDiscoveryError_(error) {
@@ -4166,16 +4479,35 @@ async function saveSessionWithFeedback_(state) {
 async function loadSession() {
   const db = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, 'readonly');
-    const req = tx.objectStore(DB_STORE).get('current');
-    req.onsuccess = () => resolve(req.result || null);
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    const store = tx.objectStore(DB_STORE);
+    const req = store.get('current');
+    let result = null;
+    req.onsuccess = () => {
+      const saved = req.result || null;
+      if (saved && isStoredPhotoRecordExpired_(saved._savedAt)) {
+        store.delete('current');
+        return;
+      }
+      result = saved;
+    };
     req.onerror = (e) => reject(e.target.error);
-    tx.oncomplete = () => db.close();
+    tx.oncomplete = () => {
+      db.close();
+      resolve(result);
+    };
     tx.onabort = () => {
       db.close();
       reject(tx.error || new Error('入力内容の復元が中断されました'));
     };
   });
+}
+
+function isStoredPhotoRecordExpired_(updatedAt, now = Date.now()) {
+  const timestamp = Number(updatedAt || 0);
+  return Number.isFinite(timestamp)
+    && timestamp > 0
+    && Number(now) - timestamp > LOCAL_PHOTO_RETENTION_MS;
 }
 
 async function clearSessionDb() {
@@ -4501,6 +4833,42 @@ async function listTemporaryDrafts_() {
   });
 }
 
+async function pruneExpiredTemporaryDrafts_() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(
+      [DB_TEMPORARY_DRAFT_STORE, DB_TEMPORARY_DRAFT_SUMMARY_STORE],
+      'readwrite'
+    );
+    const draftStore = tx.objectStore(DB_TEMPORARY_DRAFT_STORE);
+    const summaryStore = tx.objectStore(DB_TEMPORARY_DRAFT_SUMMARY_STORE);
+    const request = summaryStore.getAll();
+    let deleted = 0;
+    request.onsuccess = () => {
+      const rows = Array.isArray(request.result) ? request.result : [];
+      rows.forEach(row => {
+        if (!row?.id || !isStoredPhotoRecordExpired_(row.updatedAt || row.createdAt)) return;
+        draftStore.delete(row.id);
+        summaryStore.delete(row.id);
+        deleted += 1;
+      });
+    };
+    request.onerror = (e) => reject(e.target.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve(deleted);
+    };
+    tx.onerror = (e) => {
+      db.close();
+      reject(e.target.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error('古い一時保存の整理が中断されました'));
+    };
+  });
+}
+
 async function deleteTemporaryDraft_(id) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -4668,6 +5036,10 @@ function renderTemporaryDrafts_() {
 }
 
 async function refreshTemporaryDrafts_({ recoverInterrupted = false } = {}) {
+  const expiredCount = await pruneExpiredTemporaryDrafts_();
+  if (expiredCount > 0) {
+    console.info(`30日を過ぎた一時保存${expiredCount}件を端末から削除しました`);
+  }
   let rows = await listTemporaryDrafts_();
   if (recoverInterrupted) {
     const cutoff = Date.now() - TEMPORARY_DRAFT_GENERATION_STALE_MS;
@@ -5809,11 +6181,12 @@ function renderResearchResultBody(result) {
         <div class="research-section-title">状態別</div>
         <div class="research-condition-list">
           ${conditionEntries.map(([condition, count]) => {
-            const width = Math.max(10, Math.round((Number(count) / maxConditionCount) * 100));
+            const width = Math.max(10, Math.min(100,
+              Math.round((Number(count) / maxConditionCount) * 10) * 10));
             return `
               <div class="research-condition-row">
                 <div class="research-condition-label">${escapeHtml(condition)}</div>
-                <div class="research-condition-track"><span style="width:${width}%"></span></div>
+                <div class="research-condition-track"><span class="width-${width}"></span></div>
                 <div class="research-condition-count">${Number(count).toLocaleString()}件</div>
               </div>
             `;
@@ -7563,7 +7936,8 @@ function combineScores(parts, profile = {}, profileKey = '') {
 // タグ表記をS/M/L/XL/XXL/XXXLへ正規化
 function normalizeTagSize(raw) {
   if (!raw) return null;
-  const t = String(raw).toUpperCase().trim();
+  const safeRaw = sanitizeAiTagSize_(raw);
+  const t = safeRaw.toUpperCase().trim();
   if (t === '---' || t === '') return null;
 
   // 文字表記
@@ -7577,14 +7951,14 @@ function normalizeTagSize(raw) {
   if (/^(XS|SS)$/.test(t))       return 'XS';
 
   // W28等のインチ表記ウエスト
-  const wInch = t.match(/^W\s*(\d{2})/);
+  const wInch = t.match(/^W\s*(\d{2,3})$/);
   if (wInch) {
     const cm = parseFloat(wInch[1]) * 2.54;
     return SIZE_LABELS[Math.round(scoreWaist(cm))];
   }
 
   // 数字のみ（欧州メンズ表記を基準）: 46=S, 48=M, 50=L, 52=XL, 54=XXL
-  const nm = t.match(/(\d{2,3})/);
+  const nm = t.match(/^(?:(?:SIZE|EU|IT|US|UK|JP)\s*)?(\d{2,3})(?:\.\d)?(?:\s*(?:CM|センチ))?$/);
   if (nm) {
     const num = parseFloat(nm[1]);
     if (num >= 60 && num <= 110) {
@@ -7646,11 +8020,17 @@ function renderFinalSize(aiData) {
   const mercariFinalSize = normalizeMercariSizeLabel(finalSize, getSelectedMercariCategoryKey()) || finalSize;
 
   badge.className = 'final-size-badge' + (warn ? ' warn' : '');
-  badge.innerHTML = `
-    <div class="fs-head">🏷 メルカリのサイズ選択推奨</div>
-    <div class="fs-size">${mercariFinalSize}</div>
-    <div class="fs-note">${note}</div>
-  `;
+  badge.replaceChildren();
+  const heading = document.createElement('div');
+  heading.className = 'fs-head';
+  heading.textContent = '🏷 メルカリのサイズ選択推奨';
+  const size = document.createElement('div');
+  size.className = 'fs-size';
+  size.textContent = String(mercariFinalSize || '');
+  const detail = document.createElement('div');
+  detail.className = 'fs-note';
+  detail.textContent = String(note || '');
+  badge.append(heading, size, detail);
   badge.hidden = false;
 }
 
@@ -9005,6 +9385,7 @@ globalThis.MercariAppTestHooks = {
   buildDescriptionSystemPrompt,
   parseAiJson,
   validateAiResponseData_,
+  sanitizeAiTagSize_,
   coerceMercariCategoryForProductGender,
   isManualMercariCategoryAllowed_,
   cleanSeasonMarketingSentences,
@@ -9036,6 +9417,7 @@ globalThis.MercariAppTestHooks = {
   inferTemporaryDraftStatus_,
   temporaryDraftSummaryFromRecord_,
   safeTemporaryThumbnailBase64_,
+  isStoredPhotoRecordExpired_,
   normalizeMacServiceUrl_,
   normalizeGasUrl,
   getApiAuthToken,
@@ -9045,6 +9427,14 @@ globalThis.MercariAppTestHooks = {
   validatePairingCode_,
   registerMercariDeviceWithGas_,
   registerMercariDeviceWithMac_,
+  fingerprintDeviceToken_,
+  listRegisteredMercariDevices_,
+  verifyRegisteredMercariDevice_,
+  revokeMercariDevice_,
+  readPendingDeviceRevocationIds_,
+  writePendingDeviceRevocationIds_,
+  rememberPendingDeviceRevocation_,
+  retryPendingDeviceRevocations_,
   pairMercariDevice_,
   ensureMercariDeviceCredential_,
   getCachedMacServiceUrl_,

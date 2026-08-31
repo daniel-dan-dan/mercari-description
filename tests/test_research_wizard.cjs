@@ -109,16 +109,17 @@ assert.match(indexHtml, />次へ：確認</);
 assert.match(indexHtml, />調査依頼を保存</);
 assert.match(indexHtml, />保存済みの依頼を見る</);
 assert.match(indexHtml, /id="research-saved-section"/);
-assert.match(indexHtml, /styles\.css\?v=20260829a/);
-assert.match(indexHtml, /app\.js\?v=20260829a/);
-assert.match(indexHtml, /v20260829a \/ ASINなし在庫だけ表示/);
+assert.match(indexHtml, /styles\.css\?v=20260831a/);
+assert.match(indexHtml, /app\.js\?v=20260831a/);
+assert.match(indexHtml, /v20260831a \/ セキュリティ強化/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260829a/);
+assert.match(serviceWorker, /mercari-description-v20260831a/);
 
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
-assert.match(pairHtml, /mercari_api_auth_token/);
-assert.doesNotMatch(pairHtml, /const key = 'daniel_api_auth_token'/);
+const pairJs = fs.readFileSync('pair.js', 'utf8');
+assert.match(pairJs, /mercari_api_auth_token/);
+assert.doesNotMatch(pairJs, /const key = 'daniel_api_auth_token'/);
 
 [
   'research-brand',

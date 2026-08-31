@@ -8,3 +8,10 @@ __pycache__/
 .vscode/
 .idea/
 TODO.md
+backups/
+*.before-*
+*.bundle
+icons/backup-*/
+.playwright-cli/
+output/playwright/
+docs/mockups/

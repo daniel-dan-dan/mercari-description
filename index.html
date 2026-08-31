@@ -4,11 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f23d4a">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://static.mercdn.net; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com https://*.trycloudflare.com http://127.0.0.1:* http://localhost:*; font-src 'self' data:; media-src 'self' data: blob:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260829a">
+  <link rel="stylesheet" href="styles.css?v=20260831a">
+  <script src="public-config.js?v=20260831a"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -18,15 +22,27 @@
     <section id="setup-screen" class="screen" hidden>
       <h1>初期設定</h1>
       <p class="note" id="setup-note">最初の1回だけ端末接続コードを入力してください。AI用のAPIキーはMac側に保存します。</p>
-      <label for="gas-url-input">GAS URL（AI生成・下書き機能用）</label>
-      <input type="url" id="gas-url-input" placeholder="https://script.google.com/..." autocomplete="off">
-      <label for="auth-token-input">端末接続コード</label>
-      <input type="password" id="auth-token-input" autocomplete="off" placeholder="接続用QRコードから設定されます">
-      <div class="button-row">
-        <button id="save-key" class="btn primary">接続する</button>
-      </div>
-      <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
-      <p class="settings-version" id="settings-version">v20260829a / ASINなし在庫だけ表示</p>
+      <form id="device-connect-form" autocomplete="off">
+        <label for="gas-url-input">正規の接続先</label>
+        <input type="url" id="gas-url-input" autocomplete="off" readonly aria-readonly="true">
+        <p class="note small">端末情報を別サイトへ送らないよう、接続先は正規URLに固定しています。</p>
+        <label for="auth-token-input">端末接続コード</label>
+        <input type="password" id="auth-token-input" autocomplete="one-time-code" placeholder="接続用QRコードから設定されます">
+        <div class="button-row">
+          <button id="save-key" class="btn primary" type="submit">接続する</button>
+        </div>
+        <p class="note small">Mac側サービスが起動していると、AI生成と下書き保存が使えます。</p>
+      </form>
+      <section id="device-auth-panel" class="device-auth-panel" hidden>
+        <h2>この端末の接続</h2>
+        <p id="device-auth-summary" class="note small">接続状態を確認しています...</p>
+        <div class="button-row device-auth-actions">
+          <button id="device-auth-refresh" class="btn small" type="button">接続状態を確認</button>
+          <button id="device-auth-revoke" class="btn small danger" type="button">この端末の接続を解除</button>
+        </div>
+        <p id="device-auth-status" class="status" role="status" aria-live="polite" hidden></p>
+      </section>
+      <p class="settings-version" id="settings-version">v20260831a / セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
@@ -257,7 +273,7 @@
             <h3 class="draft-title">4. 下書き保存前チェック</h3>
             <div id="draft-checklist" class="draft-checklist" hidden></div>
           </div>
-          <button id="draft-btn" class="btn primary large" style="margin-top:8px">下書き保存（Mac自動入力）</button>
+          <button id="draft-btn" class="btn primary large">下書き保存（Mac自動入力）</button>
           <p id="draft-status" class="status" role="status" aria-live="polite" hidden></p>
         </div>
       </div>
@@ -596,13 +612,8 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260829a"></script>
-  <script src="app.js?v=20260829a"></script>
-  <script>
-    if (window.lucide) window.lucide.createIcons();
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(console.error);
-    }
-  </script>
+  <script src="catalog-data.js?v=20260831a"></script>
+  <script src="app.js?v=20260831a"></script>
+  <script src="bootstrap.js?v=20260831a"></script>
 </body>
 </html>

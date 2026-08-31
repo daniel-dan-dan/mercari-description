@@ -1,12 +1,15 @@
 const CACHE_PREFIX = 'mercari-description-';
-const CACHE_NAME = 'mercari-description-v20260829a';
+const CACHE_NAME = 'mercari-description-v20260831a';
 const ASSETS = [
   './',
   './index.html',
   './pair.html',
-  './styles.css?v=20260829a',
-  './catalog-data.js?v=20260829a',
-  './app.js?v=20260829a',
+  './styles.css?v=20260831a',
+  './public-config.js?v=20260831a',
+  './catalog-data.js?v=20260831a',
+  './app.js?v=20260831a',
+  './bootstrap.js?v=20260831a',
+  './pair.js?v=20260831a',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -17,7 +20,10 @@ const ASSETS = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache =>
-      Promise.all(ASSETS.map(url => fetch(url, { cache: 'reload' }).then(response => cache.put(url, response))))
+      Promise.all(ASSETS.map(url => fetch(url, { cache: 'reload' }).then(response => {
+        if (!response.ok) throw new Error(`asset fetch failed: ${url} (${response.status})`);
+        return cache.put(url, response);
+      })))
     )
   );
   self.skipWaiting();
@@ -39,7 +45,9 @@ self.addEventListener('fetch', event => {
   const request = new Request(event.request, { cache: 'no-cache' });
   event.respondWith(
     fetch(request).then(response => {
-      if (response.ok) caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
+      if (response.ok) {
+        event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone())));
+      }
       return response;
     }).catch(async () => {
       const cached = await caches.match(event.request, { ignoreSearch: true });
