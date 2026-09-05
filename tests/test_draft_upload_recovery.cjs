@@ -181,12 +181,11 @@ const hooks = context.MercariAppTestHooks;
   const reusedOperation = hooks.getOrCreateDraftOperation_({ title: '同じ商品' }, 2000);
   assert.equal(reusedOperation.operationId, firstOperation.operationId);
   assert.equal(reusedOperation.reused, true);
-  const changedOperation = hooks.getOrCreateDraftOperation_({ title: '変更した商品' }, 3000);
-  assert.notEqual(changedOperation.operationId, firstOperation.operationId);
-  assert.equal(changedOperation.reused, false);
-  hooks.clearDraftOperation_(changedOperation.operationId);
+  assert.throws(() => hooks.getOrCreateDraftOperation_({ title: '変更した商品' }, 3000), /前回の下書き結果が未確認/);
+  assert.equal(hooks.getOrCreateDraftOperation_({ title: '同じ商品' }, 9e9).operationId, firstOperation.operationId);
+  hooks.clearDraftOperation_(firstOperation.operationId);
   const recreatedOperation = hooks.getOrCreateDraftOperation_({ title: '変更した商品' }, 4000);
-  assert.notEqual(recreatedOperation.operationId, changedOperation.operationId);
+  assert.notEqual(recreatedOperation.operationId, firstOperation.operationId);
 
   assert.equal(hooks.isRetryableDraftStartError_(new Error('Fetch is aborted')), true);
   assert.equal(
@@ -230,7 +229,7 @@ const hooks = context.MercariAppTestHooks;
   assert.match(source, /const DRAFT_START_MAX_ATTEMPTS = 2;/);
   assert.match(source, /const DRAFT_START_TIMEOUT_MS = 120000;/);
   assert.match(source, /const JOB_STATUS_MAX_CONSECUTIVE_ERRORS = 3;/);
-  assert.match(source, /const DRAFT_OPERATION_TTL_MS = 6 \* 60 \* 60 \* 1000;/);
+  assert.doesNotMatch(source, /now - createdAt <= DRAFT_OPERATION_TTL_MS/);
   assert.match(source, /const MAX_DRAFT_PAYLOAD_BYTES = 28 \* 1024 \* 1024;/);
 
   console.log(JSON.stringify({

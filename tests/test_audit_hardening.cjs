@@ -109,10 +109,10 @@ assert.match(pairJs, /value\.length <= 512/);
 assert.match(pairJs, /\^\[A-Za-z0-9\._~-\]\+\$/);
 assert.doesNotMatch(pairHtml, /<script(?:\s[^>]*)?>\s*(?!<)/);
 assert.match(pairHtml, /Content-Security-Policy/);
-assert.match(serviceWorker, /mercari-description-v20260831a/);
-assert.match(serviceWorker, /styles\.css\?v=20260831a/);
-assert.match(serviceWorker, /catalog-data\.js\?v=20260831a/);
-assert.match(serviceWorker, /app\.js\?v=20260831a/);
+assert.match(serviceWorker, /mercari-description-v20260905a/);
+assert.match(serviceWorker, /styles\.css\?v=20260905a/);
+assert.match(serviceWorker, /catalog-data\.js\?v=20260905a/);
+assert.match(serviceWorker, /app\.js\?v=20260905a/);
 assert.match(serviceWorker, /ignoreSearch: true/);
 assert.match(serviceWorker, /event\.request\.mode === 'navigate'/);
 assert.match(styles, /\.preview-item \.remove \{[\s\S]{0,220}width: 44px;[\s\S]{0,80}height: 44px;/);
@@ -127,5 +127,5 @@ console.log(JSON.stringify({
   researchRetry: true,
   likesDecreaseVisible: true,
   urlSafety: true,
-  version: 'v20260831a',
+  version: 'v20260905a',
 }));

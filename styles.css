@@ -3730,3 +3730,8 @@ select {
     margin-left: 10px;
   }
 }
+/* Safety review: long receipt IDs must not widen mobile layouts. */
+.safety-review-card { border-top: 1px solid var(--border, #ddd); padding: 12px 0; overflow-wrap: anywhere; }
+.safety-review-card p { margin: 6px 0; }
+.safety-review-card .btn { margin: 6px 6px 0 0; white-space: normal; }
+#safety-review-panel > summary { display: block; width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }

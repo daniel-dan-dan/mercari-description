@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260831a">
-  <script src="public-config.js?v=20260831a"></script>
+  <link rel="stylesheet" href="styles.css?v=20260905a">
+  <script src="public-config.js?v=20260905a"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -42,7 +42,7 @@
         </div>
         <p id="device-auth-status" class="status" role="status" aria-live="polite" hidden></p>
       </section>
-      <p class="settings-version" id="settings-version">v20260831a / セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20260905a / セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
@@ -61,6 +61,13 @@
         <button id="markdown-tab-btn" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="markdown-panel">価格改定</button>
       </div>
       <p id="session-save-status" class="status session-save-status" role="alert" aria-live="assertive" hidden></p>
+      <details id="safety-review-panel" class="temporary-draft-stage">
+        <summary>要確認・売上受信状況</summary>
+        <p class="note small">件数は別々の状態です。同じ商品を含むため合算しません。確認を記録しても、出品・値下げ・売上の在庫反映は実行しません。</p>
+        <button id="safety-review-refresh" type="button" class="btn small">要確認を更新</button>
+        <p id="safety-review-status" role="status" aria-live="polite"></p>
+        <div id="safety-review-content"></div>
+      </details>
 
       <div id="description-panel" class="tab-panel active" role="tabpanel" aria-labelledby="description-tab-btn">
 
@@ -612,8 +619,9 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260831a"></script>
-  <script src="app.js?v=20260831a"></script>
-  <script src="bootstrap.js?v=20260831a"></script>
+  <script src="catalog-data.js?v=20260905a"></script>
+  <script src="app.js?v=20260905a"></script>
+  <script src="review.js?v=20260905a"></script>
+  <script src="bootstrap.js?v=20260905a"></script>
 </body>
 </html>

@@ -33,7 +33,6 @@ const DESCRIPTION_RESULT_POLL_INTERVAL_MS = 5000;
 const DESCRIPTION_RESULT_REQUEST_TIMEOUT_MS = 10000;
 const DESCRIPTION_RESULT_MAX_CONSECUTIVE_ERRORS = 3;
 const DESCRIPTION_RESULT_MAX_AGE_MS = 10 * 60 * 1000;
-const DRAFT_OPERATION_TTL_MS = 6 * 60 * 60 * 1000;
 const INVENTORY_UUID_PATTERN = /^inv_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const INVENTORY_CANDIDATE_LIMIT = 50;
 const MAX_DRAFT_PAYLOAD_BYTES = 28 * 1024 * 1024;
@@ -1293,7 +1292,6 @@ function clearLocalMercariDeviceCredential_() {
     MERCARI_PENDING_DEVICE_TOKEN_KEY,
     MERCARI_PENDING_REVOKE_IDS_KEY,
     API_AUTH_TOKEN_KEY,
-    DRAFT_OPERATION_STORAGE_KEY,
     MAC_SERVICE_URL_CACHE_KEY,
   ].forEach(key => {
     try { localStorage.removeItem(key); } catch (_) {}
@@ -2805,23 +2803,25 @@ function draftPayloadFingerprint_(payload) {
 
 function getOrCreateDraftOperation_(payload, now = Date.now()) {
   const fingerprint = draftPayloadFingerprint_(payload);
+  let saved;
   try {
-    const saved = JSON.parse(localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) || 'null');
-    const createdAt = Number(saved?.createdAt || 0);
-    if (
-      saved?.operationId
-      && saved.fingerprint === fingerprint
-      && createdAt > 0
-      && now - createdAt <= DRAFT_OPERATION_TTL_MS
-    ) {
+    saved = JSON.parse(localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) || 'null');
+  } catch (_) {
+    throw new Error('前回の受付記録を読めないため送信しません。「要確認」を開いて確認してください。');
+  }
+  if (saved?.operationId) {
+    if (saved.fingerprint !== fingerprint) {
+      const error = new Error('前回の下書き結果が未確認です。内容を変えて再送せず、「要確認」で保存結果を確認してください。');
+      error.code = 'DRAFT_SAVE_NEEDS_REVIEW';
+      throw error;
+    }
       return {
         operationId: String(saved.operationId),
         fingerprint,
-        createdAt,
+        createdAt: Number(saved.createdAt || now),
         reused: true,
       };
-    }
-  } catch (_) {}
+  }
 
   const record = {
     operationId: createOperationId_('draft-start'),
@@ -2830,7 +2830,10 @@ function getOrCreateDraftOperation_(payload, now = Date.now()) {
   };
   try {
     localStorage.setItem(DRAFT_OPERATION_STORAGE_KEY, JSON.stringify(record));
-  } catch (_) {}
+    if (localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) !== JSON.stringify(record)) throw new Error('readback');
+  } catch (_) {
+    throw new Error('受付IDをこの端末に保存できないため送信しません。端末の空き容量を確認してください。');
+  }
   return { ...record, reused: false };
 }
 
@@ -2848,9 +2851,15 @@ function clearDraftOperation_(operationId = '') {
 function shouldPreserveDraftOperation_(error) {
   const message = String(error?.message || error || '');
   return !!error?.ambiguousDraftStart
+    || error?.code === 'DRAFT_SAVE_NEEDS_REVIEW'
+    || error?.status === 'needs_review'
     || isTransientServiceDiscoveryError_(error)
     || isRetryableJobStatusError_(error)
     || /待機を中止しました。処理自体はMacで継続しています/.test(message);
+}
+
+function shouldClearDraftOperationAfterError_(error, { accepted = false, reused = false } = {}) {
+  return !accepted && !reused && !shouldPreserveDraftOperation_(error);
 }
 
 function estimateJsonBytes(value) {
@@ -3541,12 +3550,19 @@ function renderListingStyleStatus(summary = {}) {
   if (summary.hasStyle && summary.itemCount) {
     const updated = formatListingStyleDate(summary.updatedAt);
     const hints = (summary.titleWordHints || []).slice(0, 6).join('、');
-    node.textContent = `過去出品${summary.itemCount}件を参考にします${updated ? `（更新: ${updated}）` : ''}${hints ? `。よく使う語: ${hints}` : ''}`;
+    node.textContent = `過去出品${summary.itemCount}件を参考にします${updated ? `（更新: ${updated}）` : ''}。${listingStyleAgeText_(summary.updatedAt)}${hints ? ` よく使う語: ${hints}` : ''}`;
     node.classList.remove('unknown');
   } else {
     node.textContent = 'まだ過去出品の文体を取得していません。生成はできますが、文体は通常のAI文になります。';
     node.classList.add('unknown');
   }
+}
+
+function listingStyleAgeText_(updatedAt, now = Date.now()) {
+  const stamp = Date.parse(updatedAt || '');
+  if (!Number.isFinite(stamp) || stamp > now) return '取得日時を確認できません。必要に応じて文体を更新してください。';
+  const days = Math.floor((now - stamp) / 86400000);
+  return `${days}日前に取得した文体です。${days >= 30 ? '最近の書き方を反映したい場合は「メルカリ全件更新」を押してください。' : '相場の最新取得日時ではありません。'}`;
 }
 
 async function fetchListingStyleFromMac(tunnelUrl, { silent = false, statusCallback } = {}) {
@@ -6930,37 +6946,38 @@ function buildMarkdownRunStatus({ dryRun, summary = {}, run = {} }) {
   const checked = Number(summary.dryRun || 0);
   const skipped = Number(summary.skipped || 0);
   const error = Number(summary.error || 0);
-  const hasProblem = skipped > 0 || error > 0;
+  const ambiguous = Math.max(Number(summary.ambiguous || 0), Number(summary.ambiguousUnresolvedTotal || 0));
+  const hasProblem = ambiguous > 0 || error > 0;
   const issueText = summarizeMarkdownIssues(run);
 
   if (dryRun) {
     if (!hasProblem) {
       return {
         kind: 'success',
-        message: `確認結果: 問題なし。${checked}件が100円値下げ可能です。価格は変更していません。`,
+        message: `確認結果: ${checked}件が100円値下げ可能、条件による見送り${skipped}件。価格は変更していません。`,
       };
     }
     return {
       kind: 'warn',
-      message: `確認結果: 要確認あり。値下げ可能${checked}件、スキップ${skipped}件、エラー${error}件。価格は変更していません。${issueText}`,
+      message: `確認結果: 要確認あり。値下げ可能${checked}件、結果不明${ambiguous}件、見送り${skipped}件、エラー${error}件。価格は変更していません。${issueText}`,
     };
   }
 
   if (!hasProblem) {
     return {
       kind: 'success',
-      message: `100円値下げ完了: 問題なし。${updated}件を値下げしました。`,
+      message: `100円値下げ完了: ${updated}件を値下げ、条件による見送り${skipped}件。`,
     };
   }
   return {
     kind: 'warn',
-    message: `100円値下げ完了: 要確認あり。更新${updated}件、スキップ${skipped}件、エラー${error}件。${issueText}`,
+    message: `値下げ結果: 要確認あり。更新${updated}件、結果不明${ambiguous}件、見送り${skipped}件、エラー${error}件。${issueText}`,
   };
 }
 
 function summarizeMarkdownIssues(run = {}) {
   const issues = (run.results || [])
-    .filter(row => row.status === 'skipped' || row.status === 'error')
+    .filter(row => ['ambiguous', 'error'].includes(row.status))
     .slice(0, 3)
     .map(row => {
       const title = String(row.title || row.itemId || '対象不明').slice(0, 24);
@@ -9180,14 +9197,28 @@ async function startDraftJob_(initialTunnelUrl, payload, options = {}) {
         parseError.retryableDraftStart = !!response.ok;
         throw parseError;
       }
+      if (response.ok && data.ok && data.status === 'done') {
+        if (String(data.operationId || '') !== operationId) {
+          const mismatch = new Error('保存済み応答の受付IDが一致しません。前回の受付を保持して「要確認」から確認してください。');
+          mismatch.ambiguousDraftStart = true;
+          throw mismatch;
+        }
+        return { data, tunnelUrl, operationId, completed: true };
+      }
       if (!response.ok || !data.ok || !data.job_id) {
         const error = new Error(data.error || '下書き保存を開始できませんでした');
         error.httpStatus = response.status;
+        error.code = String(data.code || '');
+        error.status = String(data.status || '');
+        error.ambiguousDraftStart = response.ok || data.status === 'needs_review';
         throw error;
       }
       return { data, tunnelUrl, operationId };
     } catch (error) {
       lastError = error;
+      // A later definitive rejection cannot rule out acceptance of an earlier
+      // interrupted request. Keep that same receipt for manual recovery.
+      if (attempt > 1) error.ambiguousDraftStart = true;
       if (!isRetryableDraftStartError_(error)) throw error;
       if (attempt >= DRAFT_START_MAX_ATTEMPTS) break;
 
@@ -9280,6 +9311,8 @@ async function saveDraft() {
   const draftBtn = el('draft-btn');
   let waitControl = null;
   let draftOperationId = '';
+  let draftAccepted = false;
+  let draftReused = false;
   draftBtn.disabled = true;
   draftStatus.hidden = false;
   draftStatus.textContent = 'MacサービスURLを取得中...';
@@ -9319,6 +9352,7 @@ async function saveDraft() {
     }
     const draftOperation = getOrCreateDraftOperation_(draftPayload.payload);
     draftOperationId = draftOperation.operationId;
+    draftReused = draftOperation.reused;
     if (draftOperation.reused) {
       draftStatus.textContent = '前回の受付状況を確認しながら再接続中...';
     }
@@ -9330,8 +9364,10 @@ async function saveDraft() {
       refreshUrl: refreshMacServiceUrl,
     });
     const jobId = startedDraft.data.job_id;
+    draftAccepted = true;
 
     // ポーリング
+    if (!startedDraft.completed) {
     draftStatus.textContent = 'Macが下書きを入力中... (しばらくお待ちください)';
     waitControl = attachJobWaitCancel_(draftStatus);
     await pollMacJob(startedDraft.tunnelUrl, jobId, {
@@ -9343,13 +9379,14 @@ async function saveDraft() {
       signal: waitControl.signal,
       refreshUrl: refreshMacServiceUrl,
     });
+    }
     draftStatus.textContent = inventoryState.uuid
       ? '下書き保存が完了しました。出品確定後、「価格改定」の最新取得で在庫連携を確認します。'
       : '下書き保存が完了しました。在庫未選択のため自動連携対象外です。メルカリアプリで確認してください。';
     clearDraftOperation_(draftOperationId);
   } catch (e) {
     console.error('[draft-save]', e);
-    if (draftOperationId && !shouldPreserveDraftOperation_(e)) {
+    if (draftOperationId && shouldClearDraftOperationAfterError_(e, { accepted: draftAccepted, reused: draftReused })) {
       clearDraftOperation_(draftOperationId);
     }
     draftStatus.textContent = `❌ ${formatDraftSaveError_(e)}`;
@@ -9361,6 +9398,9 @@ async function saveDraft() {
 
 // ----- 起動 -----
 globalThis.MercariAppTestHooks = {
+  shouldClearDraftOperationAfterError_,
+  listingStyleAgeText_,
+  buildMarkdownRunStatus,
   buildDraftPayload_,
   buildDraftPayloadWithinLimit_,
   draftPayloadFingerprint_,
