@@ -181,11 +181,13 @@ const hooks = context.MercariAppTestHooks;
   const reusedOperation = hooks.getOrCreateDraftOperation_({ title: '同じ商品' }, 2000);
   assert.equal(reusedOperation.operationId, firstOperation.operationId);
   assert.equal(reusedOperation.reused, true);
-  assert.throws(() => hooks.getOrCreateDraftOperation_({ title: '変更した商品' }, 3000), /前回の下書き結果が未確認/);
+  const nextOperation = hooks.getOrCreateDraftOperation_({ title: '変更した商品' }, 3000);
+  assert.notEqual(nextOperation.operationId, firstOperation.operationId);
   assert.equal(hooks.getOrCreateDraftOperation_({ title: '同じ商品' }, 9e9).operationId, firstOperation.operationId);
   hooks.clearDraftOperation_(firstOperation.operationId);
   const recreatedOperation = hooks.getOrCreateDraftOperation_({ title: '変更した商品' }, 4000);
   assert.notEqual(recreatedOperation.operationId, firstOperation.operationId);
+  assert.equal(recreatedOperation.operationId, nextOperation.operationId);
 
   assert.equal(hooks.isRetryableDraftStartError_(new Error('Fetch is aborted')), true);
   assert.equal(

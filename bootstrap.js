@@ -4,7 +4,7 @@
   if (window.lucide) window.lucide.createIcons();
   if (!('serviceWorker' in navigator)) return;
 
-  const version = globalThis.MercariPublicConfig?.version || 'v20260906a';
+  const version = globalThis.MercariPublicConfig?.version || 'v20260906b';
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     const reloadKey = `mercari_sw_reloaded_${version}`;
     try {

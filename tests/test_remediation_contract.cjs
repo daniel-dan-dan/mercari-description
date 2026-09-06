@@ -3,9 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const stored = new Map();
+let uuidCounter = 0;
 const ctx = { console, URL, setTimeout, clearTimeout, TextEncoder, __MERCARI_TEST__: true,
   localStorage: { getItem: k => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, v), removeItem: k => stored.delete(k) },
-  crypto: { randomUUID: () => 'contract-operation' } };
+  crypto: { randomUUID: () => `contract-operation-${++uuidCounter}` } };
 ctx.window = ctx; ctx.globalThis = ctx; vm.createContext(ctx);
 vm.runInContext(['catalog-data.js', 'app.js', 'review.js'].map(p => fs.readFileSync(p, 'utf8')).join('\n'), ctx);
 const hooks = ctx.MercariAppTestHooks;
@@ -38,7 +39,7 @@ const hooks = ctx.MercariAppTestHooks;
   });
   const operation = hooks.getOrCreateDraftOperation_({ title: 'fixture' }, 1);
   assert.equal(hooks.getOrCreateDraftOperation_({ title: 'fixture' }, 8e10).operationId, operation.operationId);
-  assert.throws(() => hooks.getOrCreateDraftOperation_({ title: 'edited' }), /未確認/);
+  assert.notEqual(hooks.getOrCreateDraftOperation_({ title: 'edited' }).operationId, operation.operationId);
   hooks.clearDraftOperation_(operation.operationId);
   const writer = ctx.localStorage.setItem;
   ctx.localStorage.setItem = () => { throw new Error('quota'); };

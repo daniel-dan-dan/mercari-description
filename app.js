@@ -2801,51 +2801,54 @@ function draftPayloadFingerprint_(payload) {
   return `${text.length}-${(hash >>> 0).toString(36)}`;
 }
 
-function getOrCreateDraftOperation_(payload, now = Date.now()) {
-  const fingerprint = draftPayloadFingerprint_(payload);
-  let saved;
+function readDraftOperations_() {
   try {
-    saved = JSON.parse(localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) || 'null');
+    const saved = JSON.parse(localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) || 'null');
+    if (saved === null) return [];
+    if (saved.previous !== undefined && !Array.isArray(saved.previous)) throw new Error('invalid history');
+    const records = [saved, ...(saved.previous || [])];
+    if (records.some(record => !record || typeof record.operationId !== 'string'
+      || !record.operationId || typeof record.fingerprint !== 'string' || !record.fingerprint)) {
+      throw new Error('invalid receipt');
+    }
+    return records.map(({ operationId, fingerprint, createdAt }) => ({ operationId, fingerprint, createdAt }));
   } catch (_) {
     throw new Error('前回の受付記録を読めないため送信しません。「要確認」を開いて確認してください。');
   }
-  if (saved?.operationId) {
-    if (saved.fingerprint !== fingerprint) {
-      const error = new Error('前回の下書き結果が未確認です。内容を変えて再送せず、「要確認」で保存結果を確認してください。');
-      error.code = 'DRAFT_SAVE_NEEDS_REVIEW';
-      throw error;
-    }
-      return {
-        operationId: String(saved.operationId),
-        fingerprint,
-        createdAt: Number(saved.createdAt || now),
-        reused: true,
-      };
-  }
+}
 
-  const record = {
-    operationId: createOperationId_('draft-start'),
-    fingerprint,
-    createdAt: now,
-  };
+function writeDraftOperations_(records) {
   try {
-    localStorage.setItem(DRAFT_OPERATION_STORAGE_KEY, JSON.stringify(record));
-    if (localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) !== JSON.stringify(record)) throw new Error('readback');
+    if (!records.length) {
+      localStorage.removeItem(DRAFT_OPERATION_STORAGE_KEY);
+      if (localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) !== null) throw new Error('readback');
+      return;
+    }
+    // Keep the current receipt at the top level for the review panel and old clients.
+    // Store only receipt metadata, never the product payload or photos. No expiry.
+    const serialized = JSON.stringify({ ...records[0], previous: records.slice(1) });
+    localStorage.setItem(DRAFT_OPERATION_STORAGE_KEY, serialized);
+    if (localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) !== serialized) throw new Error('readback');
   } catch (_) {
     throw new Error('受付IDをこの端末に保存できないため送信しません。端末の空き容量を確認してください。');
   }
+}
+
+function getOrCreateDraftOperation_(payload, now = Date.now()) {
+  const fingerprint = draftPayloadFingerprint_(payload);
+  const records = readDraftOperations_();
+  const existing = records.find(record => record.fingerprint === fingerprint);
+  if (existing) return { ...existing, reused: true };
+  const record = { operationId: createOperationId_('draft-start'), fingerprint, createdAt: now };
+  writeDraftOperations_([record, ...records]);
   return { ...record, reused: false };
 }
 
 function clearDraftOperation_(operationId = '') {
-  try {
-    const saved = JSON.parse(localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) || 'null');
-    if (!operationId || saved?.operationId === operationId) {
-      localStorage.removeItem(DRAFT_OPERATION_STORAGE_KEY);
-    }
-  } catch (_) {
-    try { localStorage.removeItem(DRAFT_OPERATION_STORAGE_KEY); } catch (_) {}
-  }
+  if (!operationId) return;
+  const records = readDraftOperations_();
+  const remaining = records.filter(record => record.operationId !== operationId);
+  if (remaining.length !== records.length) writeDraftOperations_(remaining);
 }
 
 function shouldPreserveDraftOperation_(error) {
@@ -9399,11 +9402,16 @@ async function saveDraft() {
     if (!mercariCategoryOption.path.length) {
       draftStatus.textContent += ' カテゴリ・ブランド・必要なサイズは、メルカリの下書きで選択してください。';
     }
-    clearDraftOperation_(draftOperationId);
+    try { clearDraftOperation_(draftOperationId); } catch (cleanupError) {
+      console.warn('[draft-receipt-cleanup]', cleanupError);
+      draftStatus.textContent += ' 端末の受付記録の整理は未完了ですが、下書き保存は完了しています。';
+    }
   } catch (e) {
     console.error('[draft-save]', e);
     if (draftOperationId && shouldClearDraftOperationAfterError_(e, { accepted: draftAccepted, reused: draftReused })) {
-      clearDraftOperation_(draftOperationId);
+      try { clearDraftOperation_(draftOperationId); } catch (cleanupError) {
+        console.warn('[draft-receipt-cleanup]', cleanupError);
+      }
     }
     draftStatus.textContent = `❌ ${formatDraftSaveError_(e)}`;
   } finally {

@@ -4,7 +4,7 @@
 // 任意URLへ端末情報を送らないため、利用可能なGASをここで1つに固定します。
 (() => {
   const config = Object.freeze({
-    version: 'v20260906a',
+    version: 'v20260906b',
     gasUrl: 'https://script.google.com/macros/s/AKfycbwYfwDG7Kqplk2oVeX7kF_gsAKTlK087ToE4LGp5R7PglTFMARP2lrA6ZV9m3MD0LEs/exec',
   });
   Object.defineProperty(globalThis, 'MercariPublicConfig', {

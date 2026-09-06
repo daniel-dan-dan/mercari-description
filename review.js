@@ -100,12 +100,13 @@
           const local = result.value.localOperation;
           node('p', `この端末の受付: ${local?.status || '未確認'}。受付IDは保持しています。`, section);
           if (local?.terminal && local.operationId === localOperationId) {
-            const finish = node('button', '終了状態を確認して次の商品へ', section);
+            const finish = node('button', 'この受付の終了状態を確認', section);
             finish.type = 'button'; finish.className = 'btn small';
             finish.addEventListener('click', () => {
-              if (busy || !confirm(`Macの受付状態は ${local.status} です。保存済みなら再保存せず、次の商品へ進みますか？`)) return;
-              clearDraftOperation_(localOperationId);
-              load();
+              if (busy || !confirm(`Macの受付状態は ${local.status} です。この受付の確認を終了しますか？別の商品はこの確認をせずに保存できます。`)) return;
+              try { clearDraftOperation_(localOperationId); load(); } catch (error) {
+                status.textContent = `受付記録を整理できませんでした。${error.message}`;
+              }
             });
           }
         }
@@ -118,7 +119,7 @@
           node('p', row.title || row.message || row.operationId || row.itemId || '記録', card);
           node('p', `${row.status || '要確認'} / ${dateText(row.updatedAt || row.attemptedAt || row.lastSeenAt || row.createdAt)}`, card);
           if (path === '/draft/review') {
-            link(card, 'メルカリの下書きを開いて確認', 'https://jp.mercari.com/mypage/listings/drafts');
+            link(card, 'メルカリの下書きを開いて確認', 'https://jp.mercari.com/sell/drafts');
             for (const [resolution, label] of [['saved', '保存済みと確認'], ['not_saved', '未保存と確認']]) {
               action(card, label, `受付 ${row.operationId} の実際の下書きを確認し、「${label}」で記録しますか？未保存とすると同じ受付の再実行が可能になります。`, path,
                 { operationId: row.operationId, resolution }, data => data.item?.status === `resolved_${resolution}`);
