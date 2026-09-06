@@ -15,3 +15,6 @@ icons/backup-*/
 .playwright-cli/
 output/playwright/
 docs/mockups/
+
+# Local-only UI previews must not be shipped by GitHub Pages.
+tests/ui/

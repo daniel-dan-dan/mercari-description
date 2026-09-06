@@ -144,6 +144,11 @@ const MARKDOWN_ROWS_KEY = 'mercari_markdown_rows';
 const MARKDOWN_SORT_KEY = 'mercari_markdown_sort';
 const MARKDOWN_FILTER_KEY = 'mercari_markdown_filter';
 const MARKDOWN_FILTER_MODES = new Set(['all', 'enabled-only', 'disabled-only']);
+const MARKDOWN_RECOMMENDATION_FILTER_KEY = 'mercari_markdown_recommendation_filter';
+const MARKDOWN_RECOMMENDATION_FILTERS = Object.freeze({
+  all: 'すべて', largeMarkdown: '大幅候補', markdown100: '100円',
+  wait: '維持・確認', reviewListing: '内容見直し',
+});
 const MARKDOWN_RECOMMENDATION_META = Object.freeze({
   collecting: { label: '判定材料を収集中', icon: '…', className: 'collecting' },
   keep: { label: '価格維持・様子見', icon: '＝', className: 'keep' },
@@ -223,6 +228,10 @@ let lastAiData = null;
 let activeMultiVoiceSession = null;
 let markdownRows = [];
 let markdownFilterMode = 'all';
+let markdownRecommendationFilter = 'all';
+let listingValidation = { ok: false, items: [] };
+let draftSaveInProgress = false;
+let draftFeedbackSignature = '';
 let markdownSettingsWriteTail = Promise.resolve();
 const markdownAutoSaveStates = new Map();
 let researchWizardStep = 1;
@@ -859,6 +868,7 @@ function updateMercariSizeNote(result) {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.hidden = true);
   el(id).hidden = false;
+  updateListingWorkflow_();
 }
 
 function showStatus(target, msg, kind) {
@@ -875,7 +885,11 @@ function hideStatus(target) {
 function updatePhotoSummary() {
   const pill = el('photo-count-pill');
   if (!pill) return;
-  pill.textContent = `${uploadedImages.length}/${MAX_SELECT_PHOTOS}`;
+  pill.textContent = `${uploadedImages.length}枚`;
+  const limitNote = el('photo-limit-note');
+  if (limitNote) limitNote.textContent = uploadedImages.length > MAX_DRAFT_PHOTOS
+    ? `下書きには${uploadedImages.length - MAX_DRAFT_PHOTOS}枚減らしてください（合成・削除）`
+    : `下書きは${MAX_DRAFT_PHOTOS}枚まで・編集素材は${MAX_SELECT_PHOTOS}枚まで`;
   pill.classList.toggle('ready', uploadedImages.length >= 2);
   pill.classList.toggle('over-limit', uploadedImages.length > MAX_DRAFT_PHOTOS);
 }
@@ -891,7 +905,7 @@ function updateTemporarySaveButton_() {
   const hasPhotos = uploadedImages.length > 0;
   const hasCategory = !!el('category')?.value;
   const ready = hasPhotos && hasCategory;
-  button.disabled = !ready || descriptionGenerationInProgress || photoProcessingInProgress;
+  button.disabled = !ready || descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress;
   button.textContent = activeTemporaryDraftId
     ? '変更を保存して次の商品へ'
     : '一時保存して次の商品へ';
@@ -925,6 +939,7 @@ function setDescriptionGenerationLock_(locked) {
     }
   });
   el('description-panel')?.classList.toggle('generation-locked', locked);
+  updateListingWorkflow_();
   if (!locked) {
     updateGenerateButton();
     updateTemporarySaveButton_();
@@ -950,10 +965,136 @@ function setPhotoProcessingLock_(locked) {
     }
   });
   el('description-panel')?.classList.toggle('photo-processing-locked', locked);
+  updateListingWorkflow_();
   if (!locked) {
     updateGenerateButton();
     updateTemporarySaveButton_();
   }
+}
+
+// A small UI signature invalidates old feedback without retaining photo payloads.
+function draftFormSignature_() {
+  return draftPayloadFingerprint_({
+    title: el('title-text')?.value || '', description: el('result-text')?.value || '',
+    price: el('price-input')?.value || '', condition: el('m-condition')?.value || '',
+    category: getSelectedMercariCategoryKey(), brand: el('m-brand')?.value || '',
+    size: getSelectedMercariSize(), inventory: el('inventory-uuid-input')?.value || '',
+    source: generationSourceFingerprint_(), product: lastAiData?.product_id || '',
+  });
+}
+
+function setDraftSubmissionLock_(locked) {
+  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #reset-btn, #settings-btn').forEach(control => {
+    if (locked) {
+      if (control.dataset.draftWasDisabled === undefined) control.dataset.draftWasDisabled = control.disabled ? '1' : '0';
+      control.disabled = true;
+    } else if (control.dataset.draftWasDisabled !== undefined) {
+      control.disabled = control.dataset.draftWasDisabled === '1';
+      delete control.dataset.draftWasDisabled;
+    }
+  });
+  el('description-panel')?.classList.toggle('draft-saving', locked);
+  if (!locked) { updateGenerateButton(); updateTemporarySaveButton_(); }
+}
+
+// ----- 出品準備の進行状況と、既存操作への案内 -----
+function draftMissingSummary_(items) {
+  const missing = items.filter(item => !item.ok);
+  return missing.length
+    ? `あと${missing.length}項目：${missing.map(item => item.shortLabel || item.label).join('・')}`
+    : '保存準備ができました';
+}
+
+function renderDraftChecklist_(items, detailsOpen = false) {
+  const missing = items.filter(item => !item.ok);
+  const completed = items.filter(item => item.ok);
+  const missingHtml = missing.map(item =>
+    `<button type="button" class="draft-check-item ng" data-listing-target="${escapeHtml(item.target || 'title-text')}"><span class="draft-check-mark" aria-hidden="true">○</span><span>${escapeHtml(item.label)}</span><span class="draft-check-edit">確認する</span></button>`
+  ).join('');
+  const completedHtml = completed.map(item =>
+    `<div class="draft-check-item ${item.kind || 'ok'}"><span class="draft-check-mark" aria-hidden="true">${item.kind === 'neutral' ? '—' : '✓'}</span><span>${escapeHtml(item.label)}</span></div>`
+  ).join('');
+  return `<p class="draft-check-summary" role="status" aria-live="polite">${escapeHtml(draftMissingSummary_(items))}</p>${missingHtml}`
+    + (completed.length ? `<details class="draft-check-completed" ${detailsOpen ? 'open' : ''}><summary>入力済み・任意項目（${completed.length}件）</summary>${completedHtml}</details>` : '');
+}
+
+function focusListingTarget_(id) {
+  const target = el(id);
+  if (!target) return false;
+  let ancestor = target;
+  while (ancestor) {
+    if (ancestor.tagName === 'DETAILS') ancestor.open = true;
+    ancestor = ancestor.parentElement;
+  }
+  // Focus a visible field, never click an upload or submission button on navigation.
+  const focusNode = id === 'photo-preview'
+    ? document.querySelector('label[for="photo-input"]')
+    : (target.matches?.('input:not([type="hidden"]), select, textarea, button')
+      ? target : target.querySelector?.('summary, select, input:not([type="hidden"]), textarea, button') || target);
+  if (!focusNode) return false;
+  if (!focusNode.matches?.('input, select, textarea, button, summary, a')) focusNode.setAttribute('tabindex', '-1');
+  focusNode.focus?.({ preventScroll: true });
+  focusNode.scrollIntoView?.({ behavior: globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+  return true;
+}
+
+function updateListingWorkflow_() {
+  const bar = el('listing-action-bar');
+  if (!bar) return;
+  if (!draftSaveInProgress && draftFeedbackSignature && draftFeedbackSignature !== draftFormSignature_()) {
+    const status = el('draft-status');
+    if (status) status.hidden = true;
+    draftFeedbackSignature = '';
+  }
+  const generated = !!lastAiData && !el('result-section')?.hidden;
+  const busy = descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress;
+  const step = generated ? (listingValidation.ok ? 3 : 2) : 1;
+  bar.hidden = !!el('main-screen')?.hidden || !!el('description-panel')?.hidden;
+  el('generate-btn').hidden = generated && !descriptionGenerationInProgress;
+  el('draft-btn').hidden = !generated || descriptionGenerationInProgress;
+  el('draft-btn').disabled = busy;
+  el('draft-btn').textContent = draftSaveInProgress ? '下書きを保存中…' : '下書き保存（Mac自動入力）';
+  el('generate-btn').textContent = descriptionGenerationInProgress ? '説明文を生成中…' : '説明文を生成';
+  el('generate-note').hidden = generated || busy;
+  const missing = generated ? listingValidation.items.filter(item => !item.ok) : [];
+  const missingLink = el('listing-missing-link');
+  missingLink.hidden = !missing.length || busy;
+  missingLink.textContent = draftMissingSummary_(missing);
+  missingLink.dataset.listingTarget = missing[0]?.target || 'draft-checklist';
+  const hint = el('listing-action-hint');
+  const hasDraftStatus = generated && !!el('draft-status') && !el('draft-status').hidden;
+  hint.hidden = hasDraftStatus || (!busy && (!generated || !!missing.length));
+  hint.textContent = draftSaveInProgress ? 'Macで保存しています。結果が出るまでお待ちください。'
+    : descriptionGenerationInProgress ? '写真と採寸から説明文を作っています。'
+    : photoProcessingInProgress ? '写真を処理しています。'
+    : '商品名・説明文・価格を確認して保存してください。';
+  document.querySelectorAll('#listing-progress button').forEach((button, index) => {
+    const current = index + 1 === step;
+    button.disabled = busy || (index > 0 && !generated);
+    if (current) button.setAttribute('aria-current', 'step');
+    else button.removeAttribute('aria-current');
+    button.classList.toggle('complete', index + 1 < step);
+  });
+}
+
+function updateListingKeyboard_() {
+  const active = document.activeElement;
+  const editing = !!active?.matches?.('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea, select');
+  const touch = !!globalThis.matchMedia?.('(pointer: coarse)').matches;
+  const compressed = !!window.visualViewport && window.innerHeight - window.visualViewport.height > 120;
+  el('listing-action-bar')?.classList.toggle('keyboard-open', editing && (touch || compressed));
+}
+
+function initListingWorkflow_() {
+  el('description-panel')?.addEventListener('click', event => {
+    const button = event.target.closest?.('[data-listing-target]');
+    if (!button || button.disabled || descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress) return;
+    focusListingTarget_(button.dataset.listingTarget);
+  });
+  document.addEventListener('focusin', updateListingKeyboard_);
+  document.addEventListener('focusout', () => setTimeout(updateListingKeyboard_, 0));
+  window.visualViewport?.addEventListener('resize', updateListingKeyboard_);
+  updateListingWorkflow_();
 }
 
 // ----- 初期起動判定 -----
@@ -1149,6 +1290,8 @@ async function init() {
   el('markdown-list').addEventListener('change', handleMarkdownFieldChange);
   el('markdown-list').addEventListener('error', handleMarkdownImageError, true);
   el('markdown-filter-control').addEventListener('click', handleMarkdownFilterChange);
+  el('markdown-recommendation-summary')?.addEventListener('click', handleMarkdownRecommendationFilter_);
+  initListingWorkflow_();
   ['research-title', 'research-keyword', 'research-category', 'research-brand', 'research-size', 'research-condition', 'research-gender', 'research-sale-status', 'research-min-price', 'research-max-price', 'research-sample-size', 'research-sort', 'research-period-months', 'research-excludes', 'research-note']
     .forEach(id => {
       const node = el(id);
@@ -1202,6 +1345,10 @@ async function init() {
     showTemporaryDraftError_(e);
   }
   markdownFilterMode = readMarkdownFilterMode();
+  try {
+    const savedFilter = localStorage.getItem(MARKDOWN_RECOMMENDATION_FILTER_KEY);
+    markdownRecommendationFilter = Object.hasOwn(MARKDOWN_RECOMMENDATION_FILTERS, savedFilter) ? savedFilter : 'all';
+  } catch (_) { markdownRecommendationFilter = 'all'; }
   markdownRows = readJsonList(MARKDOWN_ROWS_KEY);
   renderResearchData();
   renderMarkdownRows();
@@ -1406,6 +1553,7 @@ async function revokeCurrentDeviceFromSettings_() {
 let uploadedImages = [];  // { dataUrl, mediaType, base64 }
 
 async function handlePhotoSelect(e) {
+  if (draftSaveInProgress) { e.target.value = ''; return; }
   if (descriptionGenerationInProgress || photoProcessingInProgress) {
     e.target.value = '';
     showStatus(
@@ -2040,7 +2188,7 @@ function updateGenerateButton() {
   const hasPhotos = uploadedImages.length > 0;
   const hasCategory = !!el('category').value;
   const ready = hasPhotos && hasCategory;
-  el('generate-btn').disabled = !ready || descriptionGenerationInProgress || photoProcessingInProgress;
+  el('generate-btn').disabled = !ready || descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress;
   const note = el('generate-note');
   if (note) {
     note.classList.toggle('ready', ready);
@@ -2056,6 +2204,7 @@ function updateGenerateButton() {
   }
   updatePhotoSummary();
   updateTemporarySaveButton_();
+  updateListingWorkflow_();
 }
 
 // ----- AIコール -----
@@ -4241,6 +4390,7 @@ function restoreGenerationUiState_(state) {
 
 // ----- 生成実行 -----
 async function generateDescription() {
+  if (draftSaveInProgress) return;
   const measurements = collectMeasurements();
   if (!measurements) { alert('カテゴリを選んでください'); return; }
   if (!uploadedImages.length) { alert('写真を選んでください'); return; }
@@ -5133,6 +5283,7 @@ async function saveCurrentAsTemporaryDraft_({
   allowIncomplete = false,
   announce = true,
 } = {}) {
+  if (draftSaveInProgress) return null;
   if (photoProcessingInProgress) {
     showStatus('temporary-draft-status', '写真の処理が完了してから一時保存してください。', 'warn');
     return null;
@@ -5215,10 +5366,12 @@ async function saveCurrentAsTemporaryDraft_({
 }
 
 async function openTemporaryDraft_(id) {
+  if (draftSaveInProgress) throw new Error('下書き保存中は商品を切り替えられません');
   if (photoProcessingInProgress) {
     throw new Error('写真を処理中のため、商品を切り替えられません');
   }
   const record = await getTemporaryDraft_(id);
+  if (draftSaveInProgress) throw new Error('下書き保存中は商品を切り替えられません');
   if (!record) throw new Error('選択した一時保存が見つかりません');
   await clearCurrentProduct_({ clearSession: true, scroll: false });
   activeTemporaryDraftId = id;
@@ -5237,6 +5390,7 @@ async function openTemporaryDraft_(id) {
 }
 
 async function handleTemporaryDraftAction_(event) {
+  if (draftSaveInProgress) return;
   const button = event.target.closest('[data-temporary-action]');
   if (!button) return;
   if (photoProcessingInProgress) {
@@ -5396,6 +5550,7 @@ function scheduleSave() {
 }
 
 function restoreState(s) {
+  if (draftSaveInProgress) return;
   if (!s) return;
   activeTemporaryDraftId = s.temporaryDraftId || null;
   const restoredProductGender = resolveRestoredProductGender_(s);
@@ -5492,6 +5647,7 @@ function switchMainTab(tab) {
   el('description-tab-btn').setAttribute('aria-selected', String(description));
   el('research-tab-btn').setAttribute('aria-selected', String(research));
   el('markdown-tab-btn').setAttribute('aria-selected', String(markdown));
+  updateListingWorkflow_();
 }
 
 function normalizeResearchWizardStep(value) {
@@ -6574,10 +6730,29 @@ function handleMarkdownFilterChange(event) {
   renderMarkdownRows();
 }
 
+function handleMarkdownRecommendationFilter_(event) {
+  const button = event.target.closest?.('[data-markdown-recommendation]');
+  if (!button) return;
+  const value = button.dataset.markdownRecommendation;
+  markdownRecommendationFilter = Object.hasOwn(MARKDOWN_RECOMMENDATION_FILTERS, value)
+    && value !== markdownRecommendationFilter ? value : 'all';
+  try { localStorage.setItem(MARKDOWN_RECOMMENDATION_FILTER_KEY, markdownRecommendationFilter); } catch (_) {}
+  renderMarkdownRows();
+  document.querySelector(`[data-markdown-recommendation="${value}"]`)?.focus();
+}
+
+function markdownRecommendationGroup_(row) {
+  const type = markdownRecommendation(row).type;
+  return ['largeMarkdown', 'markdown100', 'reviewListing'].includes(type) ? type : 'wait';
+}
+
 function filteredMarkdownRows(rows) {
-  if (markdownFilterMode === 'enabled-only') return rows.filter(markdownIsActive);
-  if (markdownFilterMode === 'disabled-only') return rows.filter(row => !markdownIsActive(row));
-  return [...rows];
+  return rows.filter(row => {
+    if (markdownFilterMode === 'enabled-only' && !markdownIsActive(row)) return false;
+    if (markdownFilterMode === 'disabled-only' && markdownIsActive(row)) return false;
+    return markdownRecommendationFilter === 'all'
+      || markdownRecommendationGroup_(row) === markdownRecommendationFilter;
+  });
 }
 
 function markdownImageUrl(row) {
@@ -7020,6 +7195,8 @@ function handleMarkdownFieldChange(event) {
   }
   persistMarkdownRows();
   if (event.type === 'input' && minItemId) {
+    const warning = target.closest?.('[data-markdown-id]')?.querySelector('[data-markdown-price-warning]');
+    if (warning) warning.innerHTML = markdownFloorAlertMarkup_(row);
     const count = el('markdown-enabled-count');
     if (count) {
       count.textContent = `${markdownRows.filter(markdownIsActive).length}件`;
@@ -7049,30 +7226,31 @@ function renderMarkdownRows() {
     summary.textContent = `値下げ中 ${enabledCount}件 / 値下げなし ${disabledCount}件`;
   }
   if (recommendationSummary) {
-    const recommendationCounts = markdownRows.reduce((counts, row) => {
-      const type = markdownRecommendation(row).type;
-      if (type === 'largeMarkdown') counts.large += 1;
-      else if (type === 'markdown100') counts.small += 1;
-      else counts.wait += 1;
-      return counts;
-    }, { large: 0, small: 0, wait: 0 });
-    recommendationSummary.innerHTML = `
-      <div class="large"><span>大幅候補</span><strong>${recommendationCounts.large}件</strong></div>
-      <div class="small"><span>100円</span><strong>${recommendationCounts.small}件</strong></div>
-      <div class="wait"><span>維持・確認</span><strong>${recommendationCounts.wait}件</strong></div>`;
+    const counts = { largeMarkdown: 0, markdown100: 0, wait: 0, reviewListing: 0 };
+    markdownRows.forEach(row => { counts[markdownRecommendationGroup_(row)] += 1; });
+    recommendationSummary.innerHTML = Object.entries(counts).map(([key, number]) =>
+      `<button type="button" data-markdown-recommendation="${key}" aria-pressed="${markdownRecommendationFilter === key}" class="${key}"><span>${MARKDOWN_RECOMMENDATION_FILTERS[key]}</span><strong>${number}件</strong></button>`
+    ).join('');
   }
+  if (summary) summary.textContent = `${MARKDOWN_RECOMMENDATION_FILTERS[markdownRecommendationFilter]} ${visibleRows.length}件表示 / 全${markdownRows.length}件（値下げ中 ${enabledCount}件・値下げなし ${disabledCount}件）`;
   if (!markdownRows.length) {
     list.innerHTML = '<div class="research-empty">まだ取得していません</div>';
     return;
   }
   if (!visibleRows.length) {
-    const emptyText = markdownFilterMode === 'enabled-only'
-      ? '100円値下げ中の商品はありません'
-      : '値下げしていない商品はありません';
+    const emptyText = 'この条件の商品はありません。候補ボタンをもう一度押すと候補の絞り込みを解除できます。';
     list.innerHTML = `<div class="research-empty">${emptyText}</div>`;
     return;
   }
   list.innerHTML = visibleRows.map(row => renderMarkdownCard(row)).join('');
+}
+
+function markdownFloorAlertMarkup_(row) {
+  const minPrice = Number(row.minPrice || 0);
+  const price = markdownRecommendation(row).suggestedPrice;
+  return minPrice >= 300 && price < minPrice
+    ? `<p class="markdown-floor-alert" role="note"><strong>要確認：下限を${formatYen(minPrice - price)}下回る案</strong><span>設定下限 ${formatYen(minPrice)}・利益を確認してください</span></p>`
+    : '';
 }
 
 function renderMarkdownCard(row) {
@@ -7094,7 +7272,10 @@ function renderMarkdownCard(row) {
   const reasonMarkup = recommendation.reasons
     .map(reasonText => `<li>${escapeHtml(reasonText)}</li>`)
     .join('');
+  const belowFloor = minPrice >= 300 && recommendation.suggestedPrice < minPrice;
+  const floorMarkup = markdownFloorAlertMarkup_(row);
   const warningMarkup = recommendation.warnings
+    .filter(text => !belowFloor || text !== `設定下限${formatYen(minPrice)}を${formatYen(minPrice - recommendation.suggestedPrice)}下回る案です。利益を確認してください`)
     .map(warningText => `<p class="markdown-recommendation-warning"><span aria-hidden="true">⚠</span>${escapeHtml(warningText)}</p>`)
     .join('');
   const lastIncreaseText = metrics.lastIncreaseObservedAt
@@ -7146,7 +7327,11 @@ function renderMarkdownCard(row) {
                 <strong>${escapeHtml(suggestionText)}</strong>
               </span>
             </div>
+            <div data-markdown-price-warning>${floorMarkup}</div>
             <ul class="markdown-recommendation-reasons">${reasonMarkup}</ul>
+            ${warningMarkup}
+            <details class="markdown-history-details">
+            <summary>いいね履歴を見る（${metrics.observedDays}日分）</summary>
             <div class="markdown-like-signals" aria-label="いいね頻度">
               <span>累計 <strong>${metrics.total === null ? '—' : escapeHtml(metrics.total)}</strong></span>
               <span>24時間 <strong>${escapeHtml(formatMarkdownLikeDelta(metrics.delta24h))}</strong></span>
@@ -7154,7 +7339,7 @@ function renderMarkdownCard(row) {
               <span>7日 <strong>${escapeHtml(formatMarkdownLikeDelta(metrics.delta7d))}</strong></span>
             </div>
             <p class="markdown-like-history-note">履歴 ${metrics.observedDays}日分 / ${escapeHtml(lastIncreaseText)}</p>
-            ${warningMarkup}
+            </details>
           </section>
           <p class="markdown-card-note">
             <span>${escapeHtml(reason)}</span>
@@ -7178,6 +7363,7 @@ function handleMarkdownImageError(event) {
 
 // ----- リセット -----
 async function clearCurrentProduct_({ clearSession = true, scroll = false } = {}) {
+  if (draftSaveInProgress) throw new Error('下書き保存中は入力を消去できません');
   photoProcessingOperationId += 1;
   if (_saveTimer) {
     clearTimeout(_saveTimer);
@@ -7227,6 +7413,7 @@ async function clearCurrentProduct_({ clearSession = true, scroll = false } = {}
 }
 
 async function resetAll() {
+  if (draftSaveInProgress) return;
   if (photoProcessingInProgress) {
     showStatus('status', '写真の処理が完了してからリセットしてください。', 'warn');
     return;
@@ -8151,7 +8338,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v0429d</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260906c</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -8162,7 +8349,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v0429d</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260906c</span>`;
 }
 
 function renderComposeStep() {
@@ -8842,7 +9029,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v0429d</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260906c</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -8906,7 +9093,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v0429d</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260906c</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -8978,7 +9165,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v0429d</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260906c</span>`;
       closeImageCompose();
     }
   });
@@ -9060,7 +9247,12 @@ function updateDraftChecklist() {
   const checklist = el('draft-checklist');
   if (!checklist) return;
   const resultVisible = el('result-section') && !el('result-section').hidden;
-  if (!resultVisible) { checklist.hidden = true; return { ok: false, items: [] }; }
+  if (!resultVisible) {
+    checklist.hidden = true;
+    listingValidation = { ok: false, items: [] };
+    updateListingWorkflow_();
+    return listingValidation;
+  }
   const photoCount = uploadedImages.length;
   const hasPhotos = photoCount > 0;
   const hasDraftPhotoCount = hasPhotos && photoCount <= MAX_DRAFT_PHOTOS;
@@ -9087,23 +9279,23 @@ function updateDraftChecklist() {
       ? `写真 ${photoCount}枚`
       : `写真 ${photoCount}枚：下書き保存は${MAX_DRAFT_PHOTOS}枚までです`;
   const items = [
-    { ok: hasDraftPhotoCount, label: photoLabel },
-    { ok: generatedResultCurrent, label: generatedResultCurrent ? '現在の写真・採寸で生成済みです' : '写真・採寸の変更後に説明文を再確認してください' },
-    { ok: hasTitle, label: hasTitle ? '商品名があります' : '商品名を確認してください' },
-    { ok: titleSynced, label: titleSynced ? '商品名の言葉を説明文にも反映済みです' : `説明文の商品名に不足: ${missingTitleWords.join('、')}` },
-    { ok: hasDesc, label: hasDesc ? '説明文があります' : '先に説明文を生成してください' },
-    { ok: hasPrice, label: hasPrice ? '価格が入力されています' : '販売価格は300〜9,999,999円で入力してください' },
-    { ok: hasCondition, label: hasCondition ? '状態が選択されています' : '商品の状態を確認してください' },
+    { ok: hasDraftPhotoCount, label: photoLabel, shortLabel: '写真', target: 'photo-preview' },
+    { ok: generatedResultCurrent, shortLabel: '再確認', target: 'retry-btn', label: generatedResultCurrent ? '現在の写真・採寸で生成済みです' : '写真・採寸の変更後に説明文を再確認してください' },
+    { ok: hasTitle, shortLabel: '商品名', target: 'title-text', label: hasTitle ? '商品名があります' : '商品名を確認してください' },
+    { ok: titleSynced, shortLabel: '説明文の商品名', target: 'result-text', label: titleSynced ? '商品名の言葉を説明文にも反映済みです' : `説明文の商品名に不足: ${missingTitleWords.join('、')}` },
+    { ok: hasDesc, shortLabel: '説明文', target: 'result-text', label: hasDesc ? '説明文があります' : '先に説明文を生成してください' },
+    { ok: hasPrice, shortLabel: '価格', target: 'price-input', label: hasPrice ? '価格が入力されています' : '販売価格は300〜9,999,999円で入力してください' },
+    { ok: hasCondition, shortLabel: '状態', target: 'm-condition', label: hasCondition ? '状態が選択されています' : '商品の状態を確認してください' },
     {
-      ok: hasMercariCategory,
+      ok: hasMercariCategory, shortLabel: 'カテゴリ', target: 'm-category-levels',
       label: manualCategoryAfterDraft
         ? 'カテゴリ: 下書き後にメルカリで手動選択'
         : (hasMercariCategory ? `カテゴリ: ${categoryOption.label}` : 'メルカリ詳細カテゴリを確認してください'),
     },
     { ok: true, label: mercariBrand ? `ブランド: ${mercariBrand}${manualCategoryAfterDraft ? '（カテゴリ選択後に手動選択）' : ''}` : 'ブランド: 空欄（見つからない場合はOK）' },
-    { ok: hasRequiredSize, label: mercariSize ? `サイズ: ${mercariSize}` : (sizeRequired ? 'サイズを確認してください' : 'サイズ: 不要/手動') },
+    { ok: hasRequiredSize, shortLabel: 'サイズ', target: 'm-size', label: mercariSize ? `サイズ: ${mercariSize}` : (sizeRequired ? 'サイズを確認してください' : 'サイズ: 不要/手動') },
     {
-      ok: inventoryState.valid,
+      ok: inventoryState.valid, shortLabel: '在庫情報', target: 'inventory-reference-input',
       kind: inventoryState.empty ? 'neutral' : (inventoryState.valid ? 'ok' : 'ng'),
       label: inventoryState.empty
         ? '在庫未選択: 自動連携対象外（下書き保存はできます）'
@@ -9114,14 +9306,12 @@ function updateDraftChecklist() {
         ),
     },
   ];
+  const detailsOpen = !!checklist.querySelector?.('details')?.open;
   checklist.hidden = false;
-  checklist.innerHTML = items.map(item =>
-    `<div class="draft-check-item ${item.kind || (item.ok ? 'ok' : 'ng')}">
-      <span class="draft-check-mark">${item.kind === 'neutral' ? '—' : (item.ok ? '✓' : '○')}</span>
-      <span>${escapeHtml(item.label)}</span>
-    </div>`
-  ).join('');
-  return { ok: items.every(item => item.ok), items };
+  checklist.innerHTML = renderDraftChecklist_(items, detailsOpen);
+  listingValidation = { ok: items.every(item => item.ok), items };
+  updateListingWorkflow_();
+  return listingValidation;
 }
 
 // ----- 下書き保存（Cloudflare tunnel経由でMac自動入力） -----
@@ -9278,6 +9468,7 @@ function formatDraftSaveError_(error) {
 }
 
 async function saveDraft() {
+  if (draftSaveInProgress || descriptionGenerationInProgress || photoProcessingInProgress) return;
   const gasUrl = localStorage.getItem(SERVICE_URL_KEY);
   if (!gasUrl) {
     alert('設定画面でGAS URLを入力してください');
@@ -9330,22 +9521,14 @@ async function saveDraft() {
   let draftAccepted = false;
   let draftReused = false;
   draftBtn.disabled = true;
+  draftSaveInProgress = true;
+  setDraftSubmissionLock_(true);
   draftStatus.hidden = false;
   draftStatus.textContent = 'MacサービスURLを取得中...';
+  updateListingWorkflow_();
 
   try {
-    const tunnelUrl = await getMercariServiceUrl((message) => {
-      draftStatus.textContent = message;
-    });
-    const refreshMacServiceUrl = async () => {
-      clearCachedMacServiceUrl_();
-      return getMercariServiceUrl(message => {
-        draftStatus.textContent = message;
-      });
-    };
-
-    // 下書きリクエスト送信
-    draftStatus.textContent = '下書き情報を送信中...';
+    draftFeedbackSignature = draftFormSignature_();
     const mercariCategoryKey = getSelectedMercariCategoryKey();
     const mercariCategoryOption = getMercariCategoryOption(mercariCategoryKey);
     const inventoryState = getInventoryReferenceState_();
@@ -9363,6 +9546,18 @@ async function saveDraft() {
       mercariCondition: el('m-condition').value,
       inventoryUuid: inventoryState.uuid,
     });
+    const tunnelUrl = await getMercariServiceUrl((message) => {
+      draftStatus.textContent = message;
+    });
+    const refreshMacServiceUrl = async () => {
+      clearCachedMacServiceUrl_();
+      return getMercariServiceUrl(message => {
+        draftStatus.textContent = message;
+      });
+    };
+
+    // 下書きリクエスト送信
+    draftStatus.textContent = '下書き情報を送信中...';
     if (draftPayload.optimized) {
       draftStatus.textContent = '写真データを通信向けに最適化して送信中...';
     }
@@ -9417,11 +9612,18 @@ async function saveDraft() {
   } finally {
     waitControl?.cleanup();
     draftBtn.disabled = false;
+    draftSaveInProgress = false;
+    setDraftSubmissionLock_(false);
+    updateListingWorkflow_();
+    el('listing-action-bar')?.scrollTo?.({ top: 0, behavior: 'auto' });
   }
 }
 
 // ----- 起動 -----
 globalThis.MercariAppTestHooks = {
+  draftFormSignature_, setDraftSubmissionLock_, saveDraft,
+  draftMissingSummary_, renderDraftChecklist_, focusListingTarget_, updateListingWorkflow_, updateListingKeyboard_,
+  markdownRecommendationGroup_, filteredMarkdownRows, renderMarkdownCard, markdownFloorAlertMarkup_,
   shouldClearDraftOperationAfterError_,
   listingStyleAgeText_,
   buildMarkdownRunStatus,

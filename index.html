@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#f23d4a">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex, nofollow, noarchive">
@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260906b">
-  <script src="public-config.js?v=20260906b"></script>
+  <link rel="stylesheet" href="styles.css?v=20260906c">
+  <script src="public-config.js?v=20260906c"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -42,13 +42,13 @@
         </div>
         <p id="device-auth-status" class="status" role="status" aria-live="polite" hidden></p>
       </section>
-      <p class="settings-version" id="settings-version">v20260906b / セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20260906c / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
     <section id="main-screen" class="screen" hidden>
       <header>
-        <h1>メルカリAI出品</h1>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20260906c</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
@@ -70,6 +70,12 @@
       </details>
 
       <div id="description-panel" class="tab-panel active" role="tabpanel" aria-labelledby="description-tab-btn">
+
+      <nav id="listing-progress" class="listing-progress" aria-label="出品準備の進行状況">
+        <button type="button" data-listing-target="product-input-stage" aria-current="step"><span>1</span>写真・採寸</button>
+        <button type="button" data-listing-target="title-text" disabled><span>2</span>内容確認</button>
+        <button type="button" data-listing-target="draft-checklist" disabled><span>3</span>下書き</button>
+      </nav>
 
       <details id="temporary-draft-stage" class="temporary-draft-stage">
         <summary>
@@ -100,8 +106,8 @@
         <h2>① 写真をアップロード</h2>
         <p class="note">全体写真・タグ写真・ディテール写真を最大30枚まで選べます。下書き保存は20枚までです。</p>
         <div class="photo-summary">
-          <span id="photo-count-pill" class="photo-count-pill">0/30</span>
-          <span>全体・タグ・詳細が揃うと精度が上がります</span>
+          <span id="photo-count-pill" class="photo-count-pill">0枚</span>
+          <span id="photo-limit-note">下書きは20枚まで・編集素材は30枚まで</span>
         </div>
         <label class="file-label" for="photo-input">
           <i data-lucide="camera" aria-hidden="true"></i> 写真を選ぶ / 撮影する
@@ -167,21 +173,23 @@
 
       <!-- Step 3: 生成 -->
       <div class="step generate-step">
-        <div class="listing-style-box">
+        <details class="listing-style-box">
+          <summary>文体と更新の詳細</summary>
           <div class="listing-style-head">
             <span>過去出品の文体</span>
             <button id="listing-style-refresh-btn" class="btn small" type="button">メルカリ全件更新</button>
           </div>
           <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
-        </div>
-        <button id="generate-btn" class="btn primary large" disabled>説明文を生成</button>
-        <p id="generate-note" class="note small action-note">写真とカテゴリが揃うと生成できます。採寸を入れると説明文の精度が上がります。</p>
+        </details>
         <p id="status" class="status" role="status" aria-live="polite" hidden></p>
       </div>
 
       <!-- Step 4: 結果表示 -->
       <div id="result-section" class="step result-step" hidden>
-        <h2>2. 生成結果</h2>
+        <h2>2. 内容を確認</h2>
+        <div id="draft-check-card" class="draft-card draft-check-card">
+          <div id="draft-checklist" class="draft-checklist" hidden></div>
+        </div>
         <div id="result-meta" class="result-meta" hidden></div>
 
         <div id="final-size-badge" class="final-size-badge" hidden></div>
@@ -196,7 +204,7 @@
         </div>
         <div class="draft-save-area">
           <div id="mercari-settings" class="draft-card mercari-settings-card" hidden>
-            <h3 class="mercari-settings-title">3. メルカリ設定（AIが自動判定）</h3>
+            <h3 class="mercari-settings-title">メルカリ設定</h3>
             <p class="note small">変更が必要な場合は修正してください</p>
 
             <label for="m-condition">商品の状態</label>
@@ -276,15 +284,17 @@
             </div>
           </div>
 
-          <div class="draft-card draft-check-card">
-            <h3 class="draft-title">4. 下書き保存前チェック</h3>
-            <div id="draft-checklist" class="draft-checklist" hidden></div>
-          </div>
-          <button id="draft-btn" class="btn primary large">下書き保存（Mac自動入力）</button>
-          <p id="draft-status" class="status" role="status" aria-live="polite" hidden></p>
         </div>
       </div>
 
+      <div id="listing-action-bar" class="listing-action-bar" aria-label="出品準備の操作">
+        <p id="generate-note" class="note small action-note">写真とカテゴリが揃うと生成できます。</p>
+        <button id="listing-missing-link" class="listing-missing-link" type="button" hidden></button>
+        <p id="draft-status" class="status" role="status" aria-live="polite" hidden></p>
+        <button id="generate-btn" class="btn primary large" type="button" disabled>説明文を生成</button>
+        <button id="draft-btn" class="btn primary large" type="button" hidden>下書き保存（Mac自動入力）</button>
+        <p id="listing-action-hint" class="note small action-note" hidden></p>
+      </div>
       </div>
 
       <div id="research-panel" class="tab-panel" role="tabpanel" aria-labelledby="research-tab-btn" hidden>
@@ -591,7 +601,7 @@
           </div>
           <div class="markdown-filter-tools">
             <p id="markdown-filter-summary" class="markdown-filter-summary" aria-live="polite">値下げ中 0件 / 値下げなし 0件</p>
-            <div id="markdown-filter-control" class="markdown-filter-control" role="group" aria-label="表示対象">
+            <div id="markdown-filter-control" class="markdown-filter-control" role="group" aria-label="自動値下げの状態で絞り込み">
               <button type="button" data-markdown-filter="all" aria-pressed="true">すべて</button>
               <button type="button" data-markdown-filter="enabled-only" aria-pressed="false">値下げ中のみ</button>
               <button type="button" data-markdown-filter="disabled-only" aria-pressed="false">値下げなしのみ</button>
@@ -608,7 +618,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v0429d</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20260906c</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -619,9 +629,9 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260906b"></script>
-  <script src="app.js?v=20260906b"></script>
-  <script src="review.js?v=20260906b"></script>
-  <script src="bootstrap.js?v=20260906b"></script>
+  <script src="catalog-data.js?v=20260906c"></script>
+  <script src="app.js?v=20260906c"></script>
+  <script src="review.js?v=20260906c"></script>
+  <script src="bootstrap.js?v=20260906c"></script>
 </body>
 </html>

@@ -1,16 +1,16 @@
 const CACHE_PREFIX = 'mercari-description-';
-const CACHE_NAME = 'mercari-description-v20260906b';
+const CACHE_NAME = 'mercari-description-v20260906c';
 const ASSETS = [
   './',
   './index.html',
   './pair.html',
-  './styles.css?v=20260906b',
-  './public-config.js?v=20260906b',
-  './catalog-data.js?v=20260906b',
-  './app.js?v=20260906b',
-  './review.js?v=20260906b',
-  './bootstrap.js?v=20260906b',
-  './pair.js?v=20260906b',
+  './styles.css?v=20260906c',
+  './public-config.js?v=20260906c',
+  './catalog-data.js?v=20260906c',
+  './app.js?v=20260906c',
+  './review.js?v=20260906c',
+  './bootstrap.js?v=20260906c',
+  './pair.js?v=20260906c',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -27,7 +27,7 @@ self.addEventListener('install', event => {
       })))
     )
   );
-  self.skipWaiting();
+  // Updates wait until all current app windows close; never interrupt active input.
 });
 
 self.addEventListener('activate', event => {

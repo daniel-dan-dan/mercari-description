@@ -3735,3 +3735,218 @@ select {
 .safety-review-card p { margin: 6px 0; }
 .safety-review-card .btn { margin: 6px 6px 0 0; white-space: normal; }
 #safety-review-panel > summary { display: block; width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
+
+/* v20260906c: 出品準備と価格確認を、片手で読み進める画面へ */
+#main-screen { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.app-heading { min-width: 0; }
+.app-version { display: block; color: #6f6568; font-size: 12px; }
+.note.small { color: #6f6568; font-size: 13px; }
+.btn.small, .icon-btn { min-width: 44px; min-height: 44px; }
+button:focus-visible, summary:focus-visible, a:focus-visible {
+  outline: 3px solid #b82038;
+  outline-offset: 3px;
+}
+#description-panel { padding-bottom: calc(210px + env(safe-area-inset-bottom)); }
+#description-panel input, #description-panel select, #description-panel textarea,
+#description-panel details, #draft-checklist { scroll-margin-block: 110px 210px; }
+.listing-progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #f0d7da;
+}
+.listing-progress button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 7px 2px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #6f6568;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.listing-progress button span {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  background: #f4eeee;
+}
+.listing-progress button[aria-current="step"] { border-bottom-color: #f23d4a; color: #a41d30; }
+.listing-progress button[aria-current="step"] span { background: #f23d4a; color: #fff; }
+.listing-progress button.complete span { background: #e4f4eb; color: #17613c; }
+.listing-progress button:disabled { cursor: default; }
+.listing-action-bar {
+  position: fixed;
+  z-index: 30;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(100%, 620px);
+  padding: 10px 18px calc(12px + env(safe-area-inset-bottom));
+  border: 1px solid #efd9dd;
+  border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+  background: #fff;
+  box-shadow: 0 -5px 22px rgba(80, 30, 40, .09);
+  max-height: 45dvh;
+  overflow-y: auto;
+}
+.listing-action-bar .btn { width: 100%; min-height: 52px; font-size: 16px; }
+.listing-action-bar .note { margin: 3px 0 9px; text-align: left; line-height: 1.45; }
+.listing-action-bar #listing-action-hint { margin: 7px 0 0; }
+.listing-action-bar.keyboard-open { display: none; }
+.listing-missing-link {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 0 0 7px;
+  padding: 7px 10px;
+  border: 1px solid #efbac3;
+  border-radius: 9px;
+  background: #fff4f5;
+  color: #9d1730;
+  text-align: left;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.listing-style-box { padding: 0 12px; background: #fff; }
+.listing-style-box > summary, .draft-check-completed > summary,
+.markdown-history-details > summary {
+  min-height: 44px;
+  padding: 11px 0;
+  color: #5a4851;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.generate-step { padding: 0; background: transparent; border: 0; box-shadow: none; }
+.draft-checklist { display: grid; grid-template-columns: 1fr; }
+.draft-check-summary { margin: 0 0 3px; font-size: 16px; font-weight: 800; color: #8c1c30; }
+.draft-check-item { min-height: 44px; padding: 10px; font-size: 14px; text-align: left; font-family: inherit; }
+button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; width: 100%; cursor: pointer; }
+.draft-check-edit { font-size: 12px; font-weight: 700; align-self: center; }
+.draft-check-completed .draft-check-item { margin: 5px 0; background: #f7faf8; border-color: #e1e8e3; }
+#draft-check-card { margin-bottom: 16px; }
+#result-text { font-size: 16px; }
+.photo-summary { align-items: center; }
+.photo-count-pill { white-space: nowrap; }
+#photo-limit-note { font-size: 13px; }
+
+.markdown-recommendation-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; border: 0; overflow: visible; }
+.markdown-recommendation-summary > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 48px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #e8d4d9;
+  border-radius: 10px;
+  background: #fff;
+  font-family: inherit;
+  cursor: pointer;
+}
+.markdown-recommendation-summary > button[aria-pressed="true"] { background: #fff0f2; border: 2px solid #d92f3b; padding: 9px 11px; }
+.markdown-recommendation-summary span { font-size: 13px; color: #4d3a42; }
+.markdown-recommendation-summary strong { font-size: 18px; color: #9c2437; }
+.markdown-filter-control button { font-size: 12px; }
+.markdown-filter-summary { font-size: 13px; line-height: 1.6; font-weight: 600; }
+.markdown-control-step .markdown-overview span,
+.markdown-control-step .markdown-overview strong { font-size: 12px; }
+.markdown-existing-label, .markdown-existing-label small { font-size: 13px; }
+.markdown-card { padding-block: 20px; }
+.markdown-card-layout {
+  grid-template-columns: 84px minmax(0, 1fr);
+  grid-template-areas: "media header" "media price" "recommend recommend" "note note";
+  gap: 10px 12px;
+}
+.markdown-card-body { display: contents; }
+.markdown-card-media { grid-area: media; width: 84px; margin-bottom: 18px; }
+.markdown-card-state { font-size: 10px; padding-inline: 6px; min-height: 24px; }
+.markdown-card-header { grid-area: header; display: grid; grid-template-columns: minmax(0, 1fr) 52px; gap: 9px; }
+.markdown-card-header > div { grid-area: auto; }
+.markdown-card h3 { font-size: 15px; line-height: 1.55; -webkit-line-clamp: 3; }
+.markdown-toggle { grid-area: auto; min-width: 44px; align-self: start; font-size: 11px; }
+.markdown-price-grid { grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
+.markdown-price-grid > div, .markdown-price-grid > label { font-size: 13px; gap: 4px; }
+.markdown-price-grid strong { font-size: 19px; min-height: 44px; display: flex; align-items: center; }
+.markdown-price-grid input { font-size: 16px; min-height: 44px; }
+.markdown-recommendation-card { margin-top: 0; padding: 13px; gap: 10px; }
+.markdown-recommendation-card-head { align-items: start; flex-direction: row; flex-wrap: wrap; gap: 10px; }
+.markdown-recommendation-badge { font-size: 13px; padding: 6px 8px; }
+.markdown-recommendation-badge > span { font-size: 10px; }
+.markdown-suggested-price { justify-items: start; gap: 4px; }
+.markdown-suggested-price small { font-size: 12px; }
+.markdown-suggested-price strong { font-size: 22px; }
+.markdown-recommendation-reasons { font-size: 14px; font-weight: 500; line-height: 1.7; }
+.markdown-recommendation-warning { font-size: 13px; }
+.markdown-floor-alert { display: grid; gap: 3px; margin: 0; padding: 11px; border: 1px solid #cb6f21; border-left: 4px solid #b8611a; border-radius: 8px; background: #fff4df; color: #713905; }
+.markdown-floor-alert strong { font-size: 15px; line-height: 1.6; }
+.markdown-floor-alert span { font-size: 13px; }
+.markdown-history-details { border-top: 1px solid #ddcfd4; }
+.markdown-like-signals { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.markdown-like-signals > span { font-size: 12px; }
+.markdown-like-signals strong { font-size: 16px; }
+.markdown-like-history-note { margin-top: 8px; font-size: 13px; line-height: 1.6; }
+.markdown-card-note { font-size: 13px; flex-wrap: wrap; }
+.markdown-auto-save-state { font-size: 13px; }
+.app-update-note { padding: 10px 12px; margin: 0 0 12px; background: #f4f8ff; border: 1px solid #cbd8ea; border-radius: 10px; color: #31435e; font-size: 13px; }
+@media (max-width: 380px) {
+  #app { padding: 8px; }
+  #main-screen { padding-inline: 10px; }
+  .markdown-control-step, .markdown-list-step { padding-inline: 8px; }
+  .markdown-card-layout { grid-template-columns: 72px minmax(0, 1fr); gap: 10px; }
+  .markdown-card-media { width: 72px; }
+  .markdown-card-header { gap: 5px; grid-template-columns: minmax(0, 1fr) 46px; }
+  .listing-progress button { font-size: 12px; }
+  .markdown-price-grid strong { font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+/* The review summary has one text label, not the tray's icon/copy/count columns. */
+#safety-review-panel > summary { display: flex; align-items: center; min-height: 44px; padding: 9px 12px; font-size: 14px; font-weight: 700; color: #4b4044; }
+#safety-review-panel { background: #fff; border-color: #e9dce0; }
+#safety-review-panel > summary::after { content: "＋"; margin-left: auto; }
+#safety-review-panel[open] > summary::after { content: "−"; }
+@media (max-width: 480px) {
+  #main-screen { padding-top: 10px; }
+  #main-screen > header { margin-bottom: 4px; padding-block: 6px; }
+  .app-heading { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 7px; }
+  .app-version { font-size: 11px; }
+  .app-tabs { margin-bottom: 8px; }
+  .temporary-draft-stage { margin-bottom: 8px; }
+  .temporary-draft-stage > summary { min-height: 52px; padding-block: 6px; }
+  .listing-progress { margin-bottom: 8px; }
+  .listing-progress button { min-height: 44px; }
+  .workflow-stage > summary { min-height: 44px; padding-block: 9px; }
+  .photo-step { padding: 12px; }
+  .photo-step h2 { margin-bottom: 6px; }
+  .photo-step > .note { margin-block: 4px 8px; }
+  .photo-step .file-label { min-height: 64px; }
+}
+
+[data-markdown-price-warning]:empty { display: none; }
+
+.listing-action-bar #draft-status { margin: 0 0 9px; padding: 10px 12px; font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+
+/* Current price needs its own full-width row even for seven-digit amounts. */
+.markdown-card-layout { grid-template-areas: "media header" "price price" "recommend recommend" "note note"; }
+.markdown-price-grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.markdown-price-grid strong { white-space: nowrap; font-size: clamp(16px, 4.7vw, 20px); }
+.draft-saving .file-label { opacity: .6; cursor: wait; }

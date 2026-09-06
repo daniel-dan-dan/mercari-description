@@ -82,7 +82,7 @@ for (const htmlFile of ['index.html', 'pair.html']) {
   });
 }
 
-const version = '20260906b';
+const version = '20260906c';
 const indexHtml = fs.readFileSync('index.html', 'utf8');
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
