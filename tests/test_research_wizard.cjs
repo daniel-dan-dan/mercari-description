@@ -109,12 +109,12 @@ assert.match(indexHtml, />次へ：確認</);
 assert.match(indexHtml, />調査依頼を保存</);
 assert.match(indexHtml, />保存済みの依頼を見る</);
 assert.match(indexHtml, /id="research-saved-section"/);
-assert.match(indexHtml, /styles\.css\?v=20260905a/);
-assert.match(indexHtml, /app\.js\?v=20260905a/);
-assert.match(indexHtml, /v20260905a \/ セキュリティ強化/);
+assert.match(indexHtml, /styles\.css\?v=20260906a/);
+assert.match(indexHtml, /app\.js\?v=20260906a/);
+assert.match(indexHtml, /v20260906a \/ セキュリティ強化/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260905a/);
+assert.match(serviceWorker, /mercari-description-v20260906a/);
 
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
 const pairJs = fs.readFileSync('pair.js', 'utf8');

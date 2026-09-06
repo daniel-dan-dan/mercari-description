@@ -163,5 +163,5 @@ console.log(JSON.stringify({
   ok: true,
   punctuationFallback: true,
   promptPriority: 'appeal-rules-after-past-style',
-  version: 'v20260905a',
+  version: 'v20260906a',
 }));

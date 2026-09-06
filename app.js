@@ -3241,6 +3241,7 @@ function getGasUrlCandidates() {
 }
 
 function isTransientServiceDiscoveryError_(error) {
+  if (error?.macJobFailed) return false;
   const message = String(error?.message || error || '');
   return error?.name === 'AbortError'
     || error?.name === 'TimeoutError'
@@ -3639,6 +3640,7 @@ function waitForPoll_(ms, signal) {
 }
 
 function isRetryableJobStatusError_(error) {
+  if (error?.macJobFailed) return false;
   const status = Number(error?.httpStatus || 0);
   return !!error?.retryableJobStatus
     || isTransientServiceDiscoveryError_(error)
@@ -3716,7 +3718,17 @@ async function pollMacJob(
     }
     onStatus?.(statusData);
     if (statusData.status === 'done') return statusData;
-    if (statusData.status === 'error') throw new Error(statusData.message || 'Mac側処理でエラーが発生しました');
+    if (statusData.status === 'error') {
+      const error = new Error(statusData.message || 'Mac側処理でエラーが発生しました');
+      // A completed Mac job failure (including browser Timeout) is not a lost
+      // network response. Preserve its actual cause and the operation receipt.
+      error.macJobFailed = true;
+      error.code = statusData.code || '';
+      if (statusData.inventoryLink?.status === 'needs_review') {
+        error.code = 'DRAFT_SAVE_NEEDS_REVIEW';
+      }
+      throw error;
+    }
   }
 }
 
@@ -9085,7 +9097,7 @@ function updateDraftChecklist() {
         ? 'カテゴリ: 下書き後にメルカリで手動選択'
         : (hasMercariCategory ? `カテゴリ: ${categoryOption.label}` : 'メルカリ詳細カテゴリを確認してください'),
     },
-    { ok: true, label: mercariBrand ? `ブランド: ${mercariBrand}` : 'ブランド: 空欄（見つからない場合はOK）' },
+    { ok: true, label: mercariBrand ? `ブランド: ${mercariBrand}${manualCategoryAfterDraft ? '（カテゴリ選択後に手動選択）' : ''}` : 'ブランド: 空欄（見つからない場合はOK）' },
     { ok: hasRequiredSize, label: mercariSize ? `サイズ: ${mercariSize}` : (sizeRequired ? 'サイズを確認してください' : 'サイズ: 不要/手動') },
     {
       ok: inventoryState.valid,
@@ -9252,6 +9264,7 @@ async function startDraftJob_(initialTunnelUrl, payload, options = {}) {
 function formatDraftSaveError_(error) {
   const raw = String(error?.message || error || '').trim();
   if (!raw) return '下書き保存で不明なエラーが発生しました。入力内容は残っています。';
+  if (error?.macJobFailed) return raw;
   if (isTransientServiceDiscoveryError_(error) || isRetryableJobStatusError_(error)) {
     return (
       'Macとの通信が一時的に切れました。Macの処理は継続している可能性があります。'
@@ -9383,6 +9396,9 @@ async function saveDraft() {
     draftStatus.textContent = inventoryState.uuid
       ? '下書き保存が完了しました。出品確定後、「価格改定」の最新取得で在庫連携を確認します。'
       : '下書き保存が完了しました。在庫未選択のため自動連携対象外です。メルカリアプリで確認してください。';
+    if (!mercariCategoryOption.path.length) {
+      draftStatus.textContent += ' カテゴリ・ブランド・必要なサイズは、メルカリの下書きで選択してください。';
+    }
     clearDraftOperation_(draftOperationId);
   } catch (e) {
     console.error('[draft-save]', e);
