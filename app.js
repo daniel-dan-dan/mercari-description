@@ -26,6 +26,9 @@ const GAS_DISCOVERY_RETRY_DELAYS_MS = [700, 1400];
 const DRAFT_START_MAX_ATTEMPTS = 2;
 const DRAFT_START_TIMEOUT_MS = 120000;
 const DRAFT_START_RETRY_DELAY_MS = 1200;
+const DRAFT_RESULT_POLL_TIMEOUT_MS = 10 * 60 * 1000;
+const DRAFT_RESULT_NETWORK_RECOVERY_MS = 2 * 60 * 1000;
+const DRAFT_RESULT_POLL_INTERVAL_MS = 3000;
 const JOB_STATUS_MAX_CONSECUTIVE_ERRORS = 3;
 const JOB_STATUS_RETRY_DELAY_MS = 1500;
 const DESCRIPTION_RESULT_POLL_TIMEOUT_MS = 180000;
@@ -3962,8 +3965,17 @@ async function refreshListingStyleFromMac() {
       signal: waitControl.signal,
       refreshUrl: refreshMacServiceUrl,
     });
-    const style = job.style || {};
-    saveListingStyleSummary(style);
+    if (job.deferred === true) {
+      // Draft priority can safely stop a read-only style scan. This is not a
+      // new style result and must never erase the last successful prompt.
+      renderListingStyleStatus(readListingStyleSummary());
+      if (status) status.textContent = `${job.message || '下書き保存を優先したため、文体の全件更新を延期しました。'} ${status.textContent}`;
+      return;
+    }
+    if (!job.style || typeof job.style !== 'object' || Array.isArray(job.style)) {
+      throw new Error('更新結果を確認できないため、前回の文体をそのまま使用します。');
+    }
+    saveListingStyleSummary(job.style);
   } catch (err) {
     console.error(err);
     if (status) {
@@ -8464,7 +8476,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260907c</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260907d</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -8475,7 +8487,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907c</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907d</span>`;
 }
 
 function renderComposeStep() {
@@ -9155,7 +9167,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260907c</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260907d</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -9219,7 +9231,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907c</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907d</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -9291,7 +9303,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907c</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907d</span>`;
       closeImageCompose();
     }
   });
@@ -9493,6 +9505,136 @@ function isRetryableDraftStartError_(error) {
     || [408, 425, 429, 500, 502, 503, 504].includes(status);
 }
 
+function makeDraftWaitCancelledError_() {
+  const error = new Error('待機を中止しました。処理自体はMacで継続している可能性があります。同じ内容で押し直すと、写真を再送せず前回の受付状況から確認します。');
+  error.ambiguousDraftStart = true;
+  return error;
+}
+
+function waitForDraftPoll_(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(makeDraftWaitCancelledError_());
+    const timer = setTimeout(done, ms);
+    function cleanup() {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', cancelled);
+      globalThis.removeEventListener?.('online', done);
+      globalThis.document?.removeEventListener?.('visibilitychange', resumed);
+    }
+    function done() { cleanup(); resolve(); }
+    function resumed() { if (!globalThis.document?.hidden) done(); }
+    function cancelled() { cleanup(); reject(makeDraftWaitCancelledError_()); }
+    signal?.addEventListener('abort', cancelled, { once: true });
+    globalThis.addEventListener?.('online', done, { once: true });
+    globalThis.document?.addEventListener?.('visibilitychange', resumed);
+  });
+}
+
+function makeDraftResultError_(data) {
+  const needsReview = data.status === 'needs_review' || data.status === 'not_found';
+  const error = new Error(data.message || (needsReview
+    ? '前回の保存結果を確認できません。「要確認」から確認してください。入力内容と受付IDは残っています。'
+    : 'Mac側の下書き保存に失敗しました。入力内容は残っています。'));
+  error.macJobFailed = !needsReview;
+  error.ambiguousDraftStart = needsReview;
+  error.status = data.status;
+  error.code = needsReview ? 'DRAFT_SAVE_NEEDS_REVIEW' : (data.code || '');
+  return error;
+}
+
+async function fetchDraftOperationResult_(tunnelUrl, operationId, { signal } = {}) {
+  if (signal?.aborted) throw makeDraftWaitCancelledError_();
+  const response = await fetchWithTimeout(
+    `${tunnelUrl}/draft/result?operationId=${encodeURIComponent(operationId)}`,
+    { signal, cache: 'no-store' },
+    12000,
+  );
+  let data;
+  try {
+    data = await readJsonResponse(response, '下書き保存結果確認');
+  } catch (error) {
+    error.httpStatus = response.status;
+    error.retryableJobStatus = !!response.ok;
+    throw error;
+  }
+  if (!response.ok || data.ok !== true) {
+    const error = new Error(data.message || data.error || `下書き保存結果を確認できませんでした (${response.status})`);
+    error.httpStatus = response.status;
+    throw error;
+  }
+  if (String(data.operationId || '') !== operationId) {
+    const error = new Error('保存結果の受付IDが一致しません。前回の受付を保持して「要確認」から確認してください。');
+    error.ambiguousDraftStart = true;
+    throw error;
+  }
+  if (!['not_found', 'pending', 'running', 'done', 'error', 'needs_review'].includes(data.status)) {
+    const error = new Error('下書き保存結果の応答形式が不正です');
+    error.retryableJobStatus = true;
+    throw error;
+  }
+  return data;
+}
+
+async function pollDraftOperationResult_(tunnelUrl, operationId, {
+  intervalMs = DRAFT_RESULT_POLL_INTERVAL_MS,
+  timeoutMs = DRAFT_RESULT_POLL_TIMEOUT_MS,
+  networkRecoveryMs = DRAFT_RESULT_NETWORK_RECOVERY_MS,
+  networkRetryDelayMs = 5000,
+  returnSnapshot = false,
+  onStatus,
+  signal,
+  refreshUrl,
+  waitFn = waitForDraftPoll_,
+  nowFn = Date.now,
+} = {}) {
+  const startedAt = nowFn();
+  let currentTunnelUrl = normalizeMacServiceUrl_(tunnelUrl) || tunnelUrl;
+  let networkFailureStartedAt = null;
+  let lastUrlRefreshAt = -Infinity;
+  // Start with a read-only receipt lookup; continue while running or briefly
+  // disconnected; stop only on a verified result, explicit cancel, or deadline.
+  while (true) {
+    if (signal?.aborted) throw makeDraftWaitCancelledError_();
+    let data;
+    try {
+      data = await fetchDraftOperationResult_(currentTunnelUrl, operationId, { signal });
+      networkFailureStartedAt = null;
+    } catch (error) {
+      if (signal?.aborted) throw makeDraftWaitCancelledError_();
+      error.ambiguousDraftStart = true;
+      if (!isRetryableJobStatusError_(error)) throw error;
+      if (networkFailureStartedAt === null) networkFailureStartedAt = nowFn();
+      if (nowFn() - networkFailureStartedAt >= networkRecoveryMs || nowFn() - startedAt >= timeoutMs) {
+        const exhausted = new Error('通信の回復を待ちましたが、保存結果を確認できませんでした。入力内容と受付IDは残っています。同じ内容で押し直すと、写真を再送せず前回の受付状況から確認します。');
+        exhausted.ambiguousDraftStart = true;
+        exhausted.cause = error;
+        throw exhausted;
+      }
+      onStatus?.({ status: 'waiting', message: '接続を自動で確認しています。Macでは保存が続いている可能性があります。写真は再送しません。' });
+      if (typeof refreshUrl === 'function' && nowFn() - lastUrlRefreshAt >= 30000) {
+        lastUrlRefreshAt = nowFn();
+        try {
+          const refreshed = normalizeMacServiceUrl_(await refreshUrl());
+          if (refreshed) currentTunnelUrl = refreshed;
+        } catch (_) { /* Keep the receipt and retry the read-only lookup. */ }
+      }
+      await waitFn(networkRetryDelayMs, signal);
+      continue;
+    }
+    // Check the actual result before the deadline: a suspended smartphone can
+    // resume after the wait limit even though the Mac already finished safely.
+    onStatus?.(data);
+    if (returnSnapshot || data.status === 'done') return { data, tunnelUrl: currentTunnelUrl };
+    if (['error', 'needs_review', 'not_found'].includes(data.status)) throw makeDraftResultError_(data);
+    if (nowFn() - startedAt >= timeoutMs) {
+      const error = new Error('保存の確認待ち時間を超えました。Macでは処理が続いている可能性があります。入力内容と受付IDは残っています。同じ内容で押し直すと前回の受付状況から確認します。');
+      error.ambiguousDraftStart = true;
+      throw error;
+    }
+    await waitFn(intervalMs, signal);
+  }
+}
+
 async function startDraftJob_(initialTunnelUrl, payload, options = {}) {
   const onStatus = options.onStatus;
   const refreshUrl = options.refreshUrl;
@@ -9500,11 +9642,31 @@ async function startDraftJob_(initialTunnelUrl, payload, options = {}) {
     ? Math.max(0, options.retryDelayMs)
     : DRAFT_START_RETRY_DELAY_MS;
   const operationId = String(options.operationId || createOperationId_('draft-start'));
+  const signal = options.signal;
   let tunnelUrl = normalizeMacServiceUrl_(initialTunnelUrl);
   let lastError = null;
   const payloadJson = JSON.stringify(payload);
 
+  const checkPrevious = async ({ allowFailedRetry = false } = {}) => {
+    const result = await pollDraftOperationResult_(tunnelUrl, operationId, {
+      ...options.resultPollOptions,
+      returnSnapshot: true,
+      signal,
+      refreshUrl,
+      onStatus: data => onStatus?.(data.message || '前回の受付状況を確認中...'),
+    });
+    tunnelUrl = result.tunnelUrl;
+    if (result.data.status === 'not_found' || (allowFailedRetry && result.data.status === 'error')) return null;
+    if (['error', 'needs_review'].includes(result.data.status)) throw makeDraftResultError_(result.data);
+    return { ...result, operationId, completed: result.data.status === 'done' };
+  };
+  if (options.useOperationResult && options.reused) {
+    const previous = await checkPrevious({ allowFailedRetry: true });
+    if (previous) return previous;
+  }
+
   for (let attempt = 1; attempt <= DRAFT_START_MAX_ATTEMPTS; attempt += 1) {
+    if (signal?.aborted) throw makeDraftWaitCancelledError_();
     if (attempt > 1) {
       onStatus?.(`下書き情報を再送中... (${attempt}/${DRAFT_START_MAX_ATTEMPTS})`);
     }
@@ -9518,6 +9680,7 @@ async function startDraftJob_(initialTunnelUrl, payload, options = {}) {
             'X-Operation-Id': operationId,
           },
           body: payloadJson,
+          signal,
         },
         DRAFT_START_TIMEOUT_MS,
       );
@@ -9548,19 +9711,20 @@ async function startDraftJob_(initialTunnelUrl, payload, options = {}) {
       }
       return { data, tunnelUrl, operationId };
     } catch (error) {
+      if (signal?.aborted) throw makeDraftWaitCancelledError_();
       lastError = error;
       // A later definitive rejection cannot rule out acceptance of an earlier
       // interrupted request. Keep that same receipt for manual recovery.
       if (attempt > 1) error.ambiguousDraftStart = true;
       if (!isRetryableDraftStartError_(error)) throw error;
-      if (attempt >= DRAFT_START_MAX_ATTEMPTS) break;
 
       onStatus?.(
-        `通信が中断されたため、自動で再接続しています... `
-        + `(${attempt + 1}/${DRAFT_START_MAX_ATTEMPTS})`
+        options.useOperationResult
+          ? '通信が中断されたため、自動で再接続して受付状況を確認します。写真はまだ再送しません。'
+          : `通信が中断されたため、自動で再接続しています... (${Math.min(attempt + 1, DRAFT_START_MAX_ATTEMPTS)}/${DRAFT_START_MAX_ATTEMPTS})`
       );
       if (retryDelayMs > 0) {
-        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+        await waitForDraftPoll_(retryDelayMs, signal);
       }
       if (typeof refreshUrl === 'function') {
         try {
@@ -9570,6 +9734,11 @@ async function startDraftJob_(initialTunnelUrl, payload, options = {}) {
           // URL再取得に失敗しても、同じ受付IDで現行URLへの再送を試す。
         }
       }
+      if (options.useOperationResult) {
+        const previous = await checkPrevious();
+        if (previous) return previous;
+      }
+      if (attempt >= DRAFT_START_MAX_ATTEMPTS) break;
     }
   }
 
@@ -9695,29 +9864,29 @@ async function saveDraft() {
     if (draftOperation.reused) {
       draftStatus.textContent = '前回の受付状況を確認しながら再接続中...';
     }
+    waitControl = attachJobWaitCancel_(draftStatus);
     const startedDraft = await startDraftJob_(tunnelUrl, draftPayload.payload, {
       operationId: draftOperation.operationId,
+      reused: draftOperation.reused,
+      useOperationResult: true,
+      signal: waitControl.signal,
       onStatus: message => {
         draftStatus.textContent = message;
       },
       refreshUrl: refreshMacServiceUrl,
     });
-    const jobId = startedDraft.data.job_id;
     draftAccepted = true;
 
     // ポーリング
     if (!startedDraft.completed) {
-    draftStatus.textContent = 'Macが下書きを入力中... (しばらくお待ちください)';
-    waitControl = attachJobWaitCancel_(draftStatus);
-    await pollMacJob(startedDraft.tunnelUrl, jobId, {
-      intervalMs: 10000,
-      timeoutMs: 10 * 60 * 1000,
-      onStatus: statusData => {
-      draftStatus.textContent = statusData.message || '処理中...';
-      },
-      signal: waitControl.signal,
-      refreshUrl: refreshMacServiceUrl,
-    });
+      draftStatus.textContent = 'Macが下書きを入力中... (しばらくお待ちください)';
+      await pollDraftOperationResult_(startedDraft.tunnelUrl, draftOperationId, {
+        onStatus: statusData => {
+          draftStatus.textContent = statusData.message || '処理中...';
+        },
+        signal: waitControl.signal,
+        refreshUrl: refreshMacServiceUrl,
+      });
     }
     draftStatus.textContent = inventoryState.uuid
       ? '下書き保存が完了しました。出品確定後、「価格改定」の最新取得で在庫連携を確認します。'
@@ -9766,6 +9935,7 @@ globalThis.MercariAppTestHooks = {
   clearDraftOperation_,
   shouldPreserveDraftOperation_,
   startDraftJob_,
+  fetchDraftOperationResult_, pollDraftOperationResult_, waitForDraftPoll_,
   pollMacJob,
   isRetryableJobStatusError_,
   isRetryableDraftStartError_,

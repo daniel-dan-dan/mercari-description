@@ -25,6 +25,7 @@ function harness() {
     updateTemporarySaveButton_ = () => {};
     updateGenerateButton = () => {};
     getTemporaryDraft_ = async () => { throw new Error('must not read another product while saving'); };
+    attachJobWaitCancel_ = () => ({ signal: undefined, cleanup() {} });
     lastAiData = { title: '商品A', description: '説明A', category: 'tops', product_id: 'product-a' };
     uploadedImages = [{ base64: 'AAAA', mediaType: 'image/png' }];
   `, ctx);
