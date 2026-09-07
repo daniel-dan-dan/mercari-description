@@ -2498,6 +2498,12 @@ function fetchWithTimeout(url, opts = {}, ms = 15000) {
     headers.set('X-Operation-Id', createOperationId_(target?.pathname || 'request'));
   }
   return fetch(url, { ...requestOptions, headers, signal: ctrl.signal })
+    .then(async response => {
+      // fetch resolves at headers. Keep cancellation active until the complete
+      // API response arrives; preserve the native Response for existing callers.
+      await response.clone().text();
+      return response;
+    })
     .catch(error => {
       if (!timedOut) throw error;
       const timeoutError = new Error(`通信が${Math.ceil(ms / 1000)}秒でタイムアウトしました`);
@@ -4684,7 +4690,7 @@ async function saveSession(state) {
       db.close();
       reject(tx.error || new Error('入力内容の自動保存が中断されました'));
     };
-  });
+  }).finally(() => db.close());
 }
 
 function formatCurrentSessionSaveError_(error) {
@@ -4731,7 +4737,7 @@ async function loadSession() {
       db.close();
       reject(tx.error || new Error('入力内容の復元が中断されました'));
     };
-  });
+  }).finally(() => db.close());
 }
 
 function isStoredPhotoRecordExpired_(updatedAt, now = Date.now()) {
@@ -4758,7 +4764,7 @@ async function clearSessionDb() {
       db.close();
       reject(tx.error || new Error('入力内容のリセットが中断されました'));
     };
-  });
+  }).finally(() => db.close());
 }
 
 function compactTemporaryDraftPhoto_(photo = {}) {
@@ -4891,7 +4897,7 @@ async function putTemporaryDraft_(record, expectedUpdatedAt = null) {
       db.close();
       reject(tx.error || new Error('一時保存が中断されました'));
     };
-  });
+  }).finally(() => db.close());
 }
 
 async function claimTemporaryDraftGeneration_(id, snapshot) {
@@ -4940,7 +4946,7 @@ async function claimTemporaryDraftGeneration_(id, snapshot) {
       db.close();
       reject(tx.error || new Error('AI生成の開始状態を保存できませんでした'));
     };
-  });
+  }).finally(() => db.close());
 }
 
 async function touchTemporaryDraftGeneration_(id, token) {
@@ -4978,7 +4984,7 @@ async function touchTemporaryDraftGeneration_(id, token) {
       db.close();
       reject(tx.error || new Error('AI生成中の状態を更新できませんでした'));
     };
-  });
+  }).finally(() => db.close());
 }
 
 async function finalizeTemporaryDraftGeneration_(id, token, {
@@ -5028,7 +5034,7 @@ async function finalizeTemporaryDraftGeneration_(id, token, {
       db.close();
       reject(tx.error || new Error('AI生成結果を一時保存へ反映できませんでした'));
     };
-  });
+  }).finally(() => db.close());
 }
 
 async function getTemporaryDraft_(id) {
@@ -5036,14 +5042,15 @@ async function getTemporaryDraft_(id) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(DB_TEMPORARY_DRAFT_STORE, 'readonly');
     const req = tx.objectStore(DB_TEMPORARY_DRAFT_STORE).get(id);
-    req.onsuccess = () => resolve(req.result || null);
+    let result = null;
+    req.onsuccess = () => { result = req.result || null; };
     req.onerror = (e) => reject(e.target.error);
-    tx.oncomplete = () => db.close();
+    tx.oncomplete = () => resolve(result);
     tx.onabort = () => {
       db.close();
       reject(tx.error || new Error('一時保存を読み込めませんでした'));
     };
-  });
+  }).finally(() => db.close());
 }
 
 async function listTemporaryDrafts_() {
@@ -5051,17 +5058,18 @@ async function listTemporaryDrafts_() {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(DB_TEMPORARY_DRAFT_SUMMARY_STORE, 'readonly');
     const req = tx.objectStore(DB_TEMPORARY_DRAFT_SUMMARY_STORE).getAll();
+    let result = [];
     req.onsuccess = () => {
       const rows = Array.isArray(req.result) ? req.result : [];
-      resolve(rows.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)));
+      result = rows.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
     };
     req.onerror = (e) => reject(e.target.error);
-    tx.oncomplete = () => db.close();
+    tx.oncomplete = () => resolve(result);
     tx.onabort = () => {
       db.close();
       reject(tx.error || new Error('一時保存一覧を読み込めませんでした'));
     };
-  });
+  }).finally(() => db.close());
 }
 
 async function pruneExpiredTemporaryDrafts_() {
@@ -5097,7 +5105,7 @@ async function pruneExpiredTemporaryDrafts_() {
       db.close();
       reject(tx.error || new Error('古い一時保存の整理が中断されました'));
     };
-  });
+  }).finally(() => db.close());
 }
 
 async function deleteTemporaryDraft_(id) {
@@ -5134,7 +5142,7 @@ async function deleteTemporaryDraft_(id) {
       db.close();
       reject(tx.error || new Error('一時保存を削除できませんでした'));
     };
-  });
+  }).finally(() => db.close());
 }
 
 async function recoverInterruptedTemporaryDraft_(id, cutoff) {
@@ -5179,7 +5187,7 @@ async function recoverInterruptedTemporaryDraft_(id, cutoff) {
       db.close();
       reject(tx.error || new Error('中断したAI生成の状態を確認できませんでした'));
     };
-  });
+  }).finally(() => db.close());
 }
 
 function temporaryDraftMeasurementCount_(snapshot = {}) {
@@ -8476,7 +8484,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260907e</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260908a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -8487,7 +8495,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907e</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260908a</span>`;
 }
 
 function renderComposeStep() {
@@ -9167,7 +9175,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260907e</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260908a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -9231,7 +9239,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907e</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260908a</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -9303,7 +9311,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907e</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260908a</span>`;
       closeImageCompose();
     }
   });

@@ -110,13 +110,15 @@
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return await fetch(url, {
+      const response = await fetch(url, {
         cache: 'no-store',
         credentials: 'omit',
         referrerPolicy: 'no-referrer',
         ...options,
         signal: controller.signal,
       });
+      await response.clone().text();
+      return response;
     } finally {
       clearTimeout(timer);
     }

@@ -109,11 +109,12 @@ assert.match(pairJs, /value\.length <= 512/);
 assert.match(pairJs, /\^\[A-Za-z0-9\._~-\]\+\$/);
 assert.doesNotMatch(pairHtml, /<script(?:\s[^>]*)?>\s*(?!<)/);
 assert.match(pairHtml, /Content-Security-Policy/);
-assert.match(serviceWorker, /mercari-description-v20260907e/);
-assert.match(serviceWorker, /styles\.css\?v=20260907e/);
-assert.match(serviceWorker, /catalog-data\.js\?v=20260907e/);
-assert.match(serviceWorker, /app\.js\?v=20260907e/);
-assert.match(serviceWorker, /ignoreSearch: true/);
+assert.match(serviceWorker, /mercari-description-v20260908a/);
+assert.match(serviceWorker, /styles\.css\?v=20260908a/);
+assert.match(serviceWorker, /catalog-data\.js\?v=20260908a/);
+assert.match(serviceWorker, /app\.js\?v=20260908a/);
+assert.doesNotMatch(serviceWorker, /ignoreSearch:\s*true/, 'offline lookup must not mix differently versioned assets');
+assert.match(serviceWorker, /caches\.open\(CACHE_NAME\)/);
 assert.match(serviceWorker, /event\.request\.mode === 'navigate'/);
 assert.match(styles, /\.preview-item \.remove \{[\s\S]{0,220}width: 44px;[\s\S]{0,80}height: 44px;/);
 assert.match(styles, /\.research-mini-actions button \{[\s\S]{0,180}min-height: 44px;/);
@@ -127,5 +128,5 @@ console.log(JSON.stringify({
   researchRetry: true,
   likesDecreaseVisible: true,
   urlSafety: true,
-  version: 'v20260907e',
+  version: 'v20260908a',
 }));
