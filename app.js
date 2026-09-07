@@ -8039,25 +8039,55 @@ const SIZE_PROFILES = {
   },
 };
 
-// v2: local operational heuristics, NOT a universal brand/JIS size chart.
-// Retain the existing flat-garment centers; remove length/sleeve/design-driven lifts.
+// Official JP product finished dimensions, read from the visible size tables on
+// 2026-09-07. These representative garments are NOT a universal fit guarantee.
+// Order: XS,S,M,L,XL,XXL,3XL. Never substitute nude/body or expanded-tuck widths.
+const UNIQLO_UPPER_REFERENCES = {
+  tops: { product: '422992', name: 'MEN クルーネックTシャツ',
+    chest: [47,50,53,56,60,64,68], shoulder: [43.5,45,46.5,48,50,52,54] },
+  menShirt: { product: '450259', name: 'MEN オックスフォードシャツ',
+    chest: [51,54,57,60,64,68,72], shoulder: [43.5,45,46.5,48,50,52,54] },
+  menRelaxedTop: { product: '469395', name: 'MEN メリノクルーネックセーター',
+    chest: [44,47,50,53,57,61,65], shoulder: [38.5,40,41.5,43,45,47,49] },
+  womenTops: { product: '489227', name: 'WOMEN レーヨンブラウス（タックを閉じた身幅）',
+    chest: [44.5,46.5,48.5,50.5,53.5,56.5,59.5], shoulder: [40,41,42,43,44.5,45.5,47] },
+  womenKnit: { product: '469410', name: 'WOMEN メリノクルーネックセーター',
+    chest: [42,44.5,47,50,53,56,59], shoulder: [35,36,37,38.5,40,41,42] },
+  outer: { product: '482443', name: 'MEN コットンリネンシャツジャケット',
+    chest: [52,55,58,61,65,69,73], shoulder: [46.5,48,49.5,51,53,55,57] },
+  menTailoredOuter: { product: '448034', name: 'MEN 感動ジャケット',
+    chest: [49,51,53,55,59,63,67], shoulder: [43,44.5,45.5,47,49.5,52,55] },
+  menCoat: { product: '478285', name: 'MEN ウールカシミヤチェスターコート',
+    chest: [53.5,55.5,57.5,59.5,63.5,67.5,71.5], shoulder: [45,46.5,47.5,49,51.5,54,57] },
+  womenOuter: { product: '474562', name: 'WOMEN 感動ジャケット',
+    chest: [43.5,45.5,47.5,49.5,52.5,55.5,59.5], shoulder: [37,38,39,40,41.5,42.5,44] },
+  womenCoat: { product: '479666', name: 'WOMEN ロングコート',
+    chest: [49,51,53,55,58,61,64], shoulder: [39,40,41,42,43.5,44.5,46] },
+};
+
+// Weights/interpolation are application rules, not a UNIQLO recommendation.
+// No length/sleeve/design-driven lifts; preserve tag priority and manual choices.
+SIZE_PROFILES.womenKnit = { name: 'レディースニット基準' };
+SIZE_PROFILES.womenCoat = { name: 'レディースコート基準' };
 const UPPER_SIZE_PROFILE_KEYS = ['tops', 'menShirt', 'menRelaxedTop', 'womenTops',
-  'outer', 'menTailoredOuter', 'menCoat', 'womenOuter'];
-const OUTER_SIZE_PROFILE_KEYS = ['outer', 'menTailoredOuter', 'menCoat', 'womenOuter'];
+  'womenKnit', 'outer', 'menTailoredOuter', 'menCoat', 'womenOuter', 'womenCoat'];
+const OUTER_SIZE_PROFILE_KEYS = ['outer', 'menTailoredOuter', 'menCoat', 'womenOuter', 'womenCoat'];
 UPPER_SIZE_PROFILE_KEYS.forEach(key => {
   const profile = SIZE_PROFILES[key];
+  const reference = UNIQLO_UPPER_REFERENCES[key];
   const outer = OUTER_SIZE_PROFILE_KEYS.includes(key);
-  profile.fields.chest.w = outer ? 0.70 : 0.65;
-  profile.fields.shoulder.w = outer ? 0.30 : 0.35;
-  profile.fields.length.w = 0;
-  profile.fields.sleeve.w = 0;
+  profile.fields = {
+    chest: { w: outer ? 0.70 : 0.65, label: '身幅', centers: reference.chest.slice() },
+    shoulder: { w: outer ? 0.30 : 0.35, label: '肩幅', centers: reference.shoulder.slice() },
+  };
+  profile.reference = { ...reference,
+    url: `https://www.uniqlo.com/jp/ja/products/E${reference.product}-000/00`, checkedAt: '2026-09-07' };
+  profile.sourceIds = [];
   profile.bias = 0;
   delete profile.liftFromLargeDimension;
   profile.tableFields = ['chest', 'shoulder'];
   profile.tagExamples = SIZE_LABELS;
-  profile.sourceNote = outer
-    ? '身幅70%・肩幅30%。重ね着のゆとりを含むアウター用の寸法目安。コートの着丈・袖丈ではサイズを上げません。'
-    : '身幅65%・肩幅35%。シャツ・ニットなどトップス用の寸法目安。着丈・袖丈はデザイン差が大きいため計算に入れません。';
+  profile.sourceNote = `ユニクロ参考：${reference.name}。身幅${outer ? 70 : 65}%・肩幅${outer ? 30 : 35}%で照合（重みは当アプリの設定）。着丈・袖丈は計算に入れません。`;
 });
 
 function clampScore(s) {
@@ -8108,18 +8138,20 @@ function getSizeProfileKey(
   const isCoat = /コート|トレンチ|ステンカラー|チェスター|ダッフル|ピーコート|モッズ|ロングコート|スプリングコート/.test(pathText);
   const isTailored = /テーラードジャケット|スーツジャケット|ノーカラージャケット/.test(pathText);
   if (broadCat === 'outer') {
-    if (isWomen) return 'womenOuter';
+    if (isWomen) return isCoat ? 'womenCoat' : 'womenOuter';
     if (isTailored) return 'menTailoredOuter';
     if (isCoat) return 'menCoat';
     return 'outer';
   }
-  if (isWomen) return 'womenTops';
+  const isKnit = /ニット|セーター|カーディガン/.test(pathText);
+  if (isWomen) return !isOuter && isKnit ? 'womenKnit' : 'womenTops';
   // Explicit broad choice wins over an old/contradictory detailed category.
   if (isOuter) return 'tops';
   if (/ニット|セーター|カーディガン|パーカー|トレーナー|スウェット|ジャージ|ベスト|フリース/.test(pathText)) {
     return 'menRelaxedTop';
   }
-  if (/シャツ|ポロシャツ|Tシャツ|カットソー|タンクトップ|ノースリーブ/.test(pathText)) {
+  if (/Tシャツ|カットソー|タンクトップ|ノースリーブ/.test(pathText)) return 'tops';
+  if (/シャツ|ポロシャツ/.test(pathText)) {
     return 'menShirt';
   }
   return 'tops';
@@ -8153,13 +8185,14 @@ function updateSizeSuggestion() {
   const profile = SIZE_PROFILES[profileKey] || SIZE_PROFILES.tops;
   const table = sizeReferenceTable(profileKey);
   panel.innerHTML = `
-    <div class="size-main">📏 ${result ? `採寸からの推定: <strong>${escapeHtml(result.size)}サイズ相当（目安）</strong>` : '身幅と肩幅を入力すると推定します。ラグランは身幅を入力してください。'}</div>
+    <div class="size-main">📏 ${result ? `採寸からの推定${profile.reference ? '（ユニクロ参考）' : ''}: <strong>${escapeHtml(result.size)}サイズ相当（目安）</strong>` : '身幅と肩幅を入力すると推定します。ラグランは身幅を入力してください。'}</div>
     <div class="size-hint">${escapeHtml(profile.name)}：${escapeHtml(profile.sourceNote || '')}</div>
     ${result ? `<div class="size-hint">${escapeHtml(result.detail)}</div>` : ''}
     <details class="size-ref">
       <summary>サイズ目安表（${profile.name}）</summary>
       ${table}
-      <p class="note small">当アプリ独自の仮の運用目安です。公式のブランド別サイズ表ではありません。タグ表記・メーカーの商品別寸法を優先してください。オーバーサイズや厚手・中綿入りは、外寸だけで着用サイズを確定できません。</p>
+      ${profile.reference ? `<p class="note small"><a href="${escapeHtml(profile.reference.url)}" target="_blank" rel="noopener noreferrer">参照商品：${escapeHtml(profile.reference.name)}</a>（${escapeHtml(profile.reference.checkedAt)}確認）。表はこの商品の仕上がり寸法です。ユニクロ全商品の共通基準や他ブランドの公式換算ではありません。</p>` : '<p class="note small">当アプリ独自の仮の運用目安です。公式のブランド別サイズ表ではありません。</p>'}
+      <p class="note small">タグ表記・メーカーの商品別寸法を優先してください。別デザイン・オーバーサイズ・厚手・中綿入りでは着用感が異なります。身幅はタックやギャザーを閉じて測ってください。</p>
       <p class="note small"><a href="https://faq.uniqlo.com/articles/FAQ/100004162" target="_blank" rel="noopener noreferrer">採寸方法の参考（ユニクロ公式）</a>：身体寸法ではなく、平置きした服の寸法を入力します。</p>
     </details>
   `;
@@ -8201,7 +8234,7 @@ function estimateBySizeProfile(profileKey, values = null, raglan = !!el('raglan-
   if (parts.length === 0) return null;
   const result = combineScores(parts, profile, profileKey);
   if (upper) {
-    result.detail = `${profile.name}：身幅${read('chest')}cm${raglan ? '' : `・肩幅${read('shoulder')}cm`}を基準表と照合。着丈・袖丈は採寸の記録にのみ使用します。`;
+    result.detail = `${profile.name}（ユニクロ参考）：身幅${read('chest')}cm${raglan ? '' : `・肩幅${read('shoulder')}cm`}を基準表と照合。着丈・袖丈は採寸の記録にのみ使用します。`;
     const outsideCenters = Object.entries(profile.fields).some(([key, def]) => {
       if (def.w <= 0 || (raglan && key === 'shoulder')) return false;
       const value = read(key);
@@ -8359,7 +8392,7 @@ function sizeReferenceTable(profileKey) {
   ].join('');
   const rows = SIZE_LABELS.map((label, idx) => {
     const cells = fields
-      .map(([, def]) => `<td>${formatSizeRange(def.centers, idx)}</td>`)
+      .map(([, def]) => `<td>${profile.reference ? formatCm(def.centers[idx]) : formatSizeRange(def.centers, idx)}</td>`)
       .join('');
     const tag = profile.tagExamples?.[idx] || label;
     return `<tr><td>${label}</td>${cells}<td>${escapeHtml(tag)}</td></tr>`;
@@ -8431,7 +8464,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260907b</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260907c</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -8442,7 +8475,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907b</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907c</span>`;
 }
 
 function renderComposeStep() {
@@ -9122,7 +9155,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260907b</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260907c</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -9186,7 +9219,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907b</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907c</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -9258,7 +9291,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907b</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907c</span>`;
       closeImageCompose();
     }
   });

@@ -21,8 +21,14 @@ const coat = vm.runInContext('MERCARI_CATEGORY_OPTIONS.find(x => x.path[1] === "
 assert.equal(h.getSizeProfileKey(coat, 'outer', 'men'), 'menCoat');
 assert.equal(h.getSizeProfileKey(coat, 'tops', 'men'), 'tops');
 assert.equal(h.getSizeProfileKey('women_shirt_blouse', 'outer', 'women'), 'womenOuter');
-for (const key of ['tops','menShirt','menRelaxedTop','womenTops','outer','menTailoredOuter','menCoat','womenOuter']) {
+const official = JSON.parse(fs.readFileSync('tests/fixtures/uniqlo_upper_20260907.json','utf8'));
+for (const key of Object.keys(official.profiles)) {
   const p = h.SIZE_PROFILES[key];
+  const expected = official.profiles[key];
+  assert.deepEqual(Array.from(p.fields.chest.centers), expected.chest, `${key}: official chest, not nude/expanded width`);
+  assert.deepEqual(Array.from(p.fields.shoulder.centers), expected.shoulder, `${key}: official shoulder`);
+  assert.equal(p.reference.product, expected.product);
+  assert.equal(p.reference.checkedAt, official.checkedAt);
   for (let i = 0; i < 7; i++) {
     assert.equal(h.estimateBySizeProfile(key, {chest:p.fields.chest.centers[i], shoulder:p.fields.shoulder.centers[i], length:98, sleeve:60}, false).index, i, `${key} center ${i}`);
   }
@@ -37,8 +43,20 @@ for (const key of ['tops','menShirt','menRelaxedTop','womenTops','outer','menTai
   assert.equal(raglan.referenceOnly,true);
 }
 const example={chest:51,shoulder:38,length:98};
-assert.equal(h.estimateBySizeProfile('womenOuter',example,false).size,'M');
-assert.equal(h.estimateBySizeProfile('womenTops',example,false).size,'L');
+// Chest 51 => index 3.5, shoulder 38 => index 1; .7*3.5+.3*1=2.75 => L.
+// Their 2.5-size disagreement must stay reference-only, never auto-fill a size.
+assert.equal(h.estimateBySizeProfile('womenOuter',example,false).size,'L');
+assert.equal(h.estimateBySizeProfile('womenOuter',example,false).referenceOnly,true);
+assert.equal(h.estimateBySizeProfile('womenTops',example,false).size,'M');
+assert.equal(h.estimateBySizeProfile('menShirt',{chest:57,shoulder:46.5},false).size,'M');
+assert.equal(h.estimateBySizeProfile('tops',{chest:53,shoulder:46.5},false).size,'M');
+assert.equal(h.estimateBySizeProfile('womenCoat',{chest:53,shoulder:41},false).size,'M');
+const womenCoat=vm.runInContext('MERCARI_CATEGORY_OPTIONS.find(x => x.path[1] === "レディース" && x.path.at(-1) === "チェスターコート").key', context);
+assert.equal(h.getSizeProfileKey(womenCoat,'outer','women'),'womenCoat');
+const womenKnit=vm.runInContext('MERCARI_CATEGORY_OPTIONS.find(x => x.path[1] === "レディース" && /ニット|セーター/.test(x.path.at(-1))).key',context);
+assert.equal(h.getSizeProfileKey(womenKnit,'tops','women'),'womenKnit');
+const tee=vm.runInContext('MERCARI_CATEGORY_OPTIONS.find(x => x.path[1] === "メンズ" && /Tシャツ/.test(x.path.at(-1))).key',context);
+assert.equal(h.getSizeProfileKey(tee,'tops','men'),'tops');
 assert.equal(h.restoredMeasurementCategory_({category:'tops'}),'legacyUpper');
 assert.equal(h.restoredMeasurementCategory_({category:'tops',measurementCategoryVersion:2}),'tops');
 assert.equal(h.restoredMeasurementCategory_({category:'outer',measurementCategoryVersion:2}),'outer');
@@ -82,4 +100,19 @@ assert.equal(h.captureUpperMeasurementsForSwitch_().values['m-chest'],'51');
 const source=fs.readFileSync('app.js','utf8');
 assert.match(source,/el\('category'\)\.value = restoredCategory === 'legacyUpper' \? '' : restoredCategory/);
 assert.match(source,/renderMeasurements\(restoredCategory\)/);
-console.log(JSON.stringify({ok:true,test:'upper-size-profiles',centersChecked:56,example:{womenOuter:'M',womenTops:'L'}}));
+context.document.querySelector = () => ({value:'men'});
+nodes.get('category').value='tops';
+nodes.get('raglan-toggle').checked=false;
+nodes.get('m-chest').value='53';
+nodes.get('m-shoulder').value='46.5';
+nodes.set('size-suggestion',{innerHTML:'',hidden:true});
+vm.runInContext('updateSizeSuggestion()', context);
+assert.match(nodes.get('size-suggestion').innerHTML,/推定（ユニクロ参考）/);
+assert.match(nodes.get('size-suggestion').innerHTML,/products\/E422992-000\/00/);
+assert.match(nodes.get('size-suggestion').innerHTML,/<td>M<\/td><td>53<\/td><td>46.5<\/td>/);
+assert.equal(h.deriveMercariSize({tag_size:'L'},tee,'men').value,'L');
+nodes.set('mercari-settings',{hidden:false});
+nodes.set('m-size',{value:'XL',dataset:{userEdited:'1'}});
+vm.runInContext('syncMercariSizeFromMeasurements()',context);
+assert.equal(nodes.get('m-size').value,'XL');
+console.log(JSON.stringify({ok:true,test:'upper-size-profiles',centersChecked:70,officialSourceProfiles:10}));

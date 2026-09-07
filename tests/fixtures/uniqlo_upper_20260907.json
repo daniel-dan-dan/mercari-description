@@ -1,0 +1,16 @@
+{
+  "checkedAt": "2026-09-07",
+  "source": "Visible UNIQLO JP product size modal, finished dimensions (cm), XS through 3XL, read with Chrome. Product URL: https://www.uniqlo.com/jp/ja/products/E{product}-000/00. Not nude dimensions. WOMEN blouse: closed-tuck width, not expanded width.",
+  "profiles": {
+    "tops": {"product":"422992","chest":[47,50,53,56,60,64,68],"shoulder":[43.5,45,46.5,48,50,52,54]},
+    "menShirt": {"product":"450259","chest":[51,54,57,60,64,68,72],"shoulder":[43.5,45,46.5,48,50,52,54]},
+    "menRelaxedTop": {"product":"469395","chest":[44,47,50,53,57,61,65],"shoulder":[38.5,40,41.5,43,45,47,49]},
+    "womenTops": {"product":"489227","chest":[44.5,46.5,48.5,50.5,53.5,56.5,59.5],"shoulder":[40,41,42,43,44.5,45.5,47]},
+    "womenKnit": {"product":"469410","chest":[42,44.5,47,50,53,56,59],"shoulder":[35,36,37,38.5,40,41,42]},
+    "outer": {"product":"482443","chest":[52,55,58,61,65,69,73],"shoulder":[46.5,48,49.5,51,53,55,57]},
+    "menTailoredOuter": {"product":"448034","chest":[49,51,53,55,59,63,67],"shoulder":[43,44.5,45.5,47,49.5,52,55]},
+    "menCoat": {"product":"478285","chest":[53.5,55.5,57.5,59.5,63.5,67.5,71.5],"shoulder":[45,46.5,47.5,49,51.5,54,57]},
+    "womenOuter": {"product":"474562","chest":[43.5,45.5,47.5,49.5,52.5,55.5,59.5],"shoulder":[37,38,39,40,41.5,42.5,44]},
+    "womenCoat": {"product":"479666","chest":[49,51,53,55,58,61,64],"shoulder":[39,40,41,42,43.5,44.5,46]}
+  }
+}

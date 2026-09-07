@@ -3,7 +3,7 @@
 (() => {
   if (window.lucide) window.lucide.createIcons();
   if (!('serviceWorker' in navigator)) return;
-  const version = globalThis.MercariPublicConfig?.version || 'v20260907b';
+  const version = globalThis.MercariPublicConfig?.version || 'v20260907c';
   function showWaitingUpdate() {
     let note = document.getElementById('app-update-note');
     if (!note) {
