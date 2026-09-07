@@ -8476,7 +8476,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260907d</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260907e</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -8487,7 +8487,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907d</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907e</span>`;
 }
 
 function renderComposeStep() {
@@ -9167,7 +9167,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260907d</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260907e</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -9231,7 +9231,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907d</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907e</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -9303,7 +9303,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907d</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907e</span>`;
       closeImageCompose();
     }
   });
@@ -9876,23 +9876,29 @@ async function saveDraft() {
       refreshUrl: refreshMacServiceUrl,
     });
     draftAccepted = true;
+    let completedDraftData = startedDraft.data;
 
     // ポーリング
     if (!startedDraft.completed) {
       draftStatus.textContent = 'Macが下書きを入力中... (しばらくお待ちください)';
-      await pollDraftOperationResult_(startedDraft.tunnelUrl, draftOperationId, {
+      const completedDraft = await pollDraftOperationResult_(startedDraft.tunnelUrl, draftOperationId, {
         onStatus: statusData => {
           draftStatus.textContent = statusData.message || '処理中...';
         },
         signal: waitControl.signal,
         refreshUrl: refreshMacServiceUrl,
       });
+      completedDraftData = completedDraft.data;
     }
     draftStatus.textContent = inventoryState.uuid
       ? '下書き保存が完了しました。出品確定後、「価格改定」の最新取得で在庫連携を確認します。'
       : '下書き保存が完了しました。在庫未選択のため自動連携対象外です。メルカリアプリで確認してください。';
     if (!mercariCategoryOption.path.length) {
       draftStatus.textContent += ' カテゴリ・ブランド・必要なサイズは、メルカリの下書きで選択してください。';
+    }
+    if (Array.isArray(completedDraftData?.manualReviewFields)
+      && completedDraftData.manualReviewFields.includes('brand')) {
+      draftStatus.textContent += ' 【要確認】ブランドは自動選択できなかったため、出品前にメルカリの下書きで手動確認・修正してください。';
     }
     try { clearDraftOperation_(draftOperationId); } catch (cleanupError) {
       console.warn('[draft-receipt-cleanup]', cleanupError);
