@@ -13,7 +13,7 @@ const registration = { waiting: {}, installing: worker,
   update: async () => { updates += 1; } };
 let note;
 const ctx = { console, encodeURIComponent,
-  MercariPublicConfig: { version: 'v20260906c' },
+  MercariPublicConfig: { version: 'v20260907a' },
   location: { reload: () => { reloads += 1; } },
   document: {
     getElementById: id => id === 'app-update-note' ? note : id === 'app' ? { prepend: element => { inserted += 1; note = element; } } : null,

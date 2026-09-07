@@ -104,7 +104,7 @@ const TEMPORARY_DRAFT_STATUS = {
   failed: { label: 'AI生成失敗', className: 'failed' },
   generated: { label: 'AI生成済み', className: 'generated' },
 };
-const CATEGORY_JP = { suit: 'スーツ', tops: 'アウター/トップス', bottoms: 'ボトムス', bag: 'バッグ', tie: 'ネクタイ', other: 'その他' };
+const CATEGORY_JP = { suit: 'スーツ', tops: 'トップス', outer: 'アウター', legacyUpper: 'アウター/トップス（要確認）', bottoms: 'ボトムス', bag: 'バッグ', tie: 'ネクタイ', other: 'その他' };
 // カテゴリとサイズの固定データは catalog-data.js で読み込みます。
 const GENDERED_CATEGORY_FALLBACKS = {
   men: {
@@ -584,7 +584,7 @@ function pickGenderedCategoryFallback(categoryKey, targetGender, broadCat = el('
     if (/ショートパンツ|ハーフパンツ/.test(text)) fallback = fallbackMap.shorts;
     else if (/デニム|ジーンズ/.test(text)) fallback = fallbackMap.denim;
     else fallback = fallbackMap.bottoms;
-  } else if (broadCat === 'tops' || /トップス|ジャケット|アウター|コート|シャツ|ブラウス|ニット|カーディガン|ポロ|Tシャツ|カットソー/.test(text)) {
+  } else if (broadCat === 'tops' || broadCat === 'outer' || /トップス|ジャケット|アウター|コート|シャツ|ブラウス|ニット|カーディガン|ポロ|Tシャツ|カットソー/.test(text)) {
     if (/テーラード|スーツジャケット|ノーカラージャケット/.test(text)) fallback = fallbackMap.tailored;
     else if (/トレンチ/.test(text)) fallback = fallbackMap.trench;
     else if (/コート|ジャケット|アウター|ブルゾン|ジャンパー|ダウン/.test(text)) fallback = fallbackMap.outer;
@@ -593,7 +593,7 @@ function pickGenderedCategoryFallback(categoryKey, targetGender, broadCat = el('
     else if (/ポロ/.test(text)) fallback = fallbackMap.polo;
     else if (/Tシャツ|カットソー/.test(text)) fallback = fallbackMap.tshirt;
     else if (/シャツ|ブラウス/.test(text)) fallback = fallbackMap.shirt;
-    else fallback = fallbackMap.tops;
+    else fallback = broadCat === 'outer' ? fallbackMap.outer : fallbackMap.tops;
   }
 
   return fallback ? validMercariCategoryKeyOrFallback(fallback, categoryKey) : categoryKey;
@@ -845,6 +845,9 @@ function deriveMercariSize(
   }
   if (tagSize) {
     return { value: tagSize, source: 'tag', note: `タグ「${tagRaw}」から自動判定` };
+  }
+  if (measurement?.referenceOnly) {
+    return { value: '', source: 'none', note: `${measurement.detail} 出品サイズを手動で選んでください。` };
   }
   if (measuredSize) {
     return { value: measuredSize, source: 'measurement', note: `採寸から自動判定: ${measurement.detail}` };
@@ -1163,11 +1166,14 @@ async function init() {
     });
   });
   el('category').addEventListener('change', () => {
+    const retainedMeasurements = captureUpperMeasurementsForSwitch_();
     invalidateGeneratedResultAfterInputChange_('カテゴリ');
     renderMeasurements();
+    restoreUpperMeasurementsAfterSwitch_(retainedMeasurements);
     syncMercariCategoryForProductGender();
     renderMercariCategoryLevelSelects();
     updateMercariCategoryPath();
+    updateSizeSuggestion();
     scheduleSave();
   });
   el('temporary-save-btn').addEventListener('click', () => {
@@ -2010,11 +2016,38 @@ const MEASUREMENT_SCHEMA = {
   ],
 };
 
+// Both use identical measurement keys, but never the same size profile.
+MEASUREMENT_SCHEMA.outer = MEASUREMENT_SCHEMA.tops;
+MEASUREMENT_SCHEMA.legacyUpper = MEASUREMENT_SCHEMA.tops;
+
+function captureUpperMeasurementsForSwitch_() {
+  const container = el('measurement-fields');
+  const upper = ['tops', 'outer', 'legacyUpper'];
+  if (!upper.includes(container?.dataset?.category) || !upper.includes(el('category')?.value)) return null;
+  const values = {};
+  container.querySelectorAll('input[type="number"]').forEach(input => { values[input.id] = input.value; });
+  return { values, raglan: !!el('raglan-toggle')?.checked };
+}
+
+function restoreUpperMeasurementsAfterSwitch_(saved) {
+  if (!saved) return;
+  Object.entries(saved.values).forEach(([id, value]) => { if (el(id)) el(id).value = value; });
+  if (el('raglan-toggle')) el('raglan-toggle').checked = saved.raglan;
+  if (el('raglan-field')) el('raglan-field').hidden = !saved.raglan;
+}
+
+function restoredMeasurementCategory_(state) {
+  // Old tops included coats. Never silently reinterpret saved input as a shirt.
+  if (state.category === 'tops' && state.measurementCategoryVersion !== 2) return 'legacyUpper';
+  return Object.hasOwn(MEASUREMENT_SCHEMA, state.category) ? state.category : '';
+}
+
 function renderMeasurements() {
   const cat = el('category').value;
   const container = el('measurement-fields');
   stopActiveMultiVoiceInput({ clearStatus: true });
   container.innerHTML = '';
+  container.dataset.category = cat;
   if (!cat) {
     updateGenerateButton();
     updateSizeSuggestion();
@@ -2055,7 +2088,7 @@ function renderMeasurements() {
   });
 
   // ラグランスリーブトグル（アウター・トップス）
-  if (cat === 'tops') {
+  if (['tops', 'outer', 'legacyUpper'].includes(cat)) {
     const raglanDiv = document.createElement('div');
     raglanDiv.className = 'measurement-section';
     raglanDiv.innerHTML = `
@@ -2072,6 +2105,7 @@ function renderMeasurements() {
     el('raglan-toggle').addEventListener('change', (e) => {
       invalidateGeneratedResultAfterInputChange_('採寸');
       el('raglan-field').hidden = !e.target.checked;
+      updateSizeSuggestion();
       scheduleSave();
     });
   }
@@ -2141,7 +2175,7 @@ function formatMeasurements(m) {
       line('着丈', v.v_length),
     ].join('\n');
   }
-  if (cat === 'tops') {
+  if (['tops', 'outer', 'legacyUpper'].includes(cat)) {
     const lines = [
       line('肩幅', v.shoulder),
       line('身幅', v.chest),
@@ -2186,7 +2220,7 @@ function formatMeasurements(m) {
 // ----- 生成ボタンの活性状態 -----
 function updateGenerateButton() {
   const hasPhotos = uploadedImages.length > 0;
-  const hasCategory = !!el('category').value;
+  const hasCategory = !!el('category').value && el('category').value !== 'legacyUpper';
   const ready = hasPhotos && hasCategory;
   el('generate-btn').disabled = !ready || descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress;
   const note = el('generate-note');
@@ -4392,7 +4426,7 @@ function restoreGenerationUiState_(state) {
 async function generateDescription() {
   if (draftSaveInProgress) return;
   const measurements = collectMeasurements();
-  if (!measurements) { alert('カテゴリを選んでください'); return; }
+  if (!measurements || measurements.category === 'legacyUpper') { alert('トップス・アウターなどのカテゴリを選んでください'); return; }
   if (!uploadedImages.length) { alert('写真を選んでください'); return; }
   if (photoProcessingInProgress) {
     showStatus('status', '写真の処理が完了してからAI生成を実行してください。', 'warn');
@@ -5484,6 +5518,7 @@ function collectState() {
   return {
     photos: uploadedImages,
     category,
+    measurementCategoryVersion: 2,
     productGender: getSelectedProductGender(),
     raglanChecked: raglanToggle ? raglanToggle.checked : false,
     measurements,
@@ -5561,7 +5596,7 @@ function restoreState(s) {
   }
   const restoredCategory = isNonApparelProductAudience(restoredProductGender)
     ? 'other'
-    : s.category;
+    : restoredMeasurementCategory_(s);
   if (restoredCategory) {
     el('category').value = restoredCategory;
     renderMeasurements();
@@ -7999,6 +8034,27 @@ const SIZE_PROFILES = {
   },
 };
 
+// v2: local operational heuristics, NOT a universal brand/JIS size chart.
+// Retain the existing flat-garment centers; remove length/sleeve/design-driven lifts.
+const UPPER_SIZE_PROFILE_KEYS = ['tops', 'menShirt', 'menRelaxedTop', 'womenTops',
+  'outer', 'menTailoredOuter', 'menCoat', 'womenOuter'];
+const OUTER_SIZE_PROFILE_KEYS = ['outer', 'menTailoredOuter', 'menCoat', 'womenOuter'];
+UPPER_SIZE_PROFILE_KEYS.forEach(key => {
+  const profile = SIZE_PROFILES[key];
+  const outer = OUTER_SIZE_PROFILE_KEYS.includes(key);
+  profile.fields.chest.w = outer ? 0.70 : 0.65;
+  profile.fields.shoulder.w = outer ? 0.30 : 0.35;
+  profile.fields.length.w = 0;
+  profile.fields.sleeve.w = 0;
+  profile.bias = 0;
+  delete profile.liftFromLargeDimension;
+  profile.tableFields = ['chest', 'shoulder'];
+  profile.tagExamples = SIZE_LABELS;
+  profile.sourceNote = outer
+    ? '身幅70%・肩幅30%。重ね着のゆとりを含むアウター用の寸法目安。コートの着丈・袖丈ではサイズを上げません。'
+    : '身幅65%・肩幅35%。シャツ・ニットなどトップス用の寸法目安。着丈・袖丈はデザイン差が大きいため計算に入れません。';
+});
+
 function clampScore(s) {
   return Math.max(0, Math.min(6, s));
 }
@@ -8041,20 +8097,20 @@ function getSizeProfileKey(
   const isWomen = normalizeProductGender(productGender) === 'women';
   if (broadCat === 'suit') return isWomen ? 'womenSuit' : 'suit';
   if (broadCat === 'bottoms') return isWomen ? 'womenBottoms' : 'bottoms';
-  if (broadCat !== 'tops') return '';
+  if (broadCat !== 'tops' && broadCat !== 'outer') return '';
 
   const isOuter = /ジャケット|アウター|コート|ブルゾン|ダウン|ライダース|スタジャン|ジャンパー|カバーオール|MA-1|フライトジャケット|ポンチョ|ケープ/.test(pathText);
   const isCoat = /コート|トレンチ|ステンカラー|チェスター|ダッフル|ピーコート|モッズ|ロングコート|スプリングコート/.test(pathText);
   const isTailored = /テーラードジャケット|スーツジャケット|ノーカラージャケット/.test(pathText);
-  if (isWomen) {
-    if (isOuter) return 'womenOuter';
-    return 'womenTops';
-  }
-  if (isTailored) return 'menTailoredOuter';
-  if (isCoat) return 'menCoat';
-  if (isOuter) {
+  if (broadCat === 'outer') {
+    if (isWomen) return 'womenOuter';
+    if (isTailored) return 'menTailoredOuter';
+    if (isCoat) return 'menCoat';
     return 'outer';
   }
+  if (isWomen) return 'womenTops';
+  // Explicit broad choice wins over an old/contradictory detailed category.
+  if (isOuter) return 'tops';
   if (/ニット|セーター|カーディガン|パーカー|トレーナー|スウェット|ジャージ|ベスト|フリース/.test(pathText)) {
     return 'menRelaxedTop';
   }
@@ -8084,20 +8140,27 @@ function updateSizeSuggestion() {
   if (!panel) return;
   const cat = el('category').value;
   if (!cat) { panel.hidden = true; return; }
+  if (cat === 'legacyUpper') {
+    panel.textContent = '以前の「アウター / トップス」の保存データです。採寸は残しています。上のカテゴリを選び直すと、新しい基準で推定します。';
+    panel.hidden = false;
+    return;
+  }
 
   const result = computeMeasurementSize();
-  if (!result) { panel.hidden = true; return; }
-
-  const profileKey = result.profileKey || getSizeProfileKey(getSelectedMercariCategoryKey(), cat);
+  const profileKey = result?.profileKey || getSizeProfileKey(getSelectedMercariCategoryKey(), cat);
+  if (!profileKey) { panel.hidden = true; return; }
+  if (!result && !UPPER_SIZE_PROFILE_KEYS.includes(profileKey)) { panel.hidden = true; return; }
   const profile = SIZE_PROFILES[profileKey] || SIZE_PROFILES.tops;
   const table = sizeReferenceTable(profileKey);
   panel.innerHTML = `
-    <div class="size-main">📏 採寸からの推定: <strong>${result.size}サイズ相当</strong></div>
-    <div class="size-hint">${result.detail}</div>
+    <div class="size-main">📏 ${result ? `採寸からの推定: <strong>${escapeHtml(result.size)}サイズ相当（目安）</strong>` : '身幅と肩幅を入力すると推定します。ラグランは身幅を入力してください。'}</div>
+    <div class="size-hint">${escapeHtml(profile.name)}：${escapeHtml(profile.sourceNote || '')}</div>
+    ${result ? `<div class="size-hint">${escapeHtml(result.detail)}</div>` : ''}
     <details class="size-ref">
       <summary>サイズ目安表（${profile.name}）</summary>
       ${table}
-      <p class="note small">※ブランドにより±2〜3cm程度の差があります。タグ表記との併用をおすすめします。</p>
+      <p class="note small">当アプリ独自の仮の運用目安です。公式のブランド別サイズ表ではありません。タグ表記・メーカーの商品別寸法を優先してください。オーバーサイズや厚手・中綿入りは、外寸だけで着用サイズを確定できません。</p>
+      <p class="note small"><a href="https://faq.uniqlo.com/articles/FAQ/100004162" target="_blank" rel="noopener noreferrer">採寸方法の参考（ユニクロ公式）</a>：身体寸法ではなく、平置きした服の寸法を入力します。</p>
     </details>
   `;
   panel.hidden = false;
@@ -8114,12 +8177,20 @@ function syncMercariSizeFromMeasurements() {
   updateDraftChecklist();
 }
 
-function estimateBySizeProfile(profileKey) {
+function estimateBySizeProfile(profileKey, values = null, raglan = !!el('raglan-toggle')?.checked) {
   const profile = SIZE_PROFILES[profileKey];
   if (!profile) return null;
+  const read = key => values ? (Number(values[key]) > 0 ? Number(values[key]) : null) : readMeasurementValue(key);
+  const upper = UPPER_SIZE_PROFILE_KEYS.includes(profileKey);
+  if (upper) {
+    const chest = read('chest'), shoulder = read('shoulder');
+    if (!Number.isFinite(chest) || chest < 25 || chest > 95) return null;
+    if (!raglan && (!Number.isFinite(shoulder) || shoulder < 20 || shoulder > 75)) return null;
+  }
   const parts = [];
   Object.entries(profile.fields).forEach(([key, def]) => {
-    const value = readMeasurementValue(key);
+    if (def.w <= 0 || (upper && raglan && key === 'shoulder')) return;
+    const value = read(key);
     if (value == null) return;
     parts.push({
       w: def.w,
@@ -8128,7 +8199,24 @@ function estimateBySizeProfile(profileKey) {
     });
   });
   if (parts.length === 0) return null;
-  return combineScores(parts, profile, profileKey);
+  const result = combineScores(parts, profile, profileKey);
+  if (upper) {
+    result.detail = `${profile.name}：身幅${read('chest')}cm${raglan ? '' : `・肩幅${read('shoulder')}cm`}を基準表と照合。着丈・袖丈は採寸の記録にのみ使用します。`;
+    const outsideCenters = Object.entries(profile.fields).some(([key, def]) => {
+      if (def.w <= 0 || (raglan && key === 'shoulder')) return false;
+      const value = read(key);
+      return value < def.centers[0] - 3 || value > def.centers.at(-1) + 3;
+    });
+    if (outsideCenters || Math.max(...parts.map(p => p.s)) - Math.min(...parts.map(p => p.s)) >= 2) {
+      result.referenceOnly = true;
+      result.detail += ' 基準範囲外または身幅と肩幅に大きな差があるため参考値です。タグ・商品別サイズ表を確認してください。';
+    }
+  }
+  if (upper && raglan) {
+    result.referenceOnly = true;
+    result.detail += '。ラグランは肩幅・袖丈を除外した身幅だけの参考値です。出品サイズはタグまたは手動で確認してください。';
+  }
+  return result;
 }
 
 function combineScores(parts, profile = {}, profileKey = '') {
@@ -8209,6 +8297,11 @@ function renderFinalSize(aiData) {
   const measurement = computeMeasurementSize();
   const tagRaw = aiData?.tag_size || '';
   const tagNorm = normalizeTagSize(tagRaw);
+
+  if (!tagNorm && measurement?.referenceOnly) {
+    badge.hidden = true;
+    return;
+  }
 
   if (!measurement && !tagNorm) {
     badge.hidden = true;
@@ -8338,7 +8431,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260906c</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260907a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -8349,7 +8442,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260906c</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907a</span>`;
 }
 
 function renderComposeStep() {
@@ -9029,7 +9122,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260906c</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260907a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -9093,7 +9186,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260906c</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907a</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -9165,7 +9258,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260906c</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907a</span>`;
       closeImageCompose();
     }
   });
@@ -9321,7 +9414,9 @@ function buildDraftPayload_(input) {
     title: normalizeMercariTitle(input.title),
     description: String(input.description || '').trim(),
     price: String(input.price || ''),
-    category: input.category,
+    // Preserve the old wire value/receipt fingerprint for unchanged tops drafts.
+    // Actual Mercari selection uses mercari_category_key/path below, not this label.
+    category: input.category === 'トップス' ? 'アウター/トップス' : input.category,
     mercari_category_key: input.mercariCategoryKey,
     mercari_category_label: input.mercariCategoryLabel,
     mercari_category: [...(input.mercariCategoryPath || [])],
@@ -9659,6 +9754,15 @@ globalThis.MercariAppTestHooks = {
   polishAppealText_,
   buildDescription,
   getSizeProfileKey,
+  estimateBySizeProfile,
+  SIZE_PROFILES,
+  restoredMeasurementCategory_,
+  captureUpperMeasurementsForSwitch_,
+  restoreUpperMeasurementsAfterSwitch_,
+  collectMeasurements,
+  formatMeasurements,
+  collectState,
+  restoreState,
   deriveMercariSize,
   buildDescriptionProductName,
   buildMercariTitle,
