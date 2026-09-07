@@ -104,7 +104,7 @@ const TEMPORARY_DRAFT_STATUS = {
   failed: { label: 'AI生成失敗', className: 'failed' },
   generated: { label: 'AI生成済み', className: 'generated' },
 };
-const CATEGORY_JP = { suit: 'スーツ', tops: 'トップス', outer: 'アウター', legacyUpper: 'アウター/トップス（要確認）', bottoms: 'ボトムス', bag: 'バッグ', tie: 'ネクタイ', other: 'その他' };
+const CATEGORY_JP = { suit: 'スーツ', tops: 'トップス', outer: 'アウター', legacyUpper: 'カテゴリ未選択', bottoms: 'ボトムス', bag: 'バッグ', tie: 'ネクタイ', other: 'その他' };
 // カテゴリとサイズの固定データは catalog-data.js で読み込みます。
 const GENDERED_CATEGORY_FALLBACKS = {
   men: {
@@ -2042,8 +2042,12 @@ function restoredMeasurementCategory_(state) {
   return Object.hasOwn(MEASUREMENT_SCHEMA, state.category) ? state.category : '';
 }
 
-function renderMeasurements() {
-  const cat = el('category').value;
+function pendingMeasurementCategory_() {
+  return el('category').value || (el('measurement-fields')?.dataset?.category === 'legacyUpper' ? 'legacyUpper' : '');
+}
+
+function renderMeasurements(categoryOverride = '') {
+  const cat = categoryOverride || el('category').value;
   const container = el('measurement-fields');
   stopActiveMultiVoiceInput({ clearStatus: true });
   container.innerHTML = '';
@@ -5509,7 +5513,7 @@ async function handleTemporaryDraftAction_(event) {
 }
 
 function collectState() {
-  const category = el('category').value;
+  const category = pendingMeasurementCategory_();
   const measurements = {};
   document.querySelectorAll('#measurement-fields input[type="number"]').forEach(inp => {
     measurements[inp.id] = inp.value;
@@ -5598,8 +5602,9 @@ function restoreState(s) {
     ? 'other'
     : restoredMeasurementCategory_(s);
   if (restoredCategory) {
-    el('category').value = restoredCategory;
-    renderMeasurements();
+    el('category').value = restoredCategory === 'legacyUpper' ? '' : restoredCategory;
+    // Keep old measurements without adding an obsolete option to native iOS selects.
+    renderMeasurements(restoredCategory);
     if (s.raglanChecked && el('raglan-toggle')) {
       el('raglan-toggle').checked = true;
       el('raglan-field').hidden = false;
@@ -8140,11 +8145,6 @@ function updateSizeSuggestion() {
   if (!panel) return;
   const cat = el('category').value;
   if (!cat) { panel.hidden = true; return; }
-  if (cat === 'legacyUpper') {
-    panel.textContent = '以前の「アウター / トップス」の保存データです。採寸は残しています。上のカテゴリを選び直すと、新しい基準で推定します。';
-    panel.hidden = false;
-    return;
-  }
 
   const result = computeMeasurementSize();
   const profileKey = result?.profileKey || getSizeProfileKey(getSelectedMercariCategoryKey(), cat);
@@ -8431,7 +8431,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260907a</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260907b</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -8442,7 +8442,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907a</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907b</span>`;
 }
 
 function renderComposeStep() {
@@ -9122,7 +9122,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260907a</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260907b</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -9186,7 +9186,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907a</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907b</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -9258,7 +9258,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907a</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260907b</span>`;
       closeImageCompose();
     }
   });
@@ -9757,6 +9757,7 @@ globalThis.MercariAppTestHooks = {
   estimateBySizeProfile,
   SIZE_PROFILES,
   restoredMeasurementCategory_,
+  pendingMeasurementCategory_,
   captureUpperMeasurementsForSwitch_,
   restoreUpperMeasurementsAfterSwitch_,
   collectMeasurements,
