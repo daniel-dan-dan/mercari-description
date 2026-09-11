@@ -418,6 +418,55 @@ function recoveryOptions(overrides = {}) {
   );
   assert.equal(rateCalls.length, 1, '正しい429 JSONはその場で判定し、結果GETを増やさない');
 
+  // Reproduce the phone failure: upload never arrives, result says unknown.
+  // The retry must preserve both the payload and operation ID.
+  vm.runInContext('waitForPoll_ = async () => {};', context);
+  for (const initialMode of ['lost-upload', 'json-gateway', 'already-processing']) {
+    const retryCalls = [];
+    let postCount = 0;
+    let resultCount = 0;
+    context.__mockFetchWithTimeout = async (url, options = {}) => {
+      retryCalls.push({ url: String(url), options });
+      const id = retryCalls[0].options.headers['X-Operation-Id'];
+      if (options.method === 'POST') {
+        postCount++;
+        if (postCount === 1) {
+          if (initialMode === 'json-gateway') return response(502, { error: 'gateway unavailable' });
+          if (initialMode === 'already-processing') return response(202, { status: 'processing', clientRequestId: id });
+          throw new Error('Load failed');
+        }
+        // Even a lost second response must be recovered, never posted a third time.
+        throw new Error('retry response lost');
+      }
+      resultCount++;
+      if (resultCount === 1 && initialMode !== 'already-processing') {
+        return response(200, operationEnvelope(id, 'unknown'));
+      }
+      if (resultCount === 2) return response(200, operationEnvelope(id, 'processing'));
+      return response(200, successEnvelope(id, 'recovered-after-upload'));
+    };
+    assert.equal(await hooks.callDescriptionAi([{ mediaType: 'image/jpeg', base64: 'YWJj' }]), 'recovered-after-upload');
+    const posts = retryCalls.filter(call => call.options.method === 'POST');
+    assert.equal(posts.length, initialMode === 'already-processing' ? 1 : 2);
+    for (const post of posts) {
+      assert.equal(post.options.headers['X-Operation-Id'], posts[0].options.headers['X-Operation-Id']);
+      assert.equal(post.options.body, posts[0].options.body);
+    }
+  }
+
+  for (const mode of ['unknown', 'mismatch', 'unauthorized']) {
+    let retries = 0;
+    context.__mockFetchWithTimeout = async () => mode === 'unauthorized'
+      ? response(401, { error: 'unauthorized' })
+      : response(200, operationEnvelope(mode === 'mismatch' ? 'wrong-id' : operationId, 'unknown'));
+    await assert.rejects(hooks.recoverDescriptionNetworkFailure_(
+      'https://current.trycloudflare.com', operationId, new Error('lost'), {
+        ...recoveryOptions(), retrySubmission: async () => { retries++; },
+      },
+    ), error => error.code === 'DESCRIPTION_RESULT_UNKNOWN');
+    assert.equal(retries, mode === 'unknown' ? 1 : 0, '再送は一致したunknownに対して一回のみ');
+  }
+
   console.log(JSON.stringify({
     ok: true,
     directBillingMessage: true,
@@ -427,7 +476,7 @@ function recoveryOptions(overrides = {}) {
     processingFailureRecovery: true,
     ambiguousResultGuard: true,
     operationIdMatch: true,
-    version: 'v20260908a',
+    version: 'v20260911a',
   }));
 })().catch(error => {
   console.error(error);

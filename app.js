@@ -3239,6 +3239,7 @@ async function pollDescriptionOperationResult_(
     maxConsecutiveNetworkErrors = DESCRIPTION_RESULT_MAX_CONSECUTIVE_ERRORS,
     onStatus,
     refreshUrl,
+    retrySubmission,
     waitFn = waitForPoll_,
     nowFn = Date.now,
   } = {},
@@ -3246,6 +3247,7 @@ async function pollDescriptionOperationResult_(
   const startedAt = nowFn();
   let currentTunnelUrl = normalizeMacServiceUrl_(initialTunnelUrl) || initialTunnelUrl;
   let consecutiveNetworkErrors = 0;
+  let submissionRetried = false;
 
   while (true) {
     let outcome;
@@ -3284,6 +3286,22 @@ async function pollDescriptionOperationResult_(
       continue;
     }
 
+    // Only an exact, explicit unknown response permits one same-ID upload retry.
+    // The server reserves the ID before reading the body and deduplicates it.
+    if (outcome.status === 'unknown' && !outcome.reason
+        && matchesDescriptionOperationId_(outcome.data, clientRequestId)
+        && !submissionRetried && typeof retrySubmission === 'function'
+        && nowFn() - startedAt < timeoutMs) {
+      submissionRetried = true;
+      onStatus?.('写真の送信が届いていないため、同じ受付IDで再送しています...');
+      try {
+        await retrySubmission(currentTunnelUrl);
+      } catch (_) {
+        // A lost retry response is also recovered through the same result ID.
+      }
+      await waitFn(intervalMs);
+      continue;
+    }
     if (outcome.status !== 'processing') {
       return { ...outcome, tunnelUrl: currentTunnelUrl };
     }
@@ -3324,7 +3342,7 @@ async function recoverDescriptionNetworkFailure_(
   tunnelUrl,
   clientRequestId,
   originalError,
-  { onStatus, refreshUrl, pollOptions = {} } = {},
+  { onStatus, refreshUrl, retrySubmission, pollOptions = {} } = {},
 ) {
   let outcome = null;
   let recoveryError = null;
@@ -3333,6 +3351,7 @@ async function recoverDescriptionNetworkFailure_(
       ...pollOptions,
       onStatus,
       refreshUrl,
+      retrySubmission,
     });
   } catch (error) {
     recoveryError = error;
@@ -4022,6 +4041,14 @@ async function callDescriptionAi(images, onChunk) {
   }
 
   const clientRequestId = createOperationId_('describe');
+  const requestOptions = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Operation-Id': clientRequestId,
+    },
+    body: JSON.stringify(payload),
+  };
   const recoverResult = async originalError => {
     const recovered = await recoverDescriptionNetworkFailure_(
       tunnelUrl,
@@ -4030,6 +4057,7 @@ async function callDescriptionAi(images, onChunk) {
       {
         onStatus: onChunk,
         refreshUrl: () => getMercariServiceUrl((message) => onChunk?.(message)),
+        retrySubmission: url => fetchWithTimeout(`${url}/describe`, requestOptions, 120000),
       },
     );
     return completeDescriptionAiResponse_(recovered, onChunk);
@@ -4038,14 +4066,7 @@ async function callDescriptionAi(images, onChunk) {
   try {
     res = await fetchWithTimeout(
       `${tunnelUrl}/describe`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Operation-Id': clientRequestId,
-        },
-        body: JSON.stringify(payload),
-      },
+      requestOptions,
       120000
     );
   } catch (err) {
@@ -4059,7 +4080,13 @@ async function callDescriptionAi(images, onChunk) {
     return recoverResult(err);
   }
   if (!res.ok) {
+    if ([408, 502, 503, 504].includes(res.status) && !data.requestId && !data.code) {
+      return recoverResult(new Error('写真の送信経路で一時的な通信エラーが発生しました'));
+    }
     throw makeDescriptionApiError_(data, res.status);
+  }
+  if (res.status === 202 && data.status === 'processing') {
+    return recoverResult(new Error('同じ受付IDのAI生成を確認しています'));
   }
   return completeDescriptionAiResponse_(data, onChunk);
 }
@@ -8484,7 +8511,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260908a</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260911a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -8495,7 +8522,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260908a</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260911a</span>`;
 }
 
 function renderComposeStep() {
@@ -9175,7 +9202,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260908a</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260911a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -9239,7 +9266,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260908a</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260911a</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -9311,7 +9338,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260908a</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260911a</span>`;
       closeImageCompose();
     }
   });
