@@ -26,7 +26,7 @@ git -C "$repo_root" diff --binary > "$backup_dir/working-tree.patch"
 git -C "$repo_root" status --porcelain=v1 > "$backup_dir/status.txt"
 git -C "$repo_root" rev-parse HEAD > "$backup_dir/head.txt"
 
-git -C "$repo_root" ls-files --others --exclude-standard -z \
+git -C "$repo_root" ls-files --others --exclude-standard -z -- . ":(exclude)backups/**" \
   | tar --null -czf "$backup_dir/untracked-files.tar.gz" -C "$repo_root" -T -
 
 (

@@ -6997,10 +6997,7 @@ function markdownSettingPayload_(row = {}) {
   const normalized = { ...row, minPrice };
   return {
     itemId: normalizeMarkdownItemId(row.itemId || row.url),
-    url: String(row.url || ''),
-    title: String(row.title || ''),
-    imageUrl: markdownImageUrl(row),
-    currentPrice: Number(row.currentPrice || 0),
+    expectedRevision: Number.isSafeInteger(row.revision) ? row.revision : 0,
     minPrice,
     autoEnabled: Boolean(row.autoEnabled) && markdownCanEnable(normalized),
   };
@@ -7028,6 +7025,7 @@ function updateMarkdownAutoSaveIndicator_(itemId) {
 }
 
 async function postMarkdownSettings_(rows, { statusCallback } = {}) {
+  const operationId = createOperationId_('markdown-settings');
   let lastError = null;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
@@ -7035,7 +7033,7 @@ async function postMarkdownSettings_(rows, { statusCallback } = {}) {
       const resp = await fetchWithTimeout(`${tunnelUrl}/markdown/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: rows }),
+        body: JSON.stringify({ operationId, items: rows }),
       }, 30000);
       const data = await readJsonResponse(resp, '100円値下げ設定の保存');
       if (!data.ok) throw new Error(data.error || '設定保存に失敗しました');
@@ -7071,8 +7069,18 @@ function enqueueMarkdownSettingsWrite_(rows, options = {}) {
     .map(markdownSettingPayload_)
     .filter(row => row.itemId);
   const task = markdownSettingsWriteTail.then(async () => {
-    const savedRows = await postMarkdownSettings_(payloads, options);
-    return validateSavedMarkdownRows_(savedRows, payloads);
+    // Only a successful save by this local queue may advance its revision.
+    payloads.forEach(payload => {
+      const current = markdownRows.find(row => row.itemId === payload.itemId);
+      if (Number.isSafeInteger(current?.revision)) payload.expectedRevision = current.revision;
+    });
+    const savedRows = validateSavedMarkdownRows_(await postMarkdownSettings_(payloads, options), payloads);
+    savedRows.forEach(saved => {
+      const current = markdownRows.find(row => row.itemId === saved.itemId);
+      if (current && Number.isSafeInteger(saved.revision)) current.revision = saved.revision;
+    });
+    persistMarkdownRows();
+    return savedRows;
   });
   markdownSettingsWriteTail = task.catch(() => {});
   return { task, payloads };
@@ -7190,7 +7198,11 @@ async function runMarkdownNow({ dryRun }) {
     const resp = await fetchWithTimeout(`${tunnelUrl}/markdown/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: targets, dryRun, limit: 100 }),
+      body: JSON.stringify({
+        operationId: createOperationId_('markdown-run'),
+        items: targets.map(target => ({itemId: target.itemId, expectedRevision: markdownRows.find(row => row.itemId === target.itemId)?.revision ?? 0})),
+        dryRun,
+      }),
     }, 30000);
     const data = await resp.json();
     if (!data.ok || !data.job_id) throw new Error(data.error || '実行開始に失敗しました');
@@ -8511,7 +8523,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260911a</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260913a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -8522,7 +8534,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260911a</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260913a</span>`;
 }
 
 function renderComposeStep() {
@@ -9202,7 +9214,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260911a</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260913a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -9266,7 +9278,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260911a</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260913a</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -9338,7 +9350,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260911a</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260913a</span>`;
       closeImageCompose();
     }
   });

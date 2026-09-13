@@ -10,6 +10,7 @@ async function main() {
   const context = {
     console,
     URL,
+    window: { crypto: require("node:crypto").webcrypto },
     Promise,
     setTimeout,
     clearTimeout,
@@ -53,7 +54,7 @@ async function main() {
         }
         return {
           status: 200,
-          text: async () => JSON.stringify({ ok: true, settings: body.items }),
+          text: async () => JSON.stringify({ ok: true, settings: body.items.map(row => ({...row, revision: row.expectedRevision + 1})) }),
         };
       };
 
