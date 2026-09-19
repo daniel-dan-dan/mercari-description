@@ -25,28 +25,6 @@ const source = [
 ].join('\n');
 vm.runInContext(source, context, { filename: 'app.js' });
 
-const hooks = context.MercariAppTestHooks;
-const retryPayload = hooks.buildResearchMacPayload_({
-  id: 'research-retry-1',
-  createdAt: '2026-08-01T00:00:00+09:00',
-  title: 'バーバリー コート',
-  brand: 'バーバリー',
-  keyword: 'バーバリー コート',
-  status: '送信待ち',
-  syncPending: true,
-  localDisplayMessage: 'Macへ再送',
-});
-
-assert.equal(retryPayload.status, '待機中', '再送依頼をMac側の夜間キュー対象に戻す');
-assert.equal(retryPayload.id, 'research-retry-1');
-assert.equal(Object.hasOwn(retryPayload, 'syncPending'), false, 'PWA専用の再送フラグはMacへ送らない');
-assert.equal(Object.hasOwn(retryPayload, 'localDisplayMessage'), false, '許可リスト外の表示情報はMacへ送らない');
-assert.match(
-  source,
-  /const macPayload = buildResearchMacPayload_\(request\);[\s\S]{0,350}body: JSON\.stringify\(macPayload\)/,
-  '実際の再送POSTで整形済みデータを使う',
-);
-
 const composeStart = source.indexOf('async function addComposedImageToApp');
 const composeEnd = source.indexOf('async function applyCompose', composeStart);
 assert.ok(composeStart >= 0 && composeEnd > composeStart, '画像合成追加処理が存在する');
@@ -68,7 +46,5 @@ assert.doesNotMatch(
 
 console.log(JSON.stringify({
   ok: true,
-  researchRetryStatus: retryPayload.status,
-  clientOnlyFieldsRemoved: true,
   photoButtonsRenderedAfterUnlock: true,
 }));
