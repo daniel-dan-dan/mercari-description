@@ -38,7 +38,12 @@ const DESCRIPTION_RESULT_REQUEST_TIMEOUT_MS = 10000;
 const DESCRIPTION_RESULT_MAX_CONSECUTIVE_ERRORS = 3;
 const DESCRIPTION_RESULT_MAX_AGE_MS = 10 * 60 * 1000;
 const INVENTORY_UUID_PATTERN = /^inv_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const INVENTORY_CANDIDATE_LIMIT = 50;
+const INVENTORY_CANDIDATE_LIMIT = 100;
+const INVENTORY_CACHE_MS = 5 * 60 * 1000;
+const inventoryCandidateCache = new Map();
+const inventoryCandidateRequests = new Map();
+let inventoryCandidateRows = [];
+let inventoryCandidateRenderKey = "";
 const MAX_DRAFT_PAYLOAD_BYTES = 28 * 1024 * 1024;
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（AI分析用・コスト節約）
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
@@ -786,6 +791,7 @@ function updateMercariSizeNote(result) {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.hidden = true);
   el(id).hidden = false;
+  if (id === 'main-screen') prefetchInventoryCandidates_();
   updateListingWorkflow_();
 }
 
@@ -1169,15 +1175,7 @@ async function init() {
   });
   el('inventory-clear-btn').addEventListener('click', () => clearInventorySelection_());
   el('inventory-candidates-btn').addEventListener('click', () => {
-    const panel = el('inventory-candidate-panel');
-    if (!panel) return;
-    if (!panel.hidden) {
-      panel.hidden = true;
-      return;
-    }
-    loadInventoryCandidates_().catch(error => {
-      console.error('[inventory-candidates]', error);
-    });
+    loadInventoryCandidates_({ force: true }).catch(() => {});
   });
   el('inventory-search-btn').addEventListener('click', () => {
     loadInventoryCandidates_().catch(error => {
@@ -2771,13 +2769,14 @@ function updateInventoryLinkNote_() {
   if (summary) {
     summary.className = 'inventory-selected-summary';
     const name = state.label || (state.empty ? '在庫はまだ選ばれていません' : '在庫を指定済み');
-    const meta = state.meta || (state.empty ? '未選択でも下書き保存できます' : '出品確定後に自動連携を確認します');
-    summary.innerHTML = `<span>${escapeHtml(name)}</span><small>${escapeHtml(meta)}</small>`;
+    const meta = state.meta || '';
+    summary.innerHTML = `<span>${escapeHtml(name)}</span>${meta ? `<small>${escapeHtml(meta)}</small>` : ''}`;
     summary.classList.add(state.empty ? 'unselected' : (state.valid ? 'selected' : 'invalid'));
   }
   if (clearButton) clearButton.hidden = state.empty;
+  note.hidden = state.empty || state.valid;
   if (state.empty) {
-    note.textContent = '未選択でも従来どおり下書き保存できますが、自動在庫連携の対象外です。';
+    note.textContent = '';
     note.classList.add('unselected');
   } else if (state.valid) {
     note.textContent = '出品確定後、価格改定アプリの最新取得で商品名と価格を照合して自動連携します。';
@@ -3503,72 +3502,131 @@ function inventoryCandidateLabel_(candidate = {}) {
   };
 }
 
+function inventoryMatchText_(value) {
+  return String(value || '').normalize('NFKC').toLowerCase()
+    .replace(/極美品|美品|新品|未使用|希少|レア|送料無料|送料込み|メンズ|レディース/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+function inventoryMatchContext_() {
+  return {
+    title: el('title-text')?.value || '',
+    brands: [el('m-brand')?.value, lastAiData?.brand, lastAiData?.brand_en].filter(Boolean),
+    size: lastAiData?.tag_size || '',
+  };
+}
+
+function rankInventoryCandidates_(items, context = {}) {
+  const compact = value => inventoryMatchText_(value).replace(/ /g, '');
+  const title = compact(context.title);
+  const brands = [...new Set((context.brands || []).map(compact).filter(v => v.length >= 2))];
+  const grams = value => new Set(Array.from({ length: Math.max(0, value.length - 1) }, (_, i) => value.slice(i, i + 2)));
+  const stripBrand = value => brands.reduce((v, b) => v.split(b).join(''), value);
+  const titleBody = stripBrand(title);
+  const wanted = grams(titleBody);
+  const seen = new Set();
+  const latest = items.filter(item => {
+    const id = normalizeInventoryUuid_(item.inventoryUuid);
+    if (!id || seen.has(id) || !isMercariInventoryCandidate_(item)) return false;
+    seen.add(id); return true;
+  }).map((item, index) => ({ item, index })).sort((a, b) =>
+    (Number(b.item.row) || 0) - (Number(a.item.row) || 0) || a.index - b.index);
+  const scored = latest.map(({item}, index) => {
+    const name = compact(item.productName);
+    const body = stripBrand(name);
+    const actual = grams(body);
+    const common = [...wanted].filter(g => actual.has(g)).length;
+    const similarity = wanted.size && actual.size ? 2 * common / (wanted.size + actual.size) : 0;
+    const brandMatch = brands.some(b => name.includes(b));
+    const size = compact(context.size);
+    const sizeMatch = size && inventoryMatchText_(item.productName).split(' ').includes(size);
+    const exact = title.length >= 5 && name === title;
+    const plausible = exact || (common >= 4 && similarity >= (brandMatch ? 0.32 : 0.58));
+    return { item, index, score: plausible ? similarity + (brandMatch ? 0.25 : 0) + (sizeMatch ? 0.05 : 0) : 0 };
+  });
+  const suggested = scored.filter(row => row.score > 0).sort((a,b) => b.score-a.score || a.index-b.index).slice(0,3);
+  const ids = new Set(suggested.map(row => row.item.inventoryUuid));
+  return { suggested: suggested.map(row => row.item), latest: latest.map(row => row.item).filter(item => !ids.has(item.inventoryUuid)) };
+}
+
 function renderInventoryCandidates_(items) {
   const list = el('inventory-candidate-list');
   if (!list) return;
-  const candidates = Array.isArray(items)
-    ? items.filter(item => {
-      const parsed = parseInventoryReference_(item?.inventoryUuid);
-      return parsed.valid && !parsed.empty && isMercariInventoryCandidate_(item);
-    })
-    : [];
-  if (!candidates.length) {
-    list.innerHTML = '<div class="inventory-candidate-empty">条件に合う在庫候補はありません</div>';
+  const { suggested, latest } = rankInventoryCandidates_(Array.isArray(items) ? items : [], inventoryMatchContext_());
+  if (!suggested.length && !latest.length) {
+    list.innerHTML = '<div class="inventory-candidate-empty">在庫候補はありません</div>';
     return;
   }
-  list.innerHTML = candidates.map(candidate => {
+  const cards = (candidates, recommended) => candidates.map(candidate => {
     const uuid = normalizeInventoryUuid_(candidate.inventoryUuid);
     const label = inventoryCandidateLabel_(candidate);
     return `
-      <button
-        type="button"
-        class="inventory-candidate-item"
+      <button type="button" class="inventory-candidate-item${recommended ? ' recommended' : ''}"
         data-inventory-candidate-uuid="${escapeHtml(uuid)}"
         data-inventory-candidate-name="${escapeHtml(label.name)}"
-        data-inventory-candidate-meta="${escapeHtml(label.meta)}"
-      >
-        <span>
-          <strong>${escapeHtml(label.name)}</strong>
-          <small>${escapeHtml(label.meta)}</small>
-        </span>
+        data-inventory-candidate-meta="${escapeHtml(label.meta)}">
+        <span><strong>${escapeHtml(label.name)}</strong><small>${escapeHtml(label.meta)}</small></span>
         <em>選択</em>
-      </button>
-    `;
+      </button>`;
   }).join('');
+  list.innerHTML = (suggested.length ? '<div class="inventory-group-label">この商品の候補</div>' + cards(suggested, true) : '')
+    + (latest.length ? '<div class="inventory-group-label">最新順</div>' + cards(latest, false) : '');
 }
 
-async function loadInventoryCandidates_() {
+function refreshInventorySuggestions_() {
+  if (!inventoryCandidateRows.length) return;
+  const key = JSON.stringify(inventoryMatchContext_());
+  if (key === inventoryCandidateRenderKey) return;
+  inventoryCandidateRenderKey = key;
+  renderInventoryCandidates_(inventoryCandidateRows);
+}
+
+async function fetchInventoryCandidates_(query, { force = false } = {}) {
+  const cached = inventoryCandidateCache.get(query);
+  if (!force && cached && Date.now() - cached.fetchedAt < INVENTORY_CACHE_MS) return cached.items;
+  if (inventoryCandidateRequests.has(query)) return inventoryCandidateRequests.get(query);
+  const pending = (async () => {
+    const tunnelUrl = await getMercariServiceUrl();
+    const response = await fetchWithTimeout(`${tunnelUrl}/inventory/candidates?query=${encodeURIComponent(query)}&limit=${INVENTORY_CANDIDATE_LIMIT}`, {}, 30000);
+    const data = await readJsonResponse(response, '在庫候補取得');
+    if (!response.ok || !data.ok || !Array.isArray(data.items)) throw new Error(data.error || '在庫候補を取得できませんでした');
+    const items = data.items.filter(isMercariInventoryCandidate_);
+    if (inventoryCandidateCache.size >= 8) inventoryCandidateCache.delete(inventoryCandidateCache.keys().next().value);
+    inventoryCandidateCache.set(query, { items, fetchedAt: Date.now() });
+    return items;
+  })();
+  inventoryCandidateRequests.set(query, pending);
+  try { return await pending; } finally { inventoryCandidateRequests.delete(query); }
+}
+
+async function loadInventoryCandidates_({ force = false } = {}) {
   const panel = el('inventory-candidate-panel');
   const status = el('inventory-candidate-status');
+  const query = String(el('inventory-search-input')?.value || '').trim();
+  const current = () => query === String(el('inventory-search-input')?.value || '').trim();
   if (panel) panel.hidden = false;
-  if (status) status.textContent = 'Mac経由で在庫候補を取得しています...';
+  const cached = inventoryCandidateCache.get(query);
+  if (cached) { inventoryCandidateRows = cached.items; renderInventoryCandidates_(cached.items); }
+  else { inventoryCandidateRows = []; renderInventoryCandidates_([]); }
+  if (status) status.textContent = '読み込み中…';
   try {
-    const tunnelUrl = await getMercariServiceUrl(message => {
-      if (status) status.textContent = message;
-    });
-    const query = String(el('inventory-search-input')?.value || '').trim();
-    const url = (
-      `${tunnelUrl}/inventory/candidates`
-      + `?query=${encodeURIComponent(query)}&limit=${INVENTORY_CANDIDATE_LIMIT}`
-    );
-    const response = await fetchWithTimeout(url, {}, 30000);
-    const data = await readJsonResponse(response, '在庫候補取得');
-    if (!response.ok || !data.ok || !Array.isArray(data.items)) {
-      throw new Error(data.error || '在庫候補を取得できませんでした');
+    const items = await fetchInventoryCandidates_(query, { force });
+    if (current()) {
+      inventoryCandidateRows = items;
+      inventoryCandidateRenderKey = '';
+      renderInventoryCandidates_(items);
+      if (status) status.textContent = `${items.length}件`;
     }
-    const candidates = data.items.filter(isMercariInventoryCandidate_);
-    renderInventoryCandidates_(candidates);
-    if (status) {
-      status.textContent = candidates.length
-        ? `${candidates.length}件を表示中です。ASINが「なし」の対象を手動で選んでください。`
-        : '条件に合う在庫候補はありません。検索語を変えるか、詳細設定から在庫管理の情報を貼り付けてください。';
-    }
-    return candidates;
+    return items;
   } catch (error) {
-    renderInventoryCandidates_([]);
-    if (status) status.textContent = `在庫候補を取得できませんでした: ${error.message || error}`;
+    if (current() && status) status.textContent = cached ? '前回の一覧です。更新できませんでした' : '取得できませんでした。「更新」で再試行';
     throw error;
   }
+}
+
+function prefetchInventoryCandidates_() {
+  if (!getApiAuthToken()) return;
+  loadInventoryCandidates_().catch(error => console.warn('[inventory-prefetch]', error));
 }
 
 function handleInventoryCandidateSelection_(event) {
@@ -3584,8 +3642,8 @@ function handleInventoryCandidateSelection_(event) {
     showReference: false,
   });
   const status = el('inventory-candidate-status');
-  if (status) status.textContent = `「${name}」を選択しました。商品名からの自動選択は行っていません。`;
-  el('inventory-candidate-panel').hidden = true;
+  if (status) status.textContent = `「${name}」を選択しました`;
+  el('inventory-candidate-panel').hidden = false;
 }
 
 function readListingStyleSummary() {
@@ -5653,8 +5711,9 @@ async function clearCurrentProduct_({ clearSession = true, scroll = false } = {}
   el('price-input').value = '';
   clearInventorySelection_({ persist: false });
   el('inventory-search-input').value = '';
-  el('inventory-candidate-panel').hidden = true;
-  el('inventory-candidate-list').innerHTML = '';
+  el('inventory-candidate-panel').hidden = false;
+  inventoryCandidateRows = inventoryCandidateCache.get('')?.items || [];
+  renderInventoryCandidates_(inventoryCandidateRows);
   el('result-section').hidden = true;
   el('mercari-settings').hidden = true;
   el('m-condition').value = '目立った傷や汚れなし';
@@ -6692,7 +6751,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920d</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920e</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -6703,7 +6762,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920d</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920e</span>`;
 }
 
 function renderComposeStep() {
@@ -7383,7 +7442,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920d</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920e</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -7447,7 +7506,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920d</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920e</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -7519,7 +7578,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920d</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920e</span>`;
       closeImageCompose();
     }
   });
@@ -7598,6 +7657,7 @@ async function renderGridCanvas(canvas, mode, selectedIndices) {
 
 // ----- 下書きチェックリスト -----
 function updateDraftChecklist() {
+  refreshInventorySuggestions_();
   const checklist = el('draft-checklist');
   if (!checklist) return;
   const resultVisible = el('result-section') && !el('result-section').hidden;
@@ -8147,6 +8207,7 @@ globalThis.MercariAppTestHooks = {
   draftPayloadFingerprint_,
   parseInventoryReference_,
   normalizeInventoryUuid_,
+  rankInventoryCandidates_, fetchInventoryCandidates_, loadInventoryCandidates_,
   isMercariInventoryCandidate_,
   inventoryCandidateLabel_,
   getOrCreateDraftOperation_,

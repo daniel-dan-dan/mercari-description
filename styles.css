@@ -3950,3 +3950,6 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 .markdown-price-grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
 .markdown-price-grid strong { white-space: nowrap; font-size: clamp(16px, 4.7vw, 20px); }
 .draft-saving .file-label { opacity: .6; cursor: wait; }
+
+.inventory-group-label { font-size:12px;font-weight:700;color:#78616b;padding:7px 2px 1px; }
+.inventory-candidate-item.recommended { border-color:#bb7890;background:#fff6fa; }

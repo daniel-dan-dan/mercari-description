@@ -1,16 +1,16 @@
 const CACHE_PREFIX = 'mercari-description-';
-const CACHE_NAME = 'mercari-description-v20260920d';
+const CACHE_NAME = 'mercari-description-v20260920e';
 const ASSETS = [
   './',
   './index.html',
   './pair.html',
-  './styles.css?v=20260920d',
-  './public-config.js?v=20260920d',
-  './catalog-data.js?v=20260920d',
-  './app.js?v=20260920d',
-  './review.js?v=20260920d',
-  './bootstrap.js?v=20260920d',
-  './pair.js?v=20260920d',
+  './styles.css?v=20260920e',
+  './public-config.js?v=20260920e',
+  './catalog-data.js?v=20260920e',
+  './app.js?v=20260920e',
+  './review.js?v=20260920e',
+  './bootstrap.js?v=20260920e',
+  './pair.js?v=20260920e',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',

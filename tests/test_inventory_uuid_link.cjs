@@ -124,25 +124,25 @@ const serviceWorker = fs.readFileSync('sw.js', 'utf8');
 assert.doesNotMatch(indexHtml, /placeholder="inv_/);
 assert.doesNotMatch(indexHtml, /inventoryUuid付きURL/);
 assert.doesNotMatch(indexHtml, /UUID/);
-assert.match(indexHtml, /在庫から選ぶ/);
-assert.match(indexHtml, /ASINが「なし」の在庫から/);
+assert.match(indexHtml, /id="inventory-candidates-btn"[^>]*>更新/);
+assert.doesNotMatch(indexHtml, /ASINが「なし」の在庫から/);
 assert.match(indexHtml, /placeholder="SKU・商品名で検索"/);
 assert.doesNotMatch(indexHtml, /placeholder="SKU・ASIN・商品名で検索"/);
-assert.match(indexHtml, /未選択でも下書き保存できます/);
+assert.doesNotMatch(indexHtml, /未選択でも/);
 assert.match(source, /\/inventory\/candidates/);
-assert.match(source, /商品名からの自動選択は行っていません/);
+assert.match(source, /この商品の候補/);
 assert.match(source, /inventoryReference:/);
 assert.match(source, /inventoryLabel:/);
 assert.match(source, /inventoryMeta:/);
 assert.match(source, /clearInventorySelection_\(\{ persist: false \}\)/);
 assert.match(styles, /\.inventory-selected-summary/);
 assert.match(styles, /\.inventory-candidate-item/);
-assert.match(serviceWorker, /mercari-description-v20260920d/);
+assert.match(serviceWorker, /mercari-description-v20260920e/);
 
 console.log(JSON.stringify({
   ok: true,
   inventorySelection: 'manual-only',
   temporaryDraftPreserved: true,
   fingerprintIncludesInventory: true,
-  version: 'v20260920d',
+  version: 'v20260920e',
 }));
