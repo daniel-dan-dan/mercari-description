@@ -3957,3 +3957,7 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 .settings-header { justify-content: flex-start; gap: 12px; }
 #setup-screen .settings-header h1 { margin: 0; }
 .settings-header .btn { width: auto; flex: 0 0 auto; }
+
+#title-text { min-height: 76px; resize: none; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; margin-bottom: 4px; }
+.title-character-count { margin: 0 0 14px; text-align: right; color: #78616b; font-size: 12px; font-variant-numeric: tabular-nums; }
+.title-character-count.over-limit { color: #c62f48; font-weight: 700; }

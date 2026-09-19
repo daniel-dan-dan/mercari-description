@@ -791,7 +791,10 @@ function updateMercariSizeNote(result) {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.hidden = true);
   el(id).hidden = false;
-  if (id === 'main-screen') prefetchInventoryCandidates_();
+  if (id === 'main-screen') {
+    prefetchInventoryCandidates_();
+    updateTitleFieldDisplay_();
+  }
   updateListingWorkflow_();
 }
 
@@ -840,8 +843,9 @@ function updateTemporarySaveButton_() {
   } else if (!hasCategory) {
     note.textContent = 'カテゴリを選択してください。';
   } else {
-    note.textContent = '保存が完了してから入力欄を空にするため、失敗しても写真と採寸は消えません。';
+    note.textContent = '';
   }
+  note.hidden = ready;
   note.classList.toggle('ready', ready);
 }
 
@@ -1120,7 +1124,9 @@ async function init() {
     mercariTitleCompositionActive_ = false;
     syncMercariTitleEditingState_();
   });
+  window.addEventListener('resize', updateTitleFieldDisplay_);
   titleInput.addEventListener('input', event => {
+    updateTitleFieldDisplay_();
     // iPhoneの日本語変換中にvalueを書き戻すと、変換が切れてカーソルが末尾へ移動する。
     // 編集中は表示値を一切書き換えず、保存用データだけを正規化する。
     if (event.isComposing || mercariTitleCompositionActive_) return;
@@ -2118,7 +2124,8 @@ function updateGenerateButton() {
   el('generate-btn').disabled = !ready || descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress;
   const note = el('generate-note');
   if (note) {
-    note.classList.toggle('ready', ready);
+    note.hidden = ready;
+  note.classList.toggle('ready', ready);
     if (!hasPhotos && !hasCategory) {
       note.textContent = '写真を追加して、カテゴリを選ぶと生成できます。';
     } else if (!hasPhotos) {
@@ -4249,6 +4256,19 @@ function normalizeMercariTitleEditingValue_(value, { finalize = false } = {}) {
 }
 
 let mercariTitleCompositionActive_ = false;
+
+function updateTitleFieldDisplay_() {
+  const input = el('title-text');
+  const counter = el('title-character-count');
+  if (!input || !counter) return;
+  const count = Array.from(String(input.value || '')).length;
+  counter.textContent = `${count}/${MAX_MERCARI_TITLE_LENGTH}`;
+  counter.classList.toggle('over-limit', count > MAX_MERCARI_TITLE_LENGTH);
+  if (input.style && input.clientWidth > 0) {
+    input.style.height = 'auto';
+    input.style.height = `${input.scrollHeight + 4}px`;
+  }
+}
 
 function syncMercariTitleEditingState_() {
   const titleInput = el('title-text');
@@ -6764,7 +6784,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920h</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920i</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -6775,7 +6795,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920h</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920i</span>`;
 }
 
 function renderComposeStep() {
@@ -7455,7 +7475,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920h</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920i</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -7519,7 +7539,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920h</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920i</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -7591,7 +7611,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920h</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920i</span>`;
       closeImageCompose();
     }
   });
@@ -7670,6 +7690,7 @@ async function renderGridCanvas(canvas, mode, selectedIndices) {
 
 // ----- 下書きチェックリスト -----
 function updateDraftChecklist() {
+  updateTitleFieldDisplay_();
   refreshInventorySuggestions_();
   const checklist = el('draft-checklist');
   if (!checklist) return;
@@ -8266,6 +8287,7 @@ globalThis.MercariAppTestHooks = {
   isExcludedMercariTitleMarketingText,
   normalizeMercariTitle,
   normalizeMercariTitleEditingValue_,
+  updateTitleFieldDisplay_,
   defaultNewMinPrice: price => Math.max(300, Math.floor(Number(price || 0) * 0.7)),
   formatCurrentSessionSaveError_,
   compactTemporaryDraftPhoto_,

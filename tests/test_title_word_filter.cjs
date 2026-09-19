@@ -121,3 +121,18 @@ console.log(JSON.stringify({
   after: hooks.normalizeMercariTitle(screenshotTitle),
   generatedTitle,
 }));
+
+const field = {value:'', style:{}, clientWidth:300, scrollHeight:92};
+let overLimit=false;
+const counter={textContent:'',classList:{toggle:(name,on)=>{overLimit=on;}}};
+context.document={getElementById:id=>id==='title-text'?field:id==='title-character-count'?counter:null};
+for(const [value,count] of [['',0],['あ'.repeat(40),40],['あ'.repeat(41),41],['😀 日本語 ',6]]) {
+ field.value=value;
+ hooks.updateTitleFieldDisplay_();
+ assert.equal(counter.textContent,`${count}/40`);
+ assert.equal(overLimit,count>40);
+ assert.equal(field.value,value,'display update must not rewrite composing text');
+ assert.equal(field.style.height,'96px');
+}
+assert.match(indexHtml, /<textarea id="title-text"/);
+console.log('PASS title count: empty, 40, overflow, Unicode, composing value preservation, auto height');
