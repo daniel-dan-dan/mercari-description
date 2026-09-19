@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
+const { webcrypto } = require('node:crypto');
+const storage = new Map();
 let uuidCounter = 0;
 const context = {
   console,
@@ -13,11 +15,11 @@ const context = {
   Date,
   globalThis: null,
   window: null,
-  crypto: { randomUUID: () => `description-test-${++uuidCounter}` },
+  crypto: { subtle: webcrypto.subtle, randomUUID: () => `description-test-${++uuidCounter}` },
   localStorage: {
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
+    getItem: key => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: key => storage.delete(key),
   },
 };
 context.globalThis = context;
@@ -257,7 +259,7 @@ function recoveryOptions(overrides = {}) {
     error => {
       assert.equal(error.code, 'DESCRIPTION_RESULT_UNKNOWN');
       assert.equal(error.ambiguousDescriptionResult, true);
-      assert.match(error.message, /すぐに「説明文を生成」を押し直さないでください/);
+      assert.match(error.message, /前回の結果を確認します/);
       assert.match(error.message, /写真と採寸はこの端末に残っています/);
       return true;
     },
@@ -362,6 +364,7 @@ function recoveryOptions(overrides = {}) {
     return response(200, successEnvelope(clientRequestId, '{"result":"from-saved-operation"}'));
   };
   vm.runInContext(`
+    getSelectedProductGender = () => 'men';
     getMercariServiceUrl = globalThis.__mockGetMercariServiceUrl;
     fetchListingStyleFromMac = globalThis.__mockFetchListingStyle;
     buildDescriptionSystemPrompt = globalThis.__mockBuildDescriptionSystemPrompt;
@@ -418,40 +421,46 @@ function recoveryOptions(overrides = {}) {
   );
   assert.equal(rateCalls.length, 1, '正しい429 JSONはその場で判定し、結果GETを増やさない');
 
-  // Reproduce the phone failure: upload never arrives, result says unknown.
-  // The retry must preserve both the payload and operation ID.
+  // A lost upload and a service restart look identical. Neither permits an automatic POST.
   vm.runInContext('waitForPoll_ = async () => {};', context);
   for (const initialMode of ['lost-upload', 'json-gateway', 'already-processing']) {
+    storage.clear();
     const retryCalls = [];
-    let postCount = 0;
-    let resultCount = 0;
+    let savedId = '';
+    context.confirm = () => false;
     context.__mockFetchWithTimeout = async (url, options = {}) => {
       retryCalls.push({ url: String(url), options });
-      const id = retryCalls[0].options.headers['X-Operation-Id'];
       if (options.method === 'POST') {
-        postCount++;
-        if (postCount === 1) {
-          if (initialMode === 'json-gateway') return response(502, { error: 'gateway unavailable' });
-          if (initialMode === 'already-processing') return response(202, { status: 'processing', clientRequestId: id });
-          throw new Error('Load failed');
-        }
-        // Even a lost second response must be recovered, never posted a third time.
-        throw new Error('retry response lost');
+        savedId = options.headers['X-Operation-Id'];
+        if (initialMode === 'json-gateway') return response(502, { error: 'gateway unavailable' });
+        if (initialMode === 'already-processing') return response(202, { status: 'processing', clientRequestId: savedId });
+        throw new Error('Load failed');
       }
-      resultCount++;
-      if (resultCount === 1 && initialMode !== 'already-processing') {
-        return response(200, operationEnvelope(id, 'unknown'));
-      }
-      if (resultCount === 2) return response(200, operationEnvelope(id, 'processing'));
-      return response(200, successEnvelope(id, 'recovered-after-upload'));
+      return response(200, operationEnvelope(savedId, 'unknown'));
     };
-    assert.equal(await hooks.callDescriptionAi([{ mediaType: 'image/jpeg', base64: 'YWJj' }]), 'recovered-after-upload');
-    const posts = retryCalls.filter(call => call.options.method === 'POST');
-    assert.equal(posts.length, initialMode === 'already-processing' ? 1 : 2);
-    for (const post of posts) {
-      assert.equal(post.options.headers['X-Operation-Id'], posts[0].options.headers['X-Operation-Id']);
-      assert.equal(post.options.body, posts[0].options.body);
-    }
+    await assert.rejects(hooks.callDescriptionAi([{ mediaType: 'image/jpeg', base64: 'YWJj' }]),
+      error => error.code === 'DESCRIPTION_RESULT_UNKNOWN');
+    assert.equal(retryCalls.filter(call => call.options.method === 'POST').length, 1);
+    const saved = JSON.parse(storage.get('mercari_pending_description_operations_v1'));
+    assert.equal(saved[0].operationId, savedId);
+    assert.equal(saved[0].fingerprint.length, 64);
+    assert.ok(!JSON.stringify(saved).includes('YWJj'), 'receipts contain no photos');
+
+    // Another tap (even after a service restart) is GET-only unless explicitly approved.
+    retryCalls.length = 0;
+    await assert.rejects(hooks.callDescriptionAi([{ mediaType: 'image/jpeg', base64: 'YWJj' }]),
+      error => error.code === 'DESCRIPTION_RESULT_UNKNOWN');
+    assert.equal(retryCalls.filter(call => call.options.method === 'POST').length, 0);
+    assert.equal(JSON.parse(storage.get('mercari_pending_description_operations_v1'))[0].operationId, savedId);
+
+    // Recover the exact original result, with no duplicate provider call.
+    context.__mockFetchWithTimeout = async (url, options = {}) => {
+      assert.notEqual(options.method, 'POST');
+      assert.equal(new URL(url).searchParams.get('operationId'), savedId);
+      return response(200, successEnvelope(savedId, 'recovered-original'));
+    };
+    assert.equal(await hooks.callDescriptionAi([{ mediaType: 'image/jpeg', base64: 'YWJj' }]), 'recovered-original');
+    assert.equal(JSON.parse(storage.get('mercari_pending_description_operations_v1')).length, 0);
   }
 
   for (const mode of ['unknown', 'mismatch', 'unauthorized']) {
@@ -464,7 +473,7 @@ function recoveryOptions(overrides = {}) {
         ...recoveryOptions(), retrySubmission: async () => { retries++; },
       },
     ), error => error.code === 'DESCRIPTION_RESULT_UNKNOWN');
-    assert.equal(retries, mode === 'unknown' ? 1 : 0, '再送は一致したunknownに対して一回のみ');
+    assert.equal(retries, 0, 'unknownは未受付の証拠ではないため自動再送しない');
   }
 
   console.log(JSON.stringify({
@@ -476,7 +485,7 @@ function recoveryOptions(overrides = {}) {
     processingFailureRecovery: true,
     ambiguousResultGuard: true,
     operationIdMatch: true,
-    version: 'v20260919a',
+    version: 'v20260919b',
   }));
 })().catch(error => {
   console.error(error);

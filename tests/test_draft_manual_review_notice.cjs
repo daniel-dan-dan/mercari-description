@@ -8,7 +8,7 @@ const warning = '【要確認】ブランドは自動選択できなかったた
 const receiptKey = 'mercari_pending_draft_operation';
 const source = ['catalog-data.js', 'app.js'].map(file => fs.readFileSync(file, 'utf8')).join('\n');
 
-function harness({ route, linked, manualReviewFields = ['brand'], manualCategory = false, needsReview = false }) {
+function harness({ route, linked, manualReviewFields = ['brand'], manualCategory = false, needsReview = false, inventoryReview = false }) {
   const nodes = new Map();
   const get = id => {
     if (!nodes.has(id)) nodes.set(id, { value: '', hidden: false, disabled: false, dataset: {}, textContent: '',
@@ -31,7 +31,7 @@ function harness({ route, linked, manualReviewFields = ['brand'], manualCategory
       const data = method === 'POST' && route === 'normal'
         ? { ok: true, operationId, status: 'pending', job_id: 'manual-review-fixture' }
         : { ok: true, operationId, status: needsReview ? 'needs_review' : 'done', manualReviewFields,
-          message: '下書き保存完了。' + warning, inventoryLink: { status: linked ? 'pending_listing' : 'unlinked' } };
+          message: '下書き保存完了。' + warning, inventoryLink: { status: inventoryReview ? 'needs_review' : (linked ? 'pending_listing' : 'unlinked') } };
       return { ok: true, status: 200, text: async () => JSON.stringify(data) };
     },
   };
@@ -85,6 +85,14 @@ function harness({ route, linked, manualReviewFields = ['brand'], manualCategory
       ctx.MercariAppTestHooks.updateListingWorkflow_();
       assert.ok(get('draft-status').textContent.includes(warning));
     }
+  }
+  for (const route of ['normal', 'post_done', 'resume']) {
+    const { ctx, get, storage } = harness({ route, linked: true, inventoryReview: true });
+    await ctx.MercariAppTestHooks.saveDraft();
+    assert.match(get('draft-status').textContent, /【要確認】在庫連携/);
+    assert.match(get('draft-status').textContent, /再保存は不要/);
+    assert.ok(get('draft-status').textContent.includes(warning));
+    assert.equal(storage.has(receiptKey), false, 'save is confirmed even if inventory linking needs review');
   }
   for (const manualReviewFields of [undefined, null, [], ['size'], 'brand', ['Brand']]) {
     const fields = manualReviewFields === undefined ? [] : manualReviewFields;

@@ -16,6 +16,7 @@ const MERCARI_PENDING_DEVICE_ID_KEY = 'mercari_pending_device_id_v1';
 const MERCARI_PENDING_REVOKE_IDS_KEY = 'mercari_pending_revoke_device_ids_v1';
 const MAC_SERVICE_URL_CACHE_KEY = 'mercari_mac_service_url_cache';
 const DRAFT_OPERATION_STORAGE_KEY = 'mercari_pending_draft_operation';
+const DESCRIPTION_OPERATION_STORAGE_KEY = 'mercari_pending_description_operations_v1';
 const OFFICIAL_GAS_URL = String(
   globalThis.MercariPublicConfig?.gasUrl
   || 'https://script.google.com/macros/s/AKfycbwYfwDG7Kqplk2oVeX7kF_gsAKTlK087ToE4LGp5R7PglTFMARP2lrA6ZV9m3MD0LEs/exec'
@@ -2266,13 +2267,9 @@ const SYSTEM_PROMPT = `あなたはメルカリ出品のプロです。
 2. item — 商品名・アイテム名（テーラードジャケット、トレンチコート、電動工具、生活用品など）
 3. tag_size — 衣類や靴の場合はタグ表記のサイズ（S/M/L/XL/46/48等）。サイズ表記がない商品は "---"
 4. color — カラー。カタカナ＋漢字のペアで（例: "ネイビー 紺色"）
-   - 暗い色は特に慎重に判断すること:
-     * 黒に見えても、わずかに青みがあれば「ネイビー 紺色」
-     * 黒に見えても、わずかに緑みがあれば「カーキ 深緑色」
-     * 黒に見えても、わずかに茶みがあれば「ダークブラウン こげ茶色」
-     * 完全な黒（青・緑・茶の色味が全くない）のみ「ブラック 黒」
-   - 複数枚の写真があれば、光の加減で色が変わるため全体の印象で判断
-   - 迷ったら「黒っぽい」より「ネイビー 紺色」を優先（メルカリでは紺色の方がクリック率が高い傾向）
+   - 写真とタグで確認できる色を記載し、売れやすさを理由に色を変えない
+   - 暗い色や照明の色かぶりは慎重に扱い、複数枚の写真を比較する
+   - 黒・紺などを区別できない場合は断定せず "---" とする。訴求文・商品名でも色を推測しない
 5. material — 素材（タグから読み取る。表地/裏地がある場合は分ける。読み取れなければ "---"）
 6. condition — 状態。ダメージがなければ "目立った傷や汚れのない美品です。詳細は写真をご確認ください"。ダメージがあれば具体的に記載
 7. appeal — 商品の特徴・訴求ポイント2〜3文。以下を自然に含める:
@@ -2450,7 +2447,9 @@ function validateAiResponseData_(data) {
   const missing = AI_REQUIRED_STRING_FIELDS.filter(field =>
     typeof data[field] !== 'string' || !data[field].trim()
   );
-  if (!Array.isArray(data.title_keywords) || !data.title_keywords.length) {
+  if (!Array.isArray(data.title_keywords) || !data.title_keywords.length
+    || data.title_keywords.length > 5
+    || data.title_keywords.some(word => typeof word !== 'string' || !word.trim())) {
     missing.push('title_keywords');
   }
   if (missing.length) {
@@ -3239,7 +3238,6 @@ async function pollDescriptionOperationResult_(
     maxConsecutiveNetworkErrors = DESCRIPTION_RESULT_MAX_CONSECUTIVE_ERRORS,
     onStatus,
     refreshUrl,
-    retrySubmission,
     waitFn = waitForPoll_,
     nowFn = Date.now,
   } = {},
@@ -3247,7 +3245,6 @@ async function pollDescriptionOperationResult_(
   const startedAt = nowFn();
   let currentTunnelUrl = normalizeMacServiceUrl_(initialTunnelUrl) || initialTunnelUrl;
   let consecutiveNetworkErrors = 0;
-  let submissionRetried = false;
 
   while (true) {
     let outcome;
@@ -3286,22 +3283,8 @@ async function pollDescriptionOperationResult_(
       continue;
     }
 
-    // Only an exact, explicit unknown response permits one same-ID upload retry.
-    // The server reserves the ID before reading the body and deduplicates it.
-    if (outcome.status === 'unknown' && !outcome.reason
-        && matchesDescriptionOperationId_(outcome.data, clientRequestId)
-        && !submissionRetried && typeof retrySubmission === 'function'
-        && nowFn() - startedAt < timeoutMs) {
-      submissionRetried = true;
-      onStatus?.('写真の送信が届いていないため、同じ受付IDで再送しています...');
-      try {
-        await retrySubmission(currentTunnelUrl);
-      } catch (_) {
-        // A lost retry response is also recovered through the same result ID.
-      }
-      await waitFn(intervalMs);
-      continue;
-    }
+    // Unknown can also mean the service restarted or the result expired.
+    // A missing result is never evidence that generation was not charged.
     if (outcome.status !== 'processing') {
       return { ...outcome, tunnelUrl: currentTunnelUrl };
     }
@@ -3329,7 +3312,7 @@ async function findDescriptionFailureViaHealth_(tunnelUrl, clientRequestId) {
 function makeDescriptionAmbiguousError_(originalError, reason = 'unknown') {
   const error = new Error(
     'AI生成の最終結果を確認できませんでした。Macで処理が続いている可能性があるため、'
-    + 'すぐに「説明文を生成」を押し直さないでください。入力した写真と採寸はこの端末に残っています。'
+    + '同じ写真で「説明文を生成」を押すと、前回の結果を確認します。写真と採寸はこの端末に残っています。'
   );
   error.code = 'DESCRIPTION_RESULT_UNKNOWN';
   error.ambiguousDescriptionResult = true;
@@ -3342,7 +3325,7 @@ async function recoverDescriptionNetworkFailure_(
   tunnelUrl,
   clientRequestId,
   originalError,
-  { onStatus, refreshUrl, retrySubmission, pollOptions = {} } = {},
+  { onStatus, refreshUrl, pollOptions = {} } = {},
 ) {
   let outcome = null;
   let recoveryError = null;
@@ -3351,7 +3334,6 @@ async function recoverDescriptionNetworkFailure_(
       ...pollOptions,
       onStatus,
       refreshUrl,
-      retrySubmission,
     });
   } catch (error) {
     recoveryError = error;
@@ -4025,82 +4007,115 @@ async function refreshListingStyleFromMac() {
   }
 }
 
-async function callDescriptionAi(images, onChunk) {
-  const tunnelUrl = await getMercariServiceUrl((message) => {
-    if (onChunk) onChunk(message);
-  });
-  const listingStylePrompt = await fetchListingStyleFromMac(tunnelUrl, {
-    statusCallback: onChunk,
-  });
+function readDescriptionOperations_() {
+  try {
+    const records = JSON.parse(localStorage.getItem(DESCRIPTION_OPERATION_STORAGE_KEY) || '[]');
+    if (!Array.isArray(records) || records.some(record => !record
+      || typeof record.operationId !== 'string' || !record.operationId
+      || !/^[a-f0-9]{64}$/.test(record.fingerprint))) throw new Error('invalid receipts');
+    return records;
+  } catch (_) {
+    throw new Error('前回の生成受付記録を読めないため送信しません。端末の保存状態を確認してください。');
+  }
+}
 
+function writeDescriptionOperations_(records) {
+  const serialized = JSON.stringify(records);
+  try {
+    localStorage.setItem(DESCRIPTION_OPERATION_STORAGE_KEY, serialized);
+    if (localStorage.getItem(DESCRIPTION_OPERATION_STORAGE_KEY) !== serialized) throw new Error('readback');
+  } catch (_) {
+    throw new Error('生成受付番号を端末に保存できないため送信しません。空き容量を確認してください。');
+  }
+}
+
+function clearDescriptionOperation_(operationId) {
+  writeDescriptionOperations_(readDescriptionOperations_().filter(record => record.operationId !== operationId));
+}
+
+async function callDescriptionAi(images, onChunk) {
+  const work = () => callDescriptionAiWithReceipt_(images, onChunk);
+  // Serialise receipt creation across tabs where Web Locks is available.
+  return globalThis.navigator?.locks?.request
+    ? navigator.locks.request('mercari-description-generation', { ifAvailable: true }, lock => {
+      if (!lock) throw new Error('別の画面でAI生成または結果確認を実行中です。完了をお待ちください。');
+      return work();
+    })
+    : work();
+}
+
+async function callDescriptionAiWithReceipt_(images, onChunk) {
   const aiImages = images.slice(0, MAX_AI_PHOTOS).map(img => ({
-    mediaType: img.mediaType,
-    base64: img.base64,
+    mediaType: img.mediaType, base64: img.base64,
   }));
-  const omittedCount = Math.max(0, images.length - aiImages.length);
-  const payload = {
-    images: aiImages,
-    systemPrompt: buildDescriptionSystemPrompt(listingStylePrompt),
+  // Hash every image byte. Style refreshes and app updates must not orphan a receipt.
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({
+    images: aiImages, audience: getSelectedProductGender(),
+  })));
+  const fingerprint = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  let receipt = readDescriptionOperations_().find(record => record.fingerprint === fingerprint);
+  const tunnelUrl = await getMercariServiceUrl(message => onChunk?.(message));
+  const recover = originalError => recoverDescriptionNetworkFailure_(tunnelUrl, receipt.operationId, originalError, {
+    onStatus: onChunk,
+    refreshUrl: () => getMercariServiceUrl(message => onChunk?.(message)),
+  });
+  const finish = data => {
+    const result = completeDescriptionAiResponse_(data, onChunk);
+    clearDescriptionOperation_(receipt.operationId);
+    return result;
   };
+  const handleFailure = error => {
+    // Only a definitive server failure permits another paid generation.
+    if (!error.ambiguousDescriptionResult && error.requestId) clearDescriptionOperation_(receipt.operationId);
+    throw error;
+  };
+  if (receipt) {
+    onChunk?.('前回の生成結果を確認中です。写真は再送しません...');
+    try {
+      return finish(await recover(new Error('前回の生成結果を確認しています')));
+    } catch (error) {
+      // Explicit user choice is needed only when the server has lost its receipt.
+      if (error.ambiguousDescriptionResult && error.reason === 'unknown'
+        && confirm('前回の生成結果をMacから取得できませんでした。前回分が課金済みの可能性があります。追加のAPI料金がかかる新しい生成を開始しますか？')) {
+        clearDescriptionOperation_(receipt.operationId);
+        receipt = null;
+      } else {
+        return handleFailure(error);
+      }
+    }
+  }
+
+  const listingStylePrompt = await fetchListingStyleFromMac(tunnelUrl, { statusCallback: onChunk });
+  const payload = { images: aiImages, systemPrompt: buildDescriptionSystemPrompt(listingStylePrompt) };
   const payloadBytes = estimateJsonBytes(payload);
   if (payloadBytes > MAX_AI_PAYLOAD_BYTES) {
     throw new Error(`写真データが大きすぎます。現在約${Math.ceil(payloadBytes / 1024 / 1024)}MBです。写真を減らすか、合成してから再実行してください。`);
   }
-
-  if (onChunk) {
-    const suffix = omittedCount ? `（AI分析は先頭${MAX_AI_PHOTOS}枚まで。残り${omittedCount}枚は下書き保存には残ります）` : '';
-    onChunk(`AIが画像を分析中...${suffix}`);
-  }
-
-  const clientRequestId = createOperationId_('describe');
-  const requestOptions = {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Operation-Id': clientRequestId,
-    },
-    body: JSON.stringify(payload),
-  };
-  const recoverResult = async originalError => {
-    const recovered = await recoverDescriptionNetworkFailure_(
-      tunnelUrl,
-      clientRequestId,
-      originalError,
-      {
-        onStatus: onChunk,
-        refreshUrl: () => getMercariServiceUrl((message) => onChunk?.(message)),
-        retrySubmission: url => fetchWithTimeout(`${url}/describe`, requestOptions, 120000),
-      },
-    );
-    return completeDescriptionAiResponse_(recovered, onChunk);
-  };
-  let res;
+  receipt = { operationId: createOperationId_('describe'), fingerprint, createdAt: Date.now() };
+  writeDescriptionOperations_([receipt, ...readDescriptionOperations_()]);
+  const omittedCount = Math.max(0, images.length - aiImages.length);
+  onChunk?.(`AIが画像を分析中...${omittedCount ? `（AI分析は先頭${MAX_AI_PHOTOS}枚まで。残り${omittedCount}枚は下書き保存には残ります）` : ''}`);
+  let res, data;
   try {
-    res = await fetchWithTimeout(
-      `${tunnelUrl}/describe`,
-      requestOptions,
-      120000
-    );
-  } catch (err) {
-    return recoverResult(err);
-  }
-
-  let data;
-  try {
+    res = await fetchWithTimeout(`${tunnelUrl}/describe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Operation-Id': receipt.operationId },
+      body: JSON.stringify(payload),
+    }, 120000);
     data = await readJsonResponse(res, 'AI生成');
-  } catch (err) {
-    return recoverResult(err);
+  } catch (error) {
+    try { return finish(await recover(error)); } catch (failure) { return handleFailure(failure); }
   }
-  if (!res.ok) {
-    if ([408, 502, 503, 504].includes(res.status) && !data.requestId && !data.code) {
-      return recoverResult(new Error('写真の送信経路で一時的な通信エラーが発生しました'));
+  try {
+    if ((!res.ok && !data.requestId && !data.code)
+      || (res.status === 202 && data.status === 'processing')) {
+      return finish(await recover(new Error('AI生成の結果を確認しています')));
     }
-    throw makeDescriptionApiError_(data, res.status);
+    if (!res.ok || data.ok === false) throw makeDescriptionApiError_(data, res.status);
+    return finish(data);
+  } catch (error) {
+    return handleFailure(error);
   }
-  if (res.status === 202 && data.status === 'processing') {
-    return recoverResult(new Error('同じ受付IDのAI生成を確認しています'));
-  }
-  return completeDescriptionAiResponse_(data, onChunk);
 }
 
 function completeDescriptionAiResponse_(data, onChunk) {
@@ -4654,7 +4669,7 @@ async function generateDescription() {
   } catch (err) {
     restoreGenerationUiState_(generationUiState);
     console.error(err);
-    showStatus('status', '❌ 生成失敗: ' + err.message, 'error');
+    showStatus('status', (err.ambiguousDescriptionResult ? '生成結果を確認中: ' : '❌ 生成失敗: ') + err.message, err.ambiguousDescriptionResult ? 'warn' : 'error');
     if (temporaryDraftId) {
       await finalizeTemporaryDraftGeneration_(
         temporaryDraftId,
@@ -8535,7 +8550,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260919a</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260919b</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -8546,7 +8561,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919a</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919b</span>`;
 }
 
 function renderComposeStep() {
@@ -9226,7 +9241,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260919a</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260919b</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -9290,7 +9305,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919a</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919b</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -9362,7 +9377,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919a</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919b</span>`;
       closeImageCompose();
     }
   });
@@ -9946,6 +9961,10 @@ async function saveDraft() {
     draftStatus.textContent = inventoryState.uuid
       ? '下書き保存が完了しました。出品確定後、「価格改定」の最新取得で在庫連携を確認します。'
       : '下書き保存が完了しました。在庫未選択のため自動連携対象外です。メルカリアプリで確認してください。';
+    if (completedDraftData?.inventoryLink?.status === 'needs_review') {
+      draftStatus.textContent = '下書き保存が完了しました。'
+        + ' 【要確認】在庫連携の確認が必要です。「価格改定」の在庫連携状況を確認してください。下書きの再保存は不要です。';
+    }
     if (!mercariCategoryOption.path.length) {
       draftStatus.textContent += ' カテゴリ・ブランド・必要なサイズは、メルカリの下書きで選択してください。';
     }
