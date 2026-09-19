@@ -1176,13 +1176,6 @@ async function init() {
     scheduleSave();
     updateDraftChecklist();
   });
-  el('inventory-reference-input').addEventListener('input', event => {
-    setInventoryReference_(event.target.value, {
-      label: '在庫を指定済み',
-      meta: '在庫管理から貼り付けた情報を使用します',
-      showReference: true,
-    });
-  });
   el('inventory-clear-btn').addEventListener('click', () => clearInventorySelection_());
   el('inventory-candidates-btn').addEventListener('click', () => {
     loadInventoryCandidates_({ force: true }).catch(() => {});
@@ -6800,7 +6793,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920k</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920l</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -6811,7 +6804,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920k</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920l</span>`;
 }
 
 function renderComposeStep() {
@@ -7491,7 +7484,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920k</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920l</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -7555,7 +7548,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920k</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920l</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -7627,7 +7620,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920k</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920l</span>`;
       closeImageCompose();
     }
   });
@@ -7759,7 +7752,7 @@ function updateDraftChecklist() {
     { ok: true, label: mercariBrand ? `ブランド: ${mercariBrand}${manualCategoryAfterDraft ? '（カテゴリ選択後に手動選択）' : ''}` : 'ブランド: 空欄（見つからない場合はOK）' },
     { ok: hasRequiredSize, shortLabel: 'サイズ', target: 'm-size', label: mercariSize ? `サイズ: ${mercariSize}` : (sizeRequired ? 'サイズを確認してください' : 'サイズ: 不要/手動') },
     {
-      ok: inventoryState.valid, shortLabel: '在庫情報', target: 'inventory-reference-input',
+      ok: inventoryState.valid, shortLabel: '在庫情報', target: 'inventory-candidates-btn',
       kind: inventoryState.empty ? 'neutral' : (inventoryState.valid ? 'ok' : 'ng'),
       label: inventoryState.empty
         ? '在庫未選択: 自動連携対象外（下書き保存はできます）'
