@@ -3953,3 +3953,7 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 
 .inventory-group-label { font-size:12px;font-weight:700;color:#78616b;padding:7px 2px 1px; }
 .inventory-candidate-item.recommended { border-color:#bb7890;background:#fff6fa; }
+
+.settings-header { justify-content: flex-start; gap: 12px; }
+#setup-screen .settings-header h1 { margin: 0; }
+.settings-header .btn { width: auto; flex: 0 0 auto; }

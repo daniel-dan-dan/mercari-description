@@ -90,10 +90,10 @@ assert.match(pairJs, /value\.length <= 512/);
 assert.match(pairJs, /\^\[A-Za-z0-9\._~-\]\+\$/);
 assert.doesNotMatch(pairHtml, /<script(?:\s[^>]*)?>\s*(?!<)/);
 assert.match(pairHtml, /Content-Security-Policy/);
-assert.match(serviceWorker, /mercari-description-v20260920f/);
-assert.match(serviceWorker, /styles\.css\?v=20260920f/);
-assert.match(serviceWorker, /catalog-data\.js\?v=20260920f/);
-assert.match(serviceWorker, /app\.js\?v=20260920f/);
+assert.match(serviceWorker, /mercari-description-v20260920g/);
+assert.match(serviceWorker, /styles\.css\?v=20260920g/);
+assert.match(serviceWorker, /catalog-data\.js\?v=20260920g/);
+assert.match(serviceWorker, /app\.js\?v=20260920g/);
 assert.doesNotMatch(serviceWorker, /ignoreSearch:\s*true/, 'offline lookup must not mix differently versioned assets');
 assert.match(serviceWorker, /caches\.open\(CACHE_NAME\)/);
 assert.match(serviceWorker, /event\.request\.mode === 'navigate'/);
@@ -107,5 +107,5 @@ console.log(JSON.stringify({
   offlineVersionedAssets: true,
   likesDecreaseVisible: true,
   urlSafety: true,
-  version: 'v20260920f',
+  version: 'v20260920g',
 }));
