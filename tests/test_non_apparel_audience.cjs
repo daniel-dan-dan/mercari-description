@@ -207,7 +207,7 @@ assert.match(indexHtml, /name="product-gender" value="other"/);
 assert.match(indexHtml, /id="product-gender-note"/);
 assert.match(indexHtml, /工具などアパレル以外として生成します/);
 assert.match(indexHtml, /id="m-size-field"/);
-assert.match(indexHtml, /v20260920e \/ UI改善・セキュリティ強化/);
+assert.match(indexHtml, /v20260920f \/ UI改善・セキュリティ強化/);
 
 assert.match(source, /syncBroadCategoryForProductGenderChange_\(input\.value\)/);
 assert.match(source, /el\('category'\)\.value = isNonApparelProductAudience\(\) \? 'other' : ''/);
@@ -222,15 +222,31 @@ const styles = fs.readFileSync('styles.css', 'utf8');
 assert.match(styles, /\.gender-segmented\s*\{[\s\S]*grid-template-columns:\s*repeat\(3/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260920e/);
+assert.match(serviceWorker, /mercari-description-v20260920f/);
 
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
-assert.match(pairHtml, /styles\.css\?v=20260920e/);
+assert.match(pairHtml, /styles\.css\?v=20260920f/);
 
 console.log(JSON.stringify({
   ok: true,
   audiences: ['men', 'women', 'other'],
   nonApparelCategory: 'manual-after-draft',
   nonApparelSize: 'not-required',
-  version: 'v20260920e',
+  version: 'v20260920f',
 }));
+
+// Empty measurements must never produce placeholder rows or empty suit sections.
+for (const category of ['suit','tops','outer','legacyUpper','bottoms','bag','tie','other']) {
+  assert.equal(hooks.formatMeasurements({category,values:{}}), '');
+}
+assert.equal(hooks.formatMeasurements({category:'tops',values:{shoulder:' ',chest:'52',sleeve:'---',length:'65',yuki:''}}), '身幅：52cm\n着丈：65cm');
+assert.equal(hooks.formatMeasurements({category:'suit',values:{j_chest:'50',p_waist:'40'}}), 'ジャケット\n身幅：50cm\nパンツ\nウエスト：40cm');
+assert.equal(hooks.formatMeasurements({category:'other',values:{other_height:'20',other_width:'',other_depth:null}}), '縦：20cm');
+for (const tag_size of [undefined,'','   ','---']) {
+  const text=hooks.buildDescription({tag_size},'身幅：52cm','','men');
+  assert.match(text,/【サイズ】（平置き採寸）\n身幅：52cm/);
+  assert.doesNotMatch(text,/【サイズ】---/);
+}
+const empty=hooks.buildDescription({},'','','other');
+assert.doesNotMatch(empty,/【寸法】/);
+console.log('PASS empty size labels, omitted measurement rows and empty suit sections');

@@ -2034,25 +2034,35 @@ function collectMeasurements() {
 function formatMeasurements(m) {
   if (!m) return '';
   const cat = m.category;
-  const v = m.values;
-  const line = (label, val) => `${label}：${val || '---'}cm`;
+  const v = m.values || {};
+  const line = (label, val) => {
+    const value = String(val ?? '').trim();
+    return !value || /^[-ー－—–]+$/.test(value) ? '' : `${label}：${value}cm`;
+  };
+  const section = (label, lines) => {
+    const filled = lines.filter(Boolean);
+    return filled.length ? [label, ...filled].join('\n') : '';
+  };
   if (cat === 'suit') {
     return [
-      'ジャケット',
-      line('肩幅', v.j_shoulder),
-      line('身幅', v.j_chest),
-      line('袖丈', v.j_sleeve),
-      line('着丈', v.j_length),
-      'パンツ',
-      line('ウエスト', v.p_waist),
-      line('股下', v.p_inseam),
-      line('股上', v.p_rise),
-      line('裾幅', v.p_hem),
-      'ベスト',
-      line('肩幅', v.v_shoulder),
-      line('身幅', v.v_chest),
-      line('着丈', v.v_length),
-    ].join('\n');
+      section('ジャケット', [
+        line('肩幅', v.j_shoulder),
+        line('身幅', v.j_chest),
+        line('袖丈', v.j_sleeve),
+        line('着丈', v.j_length),
+      ]),
+      section('パンツ', [
+        line('ウエスト', v.p_waist),
+        line('股下', v.p_inseam),
+        line('股上', v.p_rise),
+        line('裾幅', v.p_hem),
+      ]),
+      section('ベスト', [
+        line('肩幅', v.v_shoulder),
+        line('身幅', v.v_chest),
+        line('着丈', v.v_length),
+      ]),
+    ].filter(Boolean).join('\n');
   }
   if (['tops', 'outer', 'legacyUpper'].includes(cat)) {
     const lines = [
@@ -2062,7 +2072,7 @@ function formatMeasurements(m) {
       line('着丈', v.length),
     ];
     if (v.yuki !== undefined) lines.push(line('ゆき丈', v.yuki));
-    return lines.join('\n');
+    return lines.filter(Boolean).join('\n');
   }
   if (cat === 'bottoms') {
     return [
@@ -2070,7 +2080,7 @@ function formatMeasurements(m) {
       line('股下', v.inseam),
       line('股上', v.rise),
       line('裾幅', v.hem),
-    ].join('\n');
+    ].filter(Boolean).join('\n');
   }
   if (cat === 'bag') {
     return [
@@ -2078,20 +2088,20 @@ function formatMeasurements(m) {
       line('横', v.bag_width),
       line('マチ', v.bag_depth),
       line('持ち手', v.bag_handle),
-    ].join('\n');
+    ].filter(Boolean).join('\n');
   }
   if (cat === 'tie') {
     return [
       line('長さ', v.tie_length),
       line('大剣幅', v.tie_blade_width),
-    ].join('\n');
+    ].filter(Boolean).join('\n');
   }
   if (cat === 'other') {
     return [
       line('縦', v.other_height),
       line('横', v.other_width),
       line('高さ', v.other_depth),
-    ].join('\n');
+    ].filter(Boolean).join('\n');
   }
   return '';
 }
@@ -4114,18 +4124,17 @@ function buildDescription(
   productGender = getSelectedProductGender(),
 ) {
   const productName = buildDescriptionProductName(aiData, mercariTitle);
-  const tagSize = aiData.tag_size || '---';
+  const safeTagSize = sanitizeAiTagSize_(aiData.tag_size);
+  const tagSize = safeTagSize === '---' ? '' : safeTagSize;
   const color = aiData.color || '---';
   const material = aiData.material || '---';
   const condition = aiData.condition || '---';
   const appeal = polishAppealText_(aiData.appeal);
   const nonApparel = isNonApparelProductAudience(productGender);
   const sizeBlock = nonApparel
-    ? `【寸法】
-${measurementText || '---'}`
-    : `【サイズ】${tagSize}（平置き採寸）
-${measurementText}
-※多少の誤差はご了承ください。`;
+    ? (measurementText ? `【寸法】\n${measurementText}` : '')
+    : [`【サイズ】${tagSize}（平置き採寸）`, measurementText,
+      measurementText ? '※多少の誤差はご了承ください。' : ''].filter(Boolean).join('\n');
   const materialLabel = nonApparel ? '素材・仕様' : '素材';
   const closingBlock = nonApparel
     ? `✅即購入OKです！
@@ -6751,7 +6760,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920e</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920f</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -6762,7 +6771,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920e</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920f</span>`;
 }
 
 function renderComposeStep() {
@@ -7442,7 +7451,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920e</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920f</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -7506,7 +7515,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920e</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920f</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -7578,7 +7587,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920e</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920f</span>`;
       closeImageCompose();
     }
   });
