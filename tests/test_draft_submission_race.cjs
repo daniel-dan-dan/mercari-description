@@ -68,5 +68,27 @@ function harness() {
   get('price-input').value = '9800'; ctx.MercariAppTestHooks.updateListingWorkflow_();
   assert.equal(get('draft-status').hidden, true);
   assert.equal(stored.get('mercari_pending_draft_operation'), 'unrelated-receipt-marker');
+  // Cancellation during initial discovery releases UI and never sends photos.
+  const stopped = harness();
+  stopped.ctx.AbortController = AbortController;
+  stopped.ctx.controller = new AbortController();
+  let finishDiscovery;
+  stopped.ctx.pendingDiscovery = new Promise(resolve => { finishDiscovery = resolve; });
+  stopped.ctx.sent = 0;
+  vm.runInContext(`
+    attachJobWaitCancel_ = () => ({ signal: controller.signal, cleanup() {} });
+    discoverMercariServiceUrl_ = () => pendingDiscovery;
+    startDraftJob_ = async () => { sent++; throw Error('must not submit'); };
+  `, stopped.ctx);
+  const cancelledSave = stopped.ctx.MercariAppTestHooks.saveDraft();
+  stopped.ctx.controller.abort();
+  await cancelledSave;
+  assert.equal(stopped.get('draft-btn').disabled, false);
+  assert.equal(stopped.get('title-text').disabled, false);
+  assert.equal(stopped.get('title-text').value, '商品A');
+  assert.equal(stopped.ctx.sent, 0);
+  finishDiscovery('https://late.trycloudflare.com');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(stopped.ctx.sent, 0, 'late discovery must not submit cancelled draft');
   console.log('PASS deferred draft URL race: frozen A payload, guarded switches/reset/generation, restored locks, stale feedback cleared without receipt loss');
 })().catch(error => { console.error(error); process.exitCode = 1; });

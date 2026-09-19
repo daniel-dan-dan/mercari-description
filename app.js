@@ -3467,7 +3467,7 @@ function isTransientServiceDiscoveryError_(error) {
     || /GAS URLエラー \(5\d\d\)/i.test(message);
 }
 
-async function fetchTunnelUrlFromGasOnce_(gasUrl) {
+async function fetchTunnelUrlFromGasOnce_(gasUrl, timeoutMs = 10000) {
   const authToken = getApiAuthToken();
   if (!authToken) throw new Error('この端末は未接続です。設定画面で接続してください。');
   const gasResp = await fetchWithTimeout(
@@ -3478,7 +3478,7 @@ async function fetchTunnelUrlFromGasOnce_(gasUrl) {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: 'getTunnelUrl', auth_token: authToken }),
     },
-    10000
+    timeoutMs
   );
   const text = await gasResp.text();
   let gasData;
@@ -3502,7 +3502,7 @@ async function fetchTunnelUrlFromGas(gasUrl, { onRetry } = {}) {
   let lastError = null;
   for (let attempt = 1; attempt <= GAS_DISCOVERY_MAX_ATTEMPTS; attempt += 1) {
     try {
-      return await fetchTunnelUrlFromGasOnce_(gasUrl);
+      return await fetchTunnelUrlFromGasOnce_(gasUrl, attempt * 10000);
     } catch (error) {
       lastError = error;
       if (!isTransientServiceDiscoveryError_(error) || attempt >= GAS_DISCOVERY_MAX_ATTEMPTS) {
@@ -3596,27 +3596,39 @@ async function discoverMercariServiceUrl_(statusCallback) {
   throw new Error(`MacサービスURLを取得できませんでした。${errors.join(' / ')}`);
 }
 
-async function getMercariServiceUrl(statusCallback) {
-  if (macServiceDiscoveryPromise) {
-    statusCallback?.('Macサービス接続の確認待ち...');
-    return macServiceDiscoveryPromise;
-  }
-  const discovery = discoverMercariServiceUrl_(statusCallback);
-  macServiceDiscoveryPromise = discovery;
-  try {
-    return await discovery;
-  } finally {
-    if (macServiceDiscoveryPromise === discovery) {
-      macServiceDiscoveryPromise = null;
-    }
-  }
+function waitForServiceDiscovery_(discovery, signal) {
+  if (!signal) return discovery;
+  return new Promise((resolve, reject) => {
+    const cancelled = () => { cleanup(); reject(makeDraftWaitCancelledError_()); };
+    const cleanup = () => signal.removeEventListener('abort', cancelled);
+    // A caller can stop waiting without cancelling another caller's shared,
+    // read-only discovery. Always observe settlement to avoid orphan rejections.
+    discovery.then(value => { cleanup(); resolve(value); }, error => { cleanup(); reject(error); });
+    if (signal.aborted) { cancelled(); return; }
+    signal.addEventListener('abort', cancelled, { once: true });
+  });
 }
 
-function createMacServiceUrlRefresher_(statusCallback) {
-  return async () => {
-    clearCachedMacServiceUrl_();
-    return getMercariServiceUrl(statusCallback);
-  };
+async function getMercariServiceUrl(statusCallback, { signal } = {}) {
+  if (signal?.aborted) throw makeDraftWaitCancelledError_();
+  const notify = message => { if (!signal?.aborted) statusCallback?.(message); };
+  if (!macServiceDiscoveryPromise) {
+    const discovery = discoverMercariServiceUrl_(notify);
+    macServiceDiscoveryPromise = discovery;
+    const cleanup = () => {
+      if (macServiceDiscoveryPromise === discovery) macServiceDiscoveryPromise = null;
+    };
+    discovery.then(cleanup, cleanup);
+  } else {
+    notify('Macサービス接続の確認待ち...');
+  }
+  return waitForServiceDiscovery_(macServiceDiscoveryPromise, signal);
+}
+
+function createMacServiceUrlRefresher_(statusCallback, { signal } = {}) {
+  // An interrupted upload does not prove the tunnel is dead. Probe the saved
+  // address first; GAS discovery is needed only when that address fails.
+  return () => getMercariServiceUrl(statusCallback, { signal });
 }
 
 function isMercariInventoryCandidate_(candidate = {}) {
@@ -8523,7 +8535,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260913a</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260919a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -8534,7 +8546,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260913a</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919a</span>`;
 }
 
 function renderComposeStep() {
@@ -9214,7 +9226,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260913a</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260919a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -9278,7 +9290,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260913a</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919a</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -9350,7 +9362,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260913a</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919a</span>`;
       closeImageCompose();
     }
   });
@@ -9890,15 +9902,10 @@ async function saveDraft() {
       mercariCondition: el('m-condition').value,
       inventoryUuid: inventoryState.uuid,
     });
-    const tunnelUrl = await getMercariServiceUrl((message) => {
-      draftStatus.textContent = message;
-    });
-    const refreshMacServiceUrl = async () => {
-      clearCachedMacServiceUrl_();
-      return getMercariServiceUrl(message => {
-        draftStatus.textContent = message;
-      });
-    };
+    waitControl = attachJobWaitCancel_(draftStatus);
+    const reportConnectionStatus = message => { draftStatus.textContent = message; };
+    const tunnelUrl = await getMercariServiceUrl(reportConnectionStatus, { signal: waitControl.signal });
+    const refreshMacServiceUrl = createMacServiceUrlRefresher_(reportConnectionStatus, { signal: waitControl.signal });
 
     // 下書きリクエスト送信
     draftStatus.textContent = '下書き情報を送信中...';
@@ -9911,7 +9918,6 @@ async function saveDraft() {
     if (draftOperation.reused) {
       draftStatus.textContent = '前回の受付状況を確認しながら再接続中...';
     }
-    waitControl = attachJobWaitCancel_(draftStatus);
     const startedDraft = await startDraftJob_(tunnelUrl, draftPayload.payload, {
       operationId: draftOperation.operationId,
       reused: draftOperation.reused,
@@ -10068,6 +10074,7 @@ globalThis.MercariAppTestHooks = {
   cacheMacServiceUrl_,
   clearCachedMacServiceUrl_,
   isTransientServiceDiscoveryError_,
+  getMercariServiceUrl, createMacServiceUrlRefresher_, fetchTunnelUrlFromGas,
   makeDescriptionApiError_,
   matchingRecentDescriptionFailure_,
   matchesDescriptionOperationId_,

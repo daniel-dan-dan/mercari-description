@@ -58,7 +58,7 @@ assert.match(
   source,
   /const cachedUrl = getCachedMacServiceUrl_\(\);[\s\S]*await pingMacService\(cachedUrl\)[\s\S]*const errors = \[\];/,
 );
-assert.match(source, /if \(macServiceDiscoveryPromise\)[\s\S]*Macサービス接続の確認待ち/);
+assert.match(source, /Macサービス接続の確認待ち/);
 assert.match(source, /const generationUiState = captureGenerationUiState_\(\);/);
 assert.match(
   source,
@@ -66,12 +66,12 @@ assert.match(
 );
 
 const indexHtml = fs.readFileSync('index.html', 'utf8');
-assert.match(indexHtml, /v20260913a \/ UI改善・セキュリティ強化/);
-assert.match(indexHtml, /catalog-data\.js\?v=20260913a/);
-assert.match(indexHtml, /app\.js\?v=20260913a/);
+assert.match(indexHtml, /v20260919a \/ UI改善・セキュリティ強化/);
+assert.match(indexHtml, /catalog-data\.js\?v=20260919a/);
+assert.match(indexHtml, /app\.js\?v=20260919a/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260913a/);
+assert.match(serviceWorker, /mercari-description-v20260919a/);
 
 console.log(JSON.stringify({
   ok: true,
@@ -79,5 +79,5 @@ console.log(JSON.stringify({
   cachedUrlFallback: true,
   singleFlight: true,
   generationUiRestore: true,
-  version: 'v20260913a',
+  version: 'v20260919a',
 }));

@@ -476,7 +476,7 @@ function recoveryOptions(overrides = {}) {
     processingFailureRecovery: true,
     ambiguousResultGuard: true,
     operationIdMatch: true,
-    version: 'v20260913a',
+    version: 'v20260919a',
   }));
 })().catch(error => {
   console.error(error);
