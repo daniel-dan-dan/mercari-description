@@ -69,27 +69,6 @@ assert.equal(nodes.get('listing-action-bar').classList.contains('keyboard-open')
 document.activeElement = null; hooks.updateListingKeyboard_();
 assert.equal(nodes.get('listing-action-bar').classList.contains('keyboard-open'), false);
 
-ctx.rows = [
-  { itemId: 'm1', currentPrice: 24800, minPrice: 23000, autoEnabled: false, recommendation: { type: 'largeMarkdown', suggestedPrice: 21300, warnings: [] } },
-  { itemId: 'm2', currentPrice: 5000, minPrice: 3500, autoEnabled: true, recommendation: { type: 'markdown100', suggestedPrice: 4900 } },
-  { itemId: 'm3', recommendation: { type: 'keep' } }, { itemId: 'm4', recommendation: { type: 'reviewListing' } },
-  { itemId: 'm5' },
-];
-for (const [filter, ids] of [['largeMarkdown', ['m1']], ['markdown100', ['m2']], ['wait', ['m3', 'm5']], ['reviewListing', ['m4']]]) {
-  const found = vm.runInContext(`markdownRecommendationFilter = '${filter}'; filteredMarkdownRows(rows).map(r => r.itemId)`, ctx);
-  assert.deepEqual([...found], ids);
-}
-assert.deepEqual([...vm.runInContext("markdownRecommendationFilter = 'markdown100'; markdownFilterMode = 'disabled-only'; filteredMarkdownRows(rows)", ctx)], []);
-const card = hooks.renderMarkdownCard(ctx.rows[0]);
-assert.match(card, /要確認：下限を1,700円下回る案/);
-assert.ok(card.indexOf('要確認') < card.indexOf('<details'));
-assert.match(card, /<details class="markdown-history-details">/);
-const changedFloor = { ...ctx.rows[0], minPrice: 21000 };
-assert.doesNotMatch(hooks.renderMarkdownCard(changedFloor), /markdown-floor-alert/);
-const equalFloor = { ...ctx.rows[0], minPrice: 21300 };
-assert.doesNotMatch(hooks.renderMarkdownCard(equalFloor), /markdown-floor-alert/);
-assert.equal(ctx.rows[0].recommendation.suggestedPrice, 21300);
-assert.equal(ctx.rows[0].autoEnabled, false);
 // The visible fixed status always wins over a generic ready-to-save hint.
 node('draft-status', { hidden: false, textContent: '下書き保存が完了しました。' });
 vm.runInContext('listingValidation = { ok: true, items: [] }; updateListingWorkflow_()', ctx);
@@ -129,4 +108,4 @@ assert.match(html, /id="listing-action-bar"[\s\S]*id="draft-status"[\s\S]*id="dr
 assert.match(html, /<details class="listing-style-box">/);
 assert.doesNotMatch(html, /__fixture|fixture-init/);
 assert.match(fs.readFileSync('.gitignore', 'utf8'), /^tests\/ui\/$/m);
-console.log('PASS UI workflow: missing fields, details, focused navigation, generation/draft locks, keyboard, recommendation filters and floor warnings');
+console.log('PASS UI workflow: missing fields, details, focused navigation, generation/draft locks, keyboard');

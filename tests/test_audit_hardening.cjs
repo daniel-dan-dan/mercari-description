@@ -51,9 +51,6 @@ assert.throws(
   /title_keywords/,
 );
 
-assert.equal(hooks.formatMarkdownLikeDelta(3), '+3');
-assert.equal(hooks.formatMarkdownLikeDelta(0), '0');
-assert.equal(hooks.formatMarkdownLikeDelta(-2), '-2');
 
 const gasUrl = 'https://script.google.com/macros/s/AKfycbwYfwDG7Kqplk2oVeX7kF_gsAKTlK087ToE4LGp5R7PglTFMARP2lrA6ZV9m3MD0LEs/exec';
 assert.equal(hooks.normalizeGasUrl(gasUrl), gasUrl);
@@ -97,7 +94,7 @@ assert.match(
 );
 
 const refreshUrlCalls = source.match(/refreshUrl: refreshMacServiceUrl/g) || [];
-assert.ok(refreshUrlCalls.length >= 6, '長時間処理と下書き処理で接続URLを更新する');
+assert.ok(refreshUrlCalls.length >= 4, '長時間処理と下書き処理で接続URLを更新する');
 
 const indexHtml = fs.readFileSync('index.html', 'utf8');
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
@@ -109,10 +106,10 @@ assert.match(pairJs, /value\.length <= 512/);
 assert.match(pairJs, /\^\[A-Za-z0-9\._~-\]\+\$/);
 assert.doesNotMatch(pairHtml, /<script(?:\s[^>]*)?>\s*(?!<)/);
 assert.match(pairHtml, /Content-Security-Policy/);
-assert.match(serviceWorker, /mercari-description-v20260920a/);
-assert.match(serviceWorker, /styles\.css\?v=20260920a/);
-assert.match(serviceWorker, /catalog-data\.js\?v=20260920a/);
-assert.match(serviceWorker, /app\.js\?v=20260920a/);
+assert.match(serviceWorker, /mercari-description-v20260920b/);
+assert.match(serviceWorker, /styles\.css\?v=20260920b/);
+assert.match(serviceWorker, /catalog-data\.js\?v=20260920b/);
+assert.match(serviceWorker, /app\.js\?v=20260920b/);
 assert.doesNotMatch(serviceWorker, /ignoreSearch:\s*true/, 'offline lookup must not mix differently versioned assets');
 assert.match(serviceWorker, /caches\.open\(CACHE_NAME\)/);
 assert.match(serviceWorker, /event\.request\.mode === 'navigate'/);
@@ -128,5 +125,5 @@ console.log(JSON.stringify({
   researchRetry: true,
   likesDecreaseVisible: true,
   urlSafety: true,
-  version: 'v20260920a',
+  version: 'v20260920b',
 }));
