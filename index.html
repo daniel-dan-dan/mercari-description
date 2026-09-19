@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260920g">
-  <script src="public-config.js?v=20260920g"></script>
+  <link rel="stylesheet" href="styles.css?v=20260920h">
+  <script src="public-config.js?v=20260920h"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -52,13 +52,20 @@
         <p id="safety-review-status" role="status" aria-live="polite"></p>
         <div id="safety-review-content"></div>
       </details>
-      <p class="settings-version" id="settings-version">v20260920g / UI改善・セキュリティ強化</p>
+        <details class="listing-style-box">
+          <summary>過去出品の文体</summary>
+          <div class="listing-style-head">
+            <button id="listing-style-refresh-btn" class="btn small" type="button">メルカリ全件更新</button>
+          </div>
+          <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
+        </details>
+      <p class="settings-version" id="settings-version">v20260920h / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20260920g</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20260920h</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
@@ -171,17 +178,7 @@
       </details>
 
       <!-- Step 3: 生成 -->
-      <div class="step generate-step">
-        <details class="listing-style-box">
-          <summary>文体と更新の詳細</summary>
-          <div class="listing-style-head">
-            <span>過去出品の文体</span>
-            <button id="listing-style-refresh-btn" class="btn small" type="button">メルカリ全件更新</button>
-          </div>
-          <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
-        </details>
-        <p id="status" class="status" role="status" aria-live="polite" hidden></p>
-      </div>
+      <p id="status" class="status" role="status" aria-live="polite" hidden></p>
 
       <!-- Step 4: 結果表示 -->
       <div id="result-section" class="step result-step" hidden>
@@ -299,7 +296,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20260920g</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20260920h</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -310,9 +307,9 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260920g"></script>
-  <script src="app.js?v=20260920g"></script>
-  <script src="review.js?v=20260920g"></script>
-  <script src="bootstrap.js?v=20260920g"></script>
+  <script src="catalog-data.js?v=20260920h"></script>
+  <script src="app.js?v=20260920h"></script>
+  <script src="review.js?v=20260920h"></script>
+  <script src="bootstrap.js?v=20260920h"></script>
 </body>
 </html>
