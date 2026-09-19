@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260920c">
-  <script src="public-config.js?v=20260920c"></script>
+  <link rel="stylesheet" href="styles.css?v=20260920d">
+  <script src="public-config.js?v=20260920d"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -42,13 +42,13 @@
         </div>
         <p id="device-auth-status" class="status" role="status" aria-live="polite" hidden></p>
       </section>
-      <p class="settings-version" id="settings-version">v20260920c / UI改善・セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20260920d / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20260920c</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20260920d</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
@@ -72,7 +72,7 @@
         <button type="button" data-listing-target="draft-checklist" disabled><span>3</span>下書き</button>
       </nav>
 
-      <details id="temporary-draft-stage" class="temporary-draft-stage">
+      <details id="temporary-draft-stage" class="temporary-draft-stage" hidden>
         <summary>
           <span class="temporary-draft-summary-icon" aria-hidden="true">
             <i data-lucide="archive"></i>
@@ -99,7 +99,6 @@
       <!-- Step 1: 写真アップロード -->
       <div class="step photo-step">
         <h2>① 写真をアップロード</h2>
-        <p class="note">全体写真・タグ写真・ディテール写真を最大30枚まで選べます。下書き保存は20枚までです。</p>
         <div class="photo-summary">
           <span id="photo-count-pill" class="photo-count-pill">0枚</span>
           <span id="photo-limit-note">下書きは20枚まで・編集素材は30枚まで</span>
@@ -300,7 +299,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20260920c</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20260920d</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -311,9 +310,9 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260920c"></script>
-  <script src="app.js?v=20260920c"></script>
-  <script src="review.js?v=20260920c"></script>
-  <script src="bootstrap.js?v=20260920c"></script>
+  <script src="catalog-data.js?v=20260920d"></script>
+  <script src="app.js?v=20260920d"></script>
+  <script src="review.js?v=20260920d"></script>
+  <script src="bootstrap.js?v=20260920d"></script>
 </body>
 </html>
