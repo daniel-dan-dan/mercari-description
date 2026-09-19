@@ -4391,24 +4391,40 @@ function extractTitleAppealWords(aiData) {
   return tokens;
 }
 
+function isUnusedWithTags_(aiData = {}) {
+  const text = [aiData.item, aiData.condition, aiData.appeal, aiData.mercari_condition,
+    ...getAiTitleKeywordList(aiData)].filter(Boolean).join(' ').replace(/[✨\uFE0E\uFE0F]/g, '');
+  if (/タグ(?:は|が)?(?:なし|無し|ない|ありません|付いていない|付きではない|付きではありません)|タグを(?:外し|切り)|未使用(?:ではない|ではありません|に近い)/.test(text)) return false;
+  return /(?:タグ付(?:き)?|タグ付き).*?(?:未使用|新品)|(?:未使用|新品).*?タグ付(?:き)?/.test(text);
+}
+
 function buildMercariTitle(aiData = {}) {
-  const brand = cleanTitleSegment(aiData.brand || aiData.brand_en || '');
-  const item = cleanTitleSegment(aiData.item || '');
+  const taggedUnused = isUnusedWithTags_(aiData);
+  const cleanGeneratedPart = value => {
+    let text = String(value || '').replace(/[✨\uFE0E\uFE0F]/g, '');
+    if (taggedUnused) text = text.replace(/タグ付(?:き)?|未使用|新品|極美品|超美品|美品|良品/g, '');
+    return cleanTitleSegment(text);
+  };
+  const brand = cleanGeneratedPart(aiData.brand || aiData.brand_en || '');
+  const item = cleanGeneratedPart(aiData.item || '');
   const appealWords = extractTitleAppealWords(aiData);
   const hasGoodCondition = appealWords.includes('✨美品✨');
-  const coreParts = [hasGoodCondition ? '✨美品✨' : '', brand, item].filter(Boolean);
+  const conditionPrefix = taggedUnused ? '✨タグ付き未使用✨' : hasGoodCondition ? '✨美品✨' : '';
+  const coreParts = [conditionPrefix, brand, item].filter(Boolean);
   const coreTitle = coreParts.join(' ').trim();
   let title = coreTitle;
 
   if (mercariTitleLength(title) > MAX_MERCARI_TITLE_LENGTH) {
     const titleWithoutCondition = [brand, item].filter(Boolean).join(' ').trim();
-    title = mercariTitleLength(titleWithoutCondition) <= MAX_MERCARI_TITLE_LENGTH
+    title = taggedUnused ? normalizeMercariTitle(coreTitle) : mercariTitleLength(titleWithoutCondition) <= MAX_MERCARI_TITLE_LENGTH
       ? titleWithoutCondition
       : normalizeMercariTitle(titleWithoutCondition);
   }
 
   appealWords
     .filter(word => word !== '✨美品✨')
+    .map(cleanGeneratedPart)
+    .filter(Boolean)
     .forEach(word => {
       if (!title) {
         title = normalizeMercariTitle(word);
@@ -6784,7 +6800,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920j</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920k</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -6795,7 +6811,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920j</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920k</span>`;
 }
 
 function renderComposeStep() {
@@ -7475,7 +7491,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920j</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920k</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -7539,7 +7555,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920j</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920k</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -7611,7 +7627,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920j</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920k</span>`;
       closeImageCompose();
     }
   });

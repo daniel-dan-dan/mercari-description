@@ -136,3 +136,18 @@ for(const [value,count] of [['',0],['あ'.repeat(40),40],['あ'.repeat(41),41],[
 }
 assert.match(indexHtml, /<textarea id="title-text"/);
 console.log('PASS title count: empty, 40, overflow, Unicode, composing value preservation, auto height');
+
+for (const keyword of ['✨️タグ付き未使用✨️', '未使用タグ付き', '新品タグ付']) {
+ const title=hooks.buildMercariTitle({brand:'ビームス',item:'シャツ',condition:'目立った傷や汚れのない美品です',title_keywords:['美品',keyword,'✨上質✨']});
+ assert.match(title,/^✨タグ付き未使用✨ ビームス シャツ/);
+ assert.equal((title.match(/✨/g)||[]).length,2);
+ assert.doesNotMatch(title,/美品/);
+ assert.equal((title.match(/タグ付き未使用/g)||[]).length,1);
+ assert.ok(Array.from(title).length<=40);
+}
+const longTagged=hooks.buildMercariTitle({brand:'あ'.repeat(35),item:'シャツ',condition:'タグ付きの未使用品'});
+assert.match(longTagged,/^✨タグ付き未使用✨/);assert.ok(Array.from(longTagged).length<=40);
+for(const condition of ['洗濯タグあり。美品です','タグなしの未使用品','タグ付きではありません。新品、未使用','未使用に近い']) {
+ assert.doesNotMatch(hooks.buildMercariTitle({brand:'ビームス',item:'シャツ',condition}),/タグ付き未使用/);
+}
+console.log('PASS tagged-unused title prefix, single decoration, 40 characters, and non-tagged cases');
