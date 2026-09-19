@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260919b">
-  <script src="public-config.js?v=20260919b"></script>
+  <link rel="stylesheet" href="styles.css?v=20260919c">
+  <script src="public-config.js?v=20260919c"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -42,13 +42,13 @@
         </div>
         <p id="device-auth-status" class="status" role="status" aria-live="polite" hidden></p>
       </section>
-      <p class="settings-version" id="settings-version">v20260919b / UI改善・セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20260919c / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20260919b</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20260919c</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
@@ -59,6 +59,7 @@
         <button id="description-tab-btn" class="app-tab active" type="button" role="tab" aria-selected="true" aria-controls="description-panel">説明文</button>
         <button id="research-tab-btn" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="research-panel">相場リサーチ</button>
         <button id="markdown-tab-btn" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="markdown-panel">価格改定</button>
+        <button id="sale-tab-btn" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="sale-panel">セール</button>
       </div>
       <p id="session-save-status" class="status session-save-status" role="alert" aria-live="assertive" hidden></p>
       <details id="safety-review-panel" class="temporary-draft-stage">
@@ -613,13 +614,58 @@
           </div>
         </div>
       </div>
+      <div id="sale-panel" class="tab-panel" role="tabpanel" aria-labelledby="sale-tab-btn" hidden>
+        <div class="step sale-intro">
+          <h2>セールコメント</h2>
+          <p class="note">商品を選んで、セールのお知らせをまとめて送信。</p>
+          <p id="sale-connection" class="note">Macの予約管理を確認します</p>
+          <p id="sale-status" role="status" aria-live="polite"></p>
+          <div id="sale-pending" hidden>
+            <p>前回の受付結果が未確認です。新しい送信の前に確認してください。</p>
+            <button id="sale-recover" class="btn" type="button">受付を再確認</button>
+            <button id="sale-retry" class="btn" type="button" hidden>同じ受付番号で再送</button>
+          </div>
+        </div>
+        <div class="step">
+          <h2>1. 商品を選ぶ</h2>
+          <div class="sale-actions">
+            <button id="sale-sync" class="btn" type="button">商品を最新取得</button>
+            <button id="sale-all" class="btn small" type="button" disabled>全商品を選択</button>
+            <button id="sale-clear" class="btn small" type="button">選択を解除</button>
+          </div>
+          <p id="sale-list-info" class="note">商品を取得してください</p>
+          <strong id="sale-selection-count">0件を選択</strong>
+          <div id="sale-products" class="sale-products"></div>
+        </div>
+        <div id="sale-form" class="step">
+          <h2>2. 文章と送信日時</h2>
+          <div id="sale-edit-note" hidden><p>予約を編集中です。変更を確定するまで元の予約が有効です。</p><button id="sale-edit-cancel" class="btn small" type="button">編集をやめる</button></div>
+          <label for="sale-mode">文章の作り方</label>
+          <select id="sale-mode"><option value="common">共通文をそのまま送る</option><option value="discount">商品ごとの金額を入れる</option></select>
+          <div id="sale-discount-fields" hidden>
+            <div class="sale-two-columns"><label>割引方法<select id="sale-discount-type"><option value="yen">円引き</option><option value="percent">％引き</option></select></label><label>割引額・割引率<input id="sale-discount-value" type="number" min="1" step="1" inputmode="numeric" placeholder="例：500 または 10"></label></div>
+            <div class="sale-actions"><button type="button" class="btn small" data-sale-token="現在価格">現在価格を挿入</button><button type="button" class="btn small" data-sale-token="割引額">割引額を挿入</button><button type="button" class="btn small" data-sale-token="割引後価格">割引後価格を挿入</button></div>
+          </div>
+          <label for="sale-template">セール文章</label>
+          <textarea id="sale-template" rows="7" placeholder="フォロワー100人記念セール！&#10;セールの条件や期限をご入力ください。"></textarea>
+          <p id="sale-chars" class="note"></p>
+          <label for="sale-timing">送信のタイミング</label>
+          <select id="sale-timing"><option value="now">確認して今すぐ送信</option><option value="scheduled">日時を指定して予約</option></select>
+          <div id="sale-schedule-fields" hidden><label for="sale-datetime">送信開始日時（日本時間）</label><input id="sale-datetime" type="datetime-local"><p class="note">予約時刻にMacの起動・ネット接続が必要です。間に合わなかった場合は自動送信せず確認待ちになります。</p></div>
+          <p class="note">1商品ずつ順次送信します。実際の販売価格は変更しません。</p>
+          <button id="sale-preview-btn" type="button" class="btn" disabled>送信内容を確認</button>
+          <div id="sale-preview"></div>
+          <button id="sale-confirm" type="button" class="btn primary" hidden>この内容で送信</button>
+        </div>
+        <div class="step"><div class="sale-actions"><h2>送信・予約履歴</h2><button id="sale-refresh" type="button" class="btn small">履歴を更新</button></div><div id="sale-history"></div></div>
+      </div>
     </section>
 
     <!-- 画像合成モーダル -->
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20260919b</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20260919c</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -630,9 +676,10 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260919b"></script>
-  <script src="app.js?v=20260919b"></script>
-  <script src="review.js?v=20260919b"></script>
-  <script src="bootstrap.js?v=20260919b"></script>
+  <script src="catalog-data.js?v=20260919c"></script>
+  <script src="app.js?v=20260919c"></script>
+  <script src="sale-comments.js?v=20260919c"></script>
+  <script src="review.js?v=20260919c"></script>
+  <script src="bootstrap.js?v=20260919c"></script>
 </body>
 </html>

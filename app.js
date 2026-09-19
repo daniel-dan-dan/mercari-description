@@ -1284,6 +1284,7 @@ async function init() {
   el('description-tab-btn').addEventListener('click', () => switchMainTab('description'));
   el('research-tab-btn').addEventListener('click', () => switchMainTab('research'));
   el('markdown-tab-btn').addEventListener('click', () => switchMainTab('markdown'));
+  el('sale-tab-btn')?.addEventListener('click', () => { switchMainTab('sale'); window.MercariSale?.activate(); });
   el('research-save-btn').addEventListener('click', saveResearchRequest);
   el('research-copy-btn').addEventListener('click', copyResearchRequestForNightWork);
   el('research-refresh-btn').addEventListener('click', () => refreshResearchResultsFromMac({ silent: false }));
@@ -5749,6 +5750,13 @@ function switchMainTab(tab) {
   const description = tab === 'description';
   const research = tab === 'research';
   const markdown = tab === 'markdown';
+  const sale = tab === 'sale';
+  if (el('sale-panel')) {
+    el('sale-panel').hidden = !sale;
+    el('sale-panel').classList.toggle('active', sale);
+    el('sale-tab-btn').classList.toggle('active', sale);
+    el('sale-tab-btn').setAttribute('aria-selected', String(sale));
+  }
   el('description-panel').hidden = !description;
   el('research-panel').hidden = !research;
   el('markdown-panel').hidden = !markdown;
@@ -8550,7 +8558,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260919b</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260919c</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -8561,7 +8569,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919b</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919c</span>`;
 }
 
 function renderComposeStep() {
@@ -9241,7 +9249,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260919b</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260919c</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -9305,7 +9313,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919b</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919c</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -9377,7 +9385,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919b</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260919c</span>`;
       closeImageCompose();
     }
   });

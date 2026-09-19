@@ -518,7 +518,7 @@ textarea.streaming {
 /* ========== メインタブ ========== */
 .app-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
   margin: 0 0 14px;
   padding: 0;
@@ -3950,3 +3950,25 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 .markdown-price-grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
 .markdown-price-grid strong { white-space: nowrap; font-size: clamp(16px, 4.7vw, 20px); }
 .draft-saving .file-label { opacity: .6; cursor: wait; }
+
+/* セールコメント */
+.sale-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:12px 0; }
+.sale-actions h2 { margin:0; flex:1; }
+.sale-products { max-height:440px; overflow:auto; margin-top:12px; }
+.sale-product { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #eedfe5; cursor:pointer; }
+.sale-product input { width:22px; height:22px; flex-shrink:0; accent-color:#bd607a; }
+.sale-product img { width:56px; height:64px; object-fit:cover; border-radius:8px; background:#f8f0f3; }
+.sale-product strong,.sale-product span span { display:block; font-size:14px; line-height:1.5; }
+.sale-product span span { color:#9b4260; margin-top:4px; font-weight:700; }
+#sale-form label { display:block; font-weight:700; margin:12px 0 6px; }
+#sale-form select,#sale-form input,#sale-form textarea { width:100%; box-sizing:border-box; padding:12px; font:inherit; font-size:16px; color:#402b40; border:1px solid #decbd4; border-radius:10px; background:white; }
+.sale-two-columns { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.sale-error { color:#a43243; }
+#sale-status { white-space:pre-wrap; overflow-wrap:anywhere; }
+.sale-preview-item,.sale-history-card { border:1px solid #ecdce3; border-radius:12px; padding:14px; margin:12px 0; background:#fffdfd; }
+#sale-panel pre { font:inherit; font-size:14px; white-space:pre-wrap; overflow-wrap:anywhere; background:#faf5f7; padding:12px; border-radius:8px; }
+.sale-result { border-top:1px solid #eedfe5; padding:12px 0; }
+#sale-confirm { width:100%; margin-top:14px; }
+#sale-panel [hidden] { display:none !important; }
+#sale-panel summary { cursor:pointer; line-height:1.5; }
+@media(max-width:420px) { .app-tab { font-size:12px; } .sale-actions .btn { padding:10px; } }
