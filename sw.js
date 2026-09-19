@@ -1,16 +1,16 @@
 const CACHE_PREFIX = 'mercari-description-';
-const CACHE_NAME = 'mercari-description-v20260920l';
+const CACHE_NAME = 'mercari-description-v20260920m';
 const ASSETS = [
   './',
   './index.html',
   './pair.html',
-  './styles.css?v=20260920l',
-  './public-config.js?v=20260920l',
-  './catalog-data.js?v=20260920l',
-  './app.js?v=20260920l',
-  './review.js?v=20260920l',
-  './bootstrap.js?v=20260920l',
-  './pair.js?v=20260920l',
+  './styles.css?v=20260920m',
+  './public-config.js?v=20260920m',
+  './catalog-data.js?v=20260920m',
+  './app.js?v=20260920m',
+  './review.js?v=20260920m',
+  './bootstrap.js?v=20260920m',
+  './pair.js?v=20260920m',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -100,4 +100,11 @@ self.addEventListener('fetch', event => {
       throw new Error('offline asset unavailable');
     });
   })());
+});
+
+// Report the code's release, not the registration URL (which older pages versioned).
+self.addEventListener('message', event => {
+  if (event.data?.type === 'GET_APP_VERSION') {
+    event.ports?.[0]?.postMessage({ type: 'APP_VERSION', version: CACHE_NAME.slice(CACHE_PREFIX.length) });
+  }
 });
