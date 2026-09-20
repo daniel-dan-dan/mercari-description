@@ -40,6 +40,6 @@ const tick=()=>new Promise(setImmediate);
  const stale=fixture('deferred');await tick();stale.registration.waiting=null;stale.events.controllerchange();
  stale.deferred.forEach(port=>port.postMessage({type:'APP_VERSION',version:'v20260921a'}));await tick();assert.equal(stale.note,undefined,'late response cannot resurrect notice');
  const listeners={};vm.runInNewContext(sw,{self:{addEventListener:(name,fn)=>listeners[name]=fn}});
- let reply;listeners.message({data:{type:'GET_APP_VERSION'},ports:[{postMessage:data=>reply=data}]});assert.equal(reply.version,'v20260920m');
+ let reply;listeners.message({data:{type:'GET_APP_VERSION'},ports:[{postMessage:data=>reply=data}]});assert.equal(reply.version,fs.readFileSync('public-config.js','utf8').match(/version: '([^']+)'/)[1]);
  console.log('PASS update notice: fixed URL, release handshake, same/older/new release, activation, redundant worker and stale response; no forced reload');
 })().catch(error=>{console.error(error);process.exitCode=1;});

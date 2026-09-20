@@ -4200,14 +4200,20 @@ function renderResultMetadata_(data = {}) {
 }
 
 function missingTitleWordsInDescription_() {
+  // Compare the whole product-name section: users can put its value on the next
+  // line or wrap it manually. Never borrow words from size/condition sections.
+  const description = String(el('result-text')?.value || '').replace(/\r\n?/g, '\n');
+  const productSection = (description.match(/^[ \t\u3000]*【[ \t\u3000]*商品名[ \t\u3000]*】([\s\S]*?)(?=^[ \t\u3000]*【|(?![\s\S]))/m) || [])[1] || '';
+  const comparableName = value => normalizeTitleComparable(
+    String(value || '').normalize('NFKC').replace(/[\uFE0E\uFE0F]/g, ''),
+  );
+  const comparable = comparableName(productSection);
   const titleWords = String(el('title-text')?.value || '')
     .split(/\s+/)
-    .map(cleanProductNamePart)
-    .filter(word => word && !/^(?:極美品|超美品|美品|良品)$/.test(word));
-  const description = String(el('result-text')?.value || '');
-  const productLine = (description.match(/^【商品名】(.*)$/m) || [])[1] || '';
-  const comparable = normalizeTitleComparable(productLine);
-  return titleWords.filter(word => !comparable.includes(normalizeTitleComparable(word)));
+    // The description builder intentionally omits these condition decorations.
+    .map(word => cleanProductNamePart(word.replace(/[\uFE0E\uFE0F]/g, ''), { removeCondition: true }))
+    .filter(Boolean);
+  return titleWords.filter(word => !comparable.includes(comparableName(word)));
 }
 
 function mercariTitleLength(value) {
@@ -6793,7 +6799,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920m</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920n</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -6804,7 +6810,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920m</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920n</span>`;
 }
 
 function renderComposeStep() {
@@ -7484,7 +7490,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920m</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920n</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -7548,7 +7554,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920m</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920n</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -7620,7 +7626,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920m</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920n</span>`;
       closeImageCompose();
     }
   });
