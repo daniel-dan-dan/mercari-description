@@ -333,6 +333,13 @@ function cleanSeasonMarketingText(value, rule = getSeasonMarketingRule()) {
 function cleanSeasonMarketingSentences(value, rule = getSeasonMarketingRule()) {
   const text = String(value || '').trim();
   if (!text) return '';
+  if (/^[ \t]*[・●•]/m.test(text)) {
+    return text.split(/\n+/).filter(line => splitAppealSentences_(line).some(
+      sentence => !isDisallowedSeasonMarketingText(sentence, rule),
+    )).map(line => cleanSeasonMarketingSentences(
+      line.replace(/^[ \t]*[・●•]\s*/, ''), rule,
+    )).filter(Boolean).map(line => `・${line}`).join('\n');
+  }
   const sentences = splitAppealSentences_(text);
   const kept = sentences
     .map(sentence => sentence.trim())
@@ -392,6 +399,12 @@ function polishAppealText_(value) {
     .trim();
   if (!text) return '';
 
+  if (/^[ \t]*[・●•]/m.test(text)) {
+    return text.split(/\n+/).map(line => {
+      const body = line.replace(/^[ \t]*[・●•]\s*/, '');
+      return splitAppealSentences_(body).map(polishAppealSentence_).filter(Boolean).join('');
+    }).filter(Boolean).map(line => `・${line}`).join('\n');
+  }
   const sentences = [];
   text.split(/\n+/).forEach(line => {
     const parts = splitAppealSentences_(line);
@@ -401,6 +414,15 @@ function polishAppealText_(value) {
     });
   });
   return sentences.join('');
+}
+
+// Only generated appeal text is formatted; saved/manual descriptions are untouched.
+function formatAppealBullets_(value) {
+  const text = polishAppealText_(value);
+  if (!text) return '';
+  if (/^・/m.test(text)) return text;
+  return splitAppealSentences_(text).map(polishAppealSentence_)
+    .filter(Boolean).map(sentence => `・${sentence}`).join('\n');
 }
 
 function sanitizeAiTagSize_(value) {
@@ -2157,7 +2179,7 @@ const SYSTEM_PROMPT = `あなたはメルカリ出品のプロです。
    - 黒・紺などを区別できない場合は断定せず "---" とする。訴求文・商品名でも色を推測しない
 5. material — 素材（タグから読み取る。表地/裏地がある場合は分ける。読み取れなければ "---"）
 6. condition — 状態。ダメージがなければ "目立った傷や汚れのない美品です。詳細は写真をご確認ください"。ダメージがあれば具体的に記載
-7. appeal — 商品の特徴・訴求ポイント2〜3文。以下を自然に含める:
+7. appeal — 商品の特徴・訴求ポイントを2〜5項目の箇条書き。各項目は「・」で始め、改行する。以下を自然に含める:
    - デザイン、素材、機能、用途など商品の特徴
    - 季節感は衣類の場合のみ、現在の販売時期に合う言葉を使う
    - 衣類は着用場面、アパレル以外は用途や使い方
@@ -2199,7 +2221,7 @@ const NON_APPAREL_SYSTEM_PROMPT = `あなたはメルカリで工具・家電・
 4. color — 写真で確認できる色を「カタカナ＋漢字」で記載。光や影を考慮し、判断できない場合は推測せず "---"
 5. material — 写真や銘板から確認できる素材、型番、品番、電圧、容量、セット内容など。確認できない項目は推測しない
 6. condition — 写真で確認できる傷、汚れ、使用感、欠品を具体的に記載。写真だけで動作確認済みとは書かない
-7. appeal — 用途、機能、付属品、仕様を中心に2〜3文。着用・着心地・季節の服装に関する表現は使わない
+7. appeal — 用途、機能、付属品、仕様を中心に2〜5項目の箇条書き。各項目は「・」で始め、改行する。着用・着心地・季節の服装に関する表現は使わない
 8. mercari_condition — 以下の6択から1つ: "新品、未使用" / "未使用に近い" / "目立った傷や汚れなし" / "やや傷や汚れあり" / "傷や汚れあり" / "全体的に状態が悪い"
 9. mercari_category_key — 必ず "unknown"
 10. title_keywords — 型番、電圧、容量、数量、付属品、状態など、写真から確認できる検索語を2〜5個
@@ -2222,14 +2244,16 @@ function buildPastListingStylePrompt(stylePrompt) {
 function buildAppealWritingRules_(productGender = getSelectedProductGender()) {
   const nonApparel = isNonApparelProductAudience(productGender);
   const example = nonApparel
-    ? '「写真で確認できる仕様と、扱いやすい形状が特徴。必要な付属品がまとまっているため、日々の作業へすぐに取り入れられます。保管や持ち運びにも配慮された、実用的なアイテムです。」'
-    : '「滑らかな肌触りと、落ち着いた色合いが魅力。端正なシルエットで、幅広い装いに自然となじみます。軽やかな着心地のため、長い季節に活躍するアイテムです。」';
+    ? '・写真で確認できる仕様と、扱いやすい形状が特徴。\n・必要な付属品がまとまっているため、日々の作業へすぐに取り入れられます。'
+    : '・滑らかな肌触りと、落ち着いた色合いが魅力。\n・端正なシルエットで、幅広い装いに自然となじみます。';
   return `訴求文（appeal）の文体ルール（過去出品例より優先）:
-- 2〜3文の読みやすい日本語に整え、単語や短い句を並べただけの文章にしない
+- 特徴ごとに「・」で始まる箇条書きにし、項目間は改行する。JSON文字列内では改行を\\nで表す
+- 2〜5項目を目安とし、確認できる特徴が少ない場合は水増ししない。1項目は1〜2文で簡潔に書く
+- 年式、別注、素材、機能、付属品は写真・入力から確認できるものだけを書く。例にある具体的な商品情報は流用しない
 - 意味の切れ目には読点「、」を入れる。特に「また」「さらに」「一方で」「そのため」などの接続語の直後には読点を付ける
 - 長い修飾句や理由・条件を文頭に置いた場合も、主文との境目に読点を入れる。ただし短い文へ読点をむやみに増やさない
 - すべての文末に「。」を付ける（自然な「！」「？」で終わる場合を除く）
-- 2〜3文のうち、体言止めは多くても1文までとし、残りは自然な「です・ます」調にする
+- 全体で、体言止めは多くても1文までとし、残りは自然な「です・ます」調にする
 - 2文なら「体言止め1文＋丁寧語1文」、3文なら「体言止め1文＋丁寧語2文」を目安にする。体言止めは連続させない
 - 「です。です。」「ます。ます。」のように同じ文末を連続させず、体言止めと丁寧語を自然に使い分ける
 - 過去出品例に句読点不足や同じ文末の連続があっても、その癖は引き継がない
@@ -4133,7 +4157,7 @@ function buildDescription(
   const color = aiData.color || '---';
   const material = aiData.material || '---';
   const condition = aiData.condition || '---';
-  const appeal = polishAppealText_(aiData.appeal);
+  const appeal = formatAppealBullets_(aiData.appeal);
   const nonApparel = isNonApparelProductAudience(productGender);
   const sizeBlock = nonApparel
     ? (measurementText ? `【寸法】\n${measurementText}` : '')
@@ -6799,7 +6823,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920n</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920o</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -6810,7 +6834,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920n</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920o</span>`;
 }
 
 function renderComposeStep() {
@@ -7490,7 +7514,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920n</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920o</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -7554,7 +7578,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920n</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920o</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -7626,7 +7650,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920n</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920o</span>`;
       closeImageCompose();
     }
   });
@@ -8283,6 +8307,7 @@ globalThis.MercariAppTestHooks = {
   cleanSeasonMarketingSentences,
   sanitizeAiDataForSeason,
   polishAppealText_,
+  formatAppealBullets_,
   buildDescription,
   getSizeProfileKey,
   estimateBySizeProfile,

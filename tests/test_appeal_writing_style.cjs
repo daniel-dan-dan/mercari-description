@@ -47,7 +47,7 @@ assert.equal(
 );
 assert.equal(
   hooks.polishAppealText_('  ・落ち着いた配色です。。  '),
-  '落ち着いた配色です。',
+  '・落ち着いた配色です。',
 );
 assert.equal(hooks.polishAppealText_(''), '');
 assert.equal(
@@ -156,12 +156,20 @@ const description = hooks.buildDescription(
 );
 assert.match(
   description,
-  /ご覧いただきありがとうございます✨\n\n滑らかな肌触りが魅力。また、長く活躍します。\n\n【商品名】/,
+  /ご覧いただきありがとうございます✨\n\n・滑らかな肌触りが魅力。\n・また、長く活躍します。\n\n【商品名】/,
 );
 
 console.log(JSON.stringify({
   ok: true,
   punctuationFallback: true,
   promptPriority: 'appeal-rules-after-past-style',
-  version: 'v20260920n',
+  version: 'v20260920o',
 }));
+
+const bulletInput = '・素材が特徴です。軽く羽織れます。\n・型番3.5です。';
+assert.equal(hooks.formatAppealBullets_(bulletInput), bulletInput);
+assert.equal(hooks.formatAppealBullets_(hooks.formatAppealBullets_(bulletInput)), bulletInput);
+assert.equal(hooks.sanitizeAiDataForSeason({appeal:bulletInput}, 'other').appeal, bulletInput);
+assert.equal(hooks.formatAppealBullets_('-20℃対応です。型番3.5です。'), '・-20℃対応です。\n・型番3.5です。');
+assert.equal(hooks.cleanSeasonMarketingSentences('・夏向けです。\n・付属品があります。', {disallowedPatterns:[/夏向け/g]}), '・付属品があります。');
+assert.match(prompt, /特徴ごとに「・」で始まる箇条書き/);
