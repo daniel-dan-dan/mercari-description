@@ -1961,15 +1961,9 @@ function renderMeasurements(categoryOverride = '') {
   // 連続音声入力バー
   const voiceBar = document.createElement('div');
   voiceBar.className = 'multi-voice-bar';
-  const voiceHint = cat === 'tie'
-    ? '例:「長さ 145」「大剣幅 8」… 続けて話せます'
-    : cat === 'other'
-      ? '例:「縦 30」「横 20」「高さ 10」… 続けて話せます'
-    : '例:「肩幅 45」「袖丈 60.5」… 続けて話せます';
   voiceBar.innerHTML = `
     <button type="button" id="multi-voice-btn" class="multi-voice-btn">🎤 まとめて音声入力</button>
     <div id="multi-voice-status" class="multi-voice-status"></div>
-    <div class="multi-voice-hint">${voiceHint}</div>
   `;
   container.appendChild(voiceBar);
 
@@ -6540,21 +6534,9 @@ function updateSizeSuggestion() {
   const result = computeMeasurementSize();
   const profileKey = result?.profileKey || getSizeProfileKey(getSelectedMercariCategoryKey(), cat);
   if (!profileKey) { panel.hidden = true; return; }
-  if (!result && !UPPER_SIZE_PROFILE_KEYS.includes(profileKey)) { panel.hidden = true; return; }
+  if (!result) { panel.innerHTML = ''; panel.hidden = true; return; }
   const profile = SIZE_PROFILES[profileKey] || SIZE_PROFILES.tops;
-  const table = sizeReferenceTable(profileKey);
-  panel.innerHTML = `
-    <div class="size-main">📏 ${result ? `採寸からの推定${profile.reference ? '（ユニクロ参考）' : ''}: <strong>${escapeHtml(result.size)}サイズ相当（目安）</strong>` : '身幅と肩幅を入力すると推定します。ラグランは身幅を入力してください。'}</div>
-    <div class="size-hint">${escapeHtml(profile.name)}：${escapeHtml(profile.sourceNote || '')}</div>
-    ${result ? `<div class="size-hint">${escapeHtml(result.detail)}</div>` : ''}
-    <details class="size-ref">
-      <summary>サイズ目安表（${profile.name}）</summary>
-      ${table}
-      ${profile.reference ? `<p class="note small"><a href="${escapeHtml(profile.reference.url)}" target="_blank" rel="noopener noreferrer">参照商品：${escapeHtml(profile.reference.name)}</a>（${escapeHtml(profile.reference.checkedAt)}確認）。表はこの商品の仕上がり寸法です。ユニクロ全商品の共通基準や他ブランドの公式換算ではありません。</p>` : '<p class="note small">当アプリ独自の仮の運用目安です。公式のブランド別サイズ表ではありません。</p>'}
-      <p class="note small">タグ表記・メーカーの商品別寸法を優先してください。別デザイン・オーバーサイズ・厚手・中綿入りでは着用感が異なります。身幅はタックやギャザーを閉じて測ってください。</p>
-      <p class="note small"><a href="https://faq.uniqlo.com/articles/FAQ/100004162" target="_blank" rel="noopener noreferrer">採寸方法の参考（ユニクロ公式）</a>：身体寸法ではなく、平置きした服の寸法を入力します。</p>
-    </details>
-  `;
+  panel.innerHTML = `<div class="size-main">📏 採寸からの推定${profile.reference ? '（ユニクロ参考）' : ''}: <strong>${escapeHtml(result.size)}サイズ相当（目安）</strong></div>`;
   panel.hidden = false;
   syncMercariSizeFromMeasurements();
 }
@@ -6823,7 +6805,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920o</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920p</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -6834,7 +6816,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920o</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920p</span>`;
 }
 
 function renderComposeStep() {
@@ -7514,7 +7496,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920o</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920p</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -7578,7 +7560,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920o</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920p</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -7650,7 +7632,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920o</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920p</span>`;
       closeImageCompose();
     }
   });

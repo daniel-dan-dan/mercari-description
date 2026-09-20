@@ -3,7 +3,7 @@
 (() => {
   if (window.lucide) window.lucide.createIcons();
   if (!('serviceWorker' in navigator)) return;
-  const version = globalThis.MercariPublicConfig?.version || 'v20260920o';
+  const version = globalThis.MercariPublicConfig?.version || 'v20260920p';
   function releaseNumber(value) {
     const match = /^v(\d{8})([a-z]+)$/.exec(String(value || ''));
     return match ? [Number(match[1]), [...match[2]].reduce((n, c) => n * 26 + c.charCodeAt(0) - 96, 0)] : null;

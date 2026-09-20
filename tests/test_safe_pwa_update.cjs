@@ -30,7 +30,7 @@ const tick=()=>new Promise(setImmediate);
  for(const version of [null,'v20260920m','v20260920l','unknown']) {
   const h=fixture(version);await tick();assert.equal(h.note,undefined,`no false update for ${version}`);assert.equal(h.updates,1);
  }
- const h=fixture('v20260920o');await tick();assert.match(h.note.textContent,/v20260920o/);assert.equal(h.inserted,1);
+ const h=fixture('v20260920p');await tick();assert.match(h.note.textContent,/v20260920p/);assert.equal(h.inserted,1);
  h.windowEvents.pageshow();await tick();assert.equal(h.inserted,1);
  h.registration.waiting=null;h.events.controllerchange();await tick();assert.equal(h.note,undefined,'notice clears after activation');
  h.registration.installing=h.worker('v20260921a');h.registration.installing.state='installing';h.registrationEvents.updatefound();
