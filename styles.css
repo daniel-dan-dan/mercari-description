@@ -3971,3 +3971,14 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 #measurement-fields > .measurement-section { margin: 0; padding: 12px; }
 .measurement-row { grid-template-columns: minmax(80px, 1fr) 88px 22px; }
 .size-suggestion { margin-top: 10px; }
+
+/* Keep the action bar in document flow; no fixed-height blank spacer. */
+#description-panel { padding-bottom: 0; }
+.listing-action-bar {
+  position: sticky;
+  bottom: 0;
+  left: auto;
+  transform: none;
+  width: 100%;
+  margin-top: 10px;
+}
