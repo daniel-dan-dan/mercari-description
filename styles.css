@@ -3961,3 +3961,13 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 #title-text { min-height: 76px; resize: none; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; margin-bottom: 4px; }
 .title-character-count { margin: 0 0 14px; text-align: right; color: #78616b; font-size: 12px; font-variant-numeric: tabular-nums; }
 .title-character-count.over-limit { color: #c62f48; font-weight: 700; }
+
+/* Empty helper content must not reserve space after copy is removed. */
+.multi-voice-status:empty,
+#photo-preview:empty { display: none; }
+#measurement-fields:empty { display: none; }
+#measurement-fields { display: grid; gap: 10px; margin-top: 10px; }
+#measurement-fields > .multi-voice-bar,
+#measurement-fields > .measurement-section { margin: 0; padding: 12px; }
+.measurement-row { grid-template-columns: minmax(80px, 1fr) 88px 22px; }
+.size-suggestion { margin-top: 10px; }
