@@ -163,7 +163,7 @@ console.log(JSON.stringify({
   ok: true,
   punctuationFallback: true,
   promptPriority: 'appeal-rules-after-past-style',
-  version: 'v20260920r',
+  version: 'v20260926a',
 }));
 
 const bulletInput = '・素材が特徴です。軽く羽織れます。\n・型番3.5です。';

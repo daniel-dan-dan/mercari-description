@@ -56,4 +56,25 @@ for (const corrupt of ['{', '{}', '{"operationId":"x","fingerprint":"f","previou
 stored.set(key, JSON.stringify(legacy));
 h.clearDraftOperation_(legacy.operationId);
 assert.equal(stored.has(key), false);
+stored.set(key, JSON.stringify(legacy));
+h.markDraftOperationResolved_(legacy.operationId, 'saved');
+assert.equal(h.getOrCreateDraftOperation_(oldPayload, 9, 'old-workflow').operationId, legacy.operationId, 'manually saved legacy receipt cannot fall through to a new POST');
+h.clearDraftOperation_(legacy.operationId);
+// Success stays with this work item even after edits/reload; another explicitly
+// started product can have the same title/photos without a global content lock.
+const workflowReceipt = h.getOrCreateDraftOperation_(oldPayload, 10, 'workflow-a');
+h.markDraftOperationResolved_(workflowReceipt.operationId, 'saved', { manualReviewFields: ['brand'], inventoryLink: { status: 'needs_review' } });
+const completed = h.getOrCreateDraftOperation_({ ...oldPayload, price: 8000 }, 11, 'workflow-a');
+assert.equal(completed.operationId, workflowReceipt.operationId);
+assert.equal(completed.completed, true);
+assert.equal(completed.completedResult.inventoryLink.status, 'needs_review');
+assert.equal(completed.completedResult.manualReviewFields[0], 'brand');
+assert.equal(JSON.parse(stored.get(key)).workflowId, 'workflow-a', 'workflow survives page reload');
+const otherProduct = h.getOrCreateDraftOperation_(oldPayload, 12, 'workflow-b');
+assert.notEqual(otherProduct.operationId, workflowReceipt.operationId);
+h.markDraftOperationResolved_(otherProduct.operationId, 'not_saved');
+assert.equal(h.getOrCreateDraftOperation_(oldPayload, 13, 'workflow-b').operationId, otherProduct.operationId, 'not_saved keeps the retryable server receipt');
+h.markDraftOperationResolved_(otherProduct.operationId, 'saved', { inventoryLink: { status: 'pending_listing' } });
+assert.equal(h.getOrCreateDraftOperation_(oldPayload, 14, 'workflow-b').completed, true);
+assert.equal(h.getOrCreateDraftOperation_(oldPayload, 15, 'workflow-a').operationId, workflowReceipt.operationId, 'opening the older work item still knows it was saved');
 console.log('Draft product switching: legacy migration, independent receipts, duplicate reuse and storage safety passed');

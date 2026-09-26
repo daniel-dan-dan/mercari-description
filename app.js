@@ -158,6 +158,8 @@ let draftSaveInProgress = false;
 let draftFeedbackSignature = '';
 let temporaryDrafts = [];
 let activeTemporaryDraftId = null;
+let currentProductWorkflowId = '';
+let temporarySaveInProgress = false;
 let descriptionGenerationInProgress = false;
 let photoProcessingInProgress = false;
 let photoProcessingOperationId = 0;
@@ -854,8 +856,8 @@ function updateTemporarySaveButton_() {
   const hasPhotos = uploadedImages.length > 0;
   const hasCategory = !!el('category')?.value;
   const ready = hasPhotos && hasCategory;
-  button.disabled = !ready || descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress;
-  button.textContent = activeTemporaryDraftId
+  button.disabled = !ready || descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress || temporarySaveInProgress;
+  button.textContent = temporarySaveInProgress ? '一時保存中…' : activeTemporaryDraftId
     ? '変更を保存して次の商品へ'
     : '一時保存して次の商品へ';
   if (!hasPhotos && !hasCategory) {
@@ -869,6 +871,24 @@ function updateTemporarySaveButton_() {
   }
   note.hidden = ready;
   note.classList.toggle('ready', ready);
+}
+
+function isProductInputLocked_() {
+  return descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress || temporarySaveInProgress;
+}
+
+function setTemporarySaveLock_(locked) {
+  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #reset-btn, #settings-btn').forEach(control => {
+    if (locked) {
+      if (control.dataset.temporarySaveWasDisabled === undefined) control.dataset.temporarySaveWasDisabled = control.disabled ? '1' : '0';
+      control.disabled = true;
+    } else if (control.dataset.temporarySaveWasDisabled !== undefined) {
+      control.disabled = control.dataset.temporarySaveWasDisabled === '1';
+      delete control.dataset.temporarySaveWasDisabled;
+    }
+  });
+  updateListingWorkflow_();
+  if (!locked) { updateGenerateButton(); updateTemporarySaveButton_(); }
 }
 
 function setDescriptionGenerationLock_(locked) {
@@ -997,7 +1017,7 @@ function updateListingWorkflow_() {
     draftFeedbackSignature = '';
   }
   const generated = !!lastAiData && !el('result-section')?.hidden;
-  const busy = descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress;
+  const busy = isProductInputLocked_();
   const step = generated ? (listingValidation.ok ? 3 : 2) : 1;
   bar.hidden = !!el('main-screen')?.hidden || !!el('description-panel')?.hidden;
   el('generate-btn').hidden = generated && !descriptionGenerationInProgress;
@@ -1017,6 +1037,7 @@ function updateListingWorkflow_() {
   hint.textContent = draftSaveInProgress ? 'Macで保存しています。結果が出るまでお待ちください。'
     : descriptionGenerationInProgress ? '写真と採寸から説明文を作っています。'
     : photoProcessingInProgress ? '写真を処理しています。'
+    : temporarySaveInProgress ? '写真と入力内容を一時保存しています。'
     : '商品名・説明文・価格を確認して保存してください。';
   document.querySelectorAll('#listing-progress button').forEach((button, index) => {
     const current = index + 1 === step;
@@ -1038,7 +1059,7 @@ function updateListingKeyboard_() {
 function initListingWorkflow_() {
   el('description-panel')?.addEventListener('click', event => {
     const button = event.target.closest?.('[data-listing-target]');
-    if (!button || button.disabled || descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress) return;
+    if (!button || button.disabled || isProductInputLocked_()) return;
     focusListingTarget_(button.dataset.listingTarget);
   });
   document.addEventListener('focusin', updateListingKeyboard_);
@@ -1459,7 +1480,7 @@ async function revokeCurrentDeviceFromSettings_() {
 let uploadedImages = [];  // { dataUrl, mediaType, base64 }
 
 async function handlePhotoSelect(e) {
-  if (draftSaveInProgress) { e.target.value = ''; return; }
+  if (draftSaveInProgress || temporarySaveInProgress) { e.target.value = ''; return; }
   if (descriptionGenerationInProgress || photoProcessingInProgress) {
     e.target.value = '';
     showStatus(
@@ -1577,7 +1598,7 @@ function renderPreviews() {
   uploadedImages.forEach((img, idx) => {
     const item = document.createElement('div');
     item.className = 'preview-item';
-    item.draggable = !(descriptionGenerationInProgress || photoProcessingInProgress);
+    item.draggable = !isProductInputLocked_();
     item.dataset.idx = idx;
     item.innerHTML = `
       <img src="${img.dataUrl}" alt="">
@@ -1587,9 +1608,9 @@ function renderPreviews() {
     grid.appendChild(item);
   });
   grid.querySelectorAll('.remove').forEach(b => {
-    b.disabled = descriptionGenerationInProgress || photoProcessingInProgress;
+    b.disabled = isProductInputLocked_();
     b.addEventListener('click', () => {
-      if (descriptionGenerationInProgress || photoProcessingInProgress) return;
+      if (isProductInputLocked_()) return;
       uploadedImages.splice(Number(b.dataset.idx), 1);
       invalidateGeneratedResultAfterInputChange_('写真');
       renderPreviews();
@@ -1604,7 +1625,7 @@ function renderPreviews() {
 }
 
 function removeUploadedImagesByIndices(indices) {
-  if (descriptionGenerationInProgress || photoProcessingInProgress) return false;
+  if (isProductInputLocked_()) return false;
   const targets = [...new Set(indices)]
     .filter(idx => Number.isInteger(idx) && idx >= 0 && idx < uploadedImages.length)
     .sort((a, b) => b - a);
@@ -1686,7 +1707,7 @@ function setupDragSort(grid) {
   };
 
   const movePreviewItem = (fromIdx, toIdx) => {
-    if (descriptionGenerationInProgress || photoProcessingInProgress) return false;
+    if (isProductInputLocked_()) return false;
     if (fromIdx === null || toIdx === null) return false;
     if (fromIdx === toIdx || (fromIdx === uploadedImages.length - 1 && toIdx >= uploadedImages.length)) {
       return false;
@@ -1701,6 +1722,7 @@ function setupDragSort(grid) {
 
   // --- デスクトップ: HTML5 drag API ---
   grid.addEventListener('dragstart', (e) => {
+    if (isProductInputLocked_()) { e.preventDefault(); return; }
     const item = e.target.closest('.preview-item');
     if (!item) return;
     dragIdx = Number(item.dataset.idx);
@@ -1732,6 +1754,7 @@ function setupDragSort(grid) {
 
   // --- iOS タッチ: 長押し300msでドラッグ開始 ---
   grid.addEventListener('touchstart', (e) => {
+    if (isProductInputLocked_()) return;
     const item = e.target.closest('.preview-item');
     if (!item || e.target.closest('.remove')) return;
 
@@ -1763,6 +1786,7 @@ function setupDragSort(grid) {
 
     // 300ms 長押しでドラッグ開始
     const timer = setTimeout(() => {
+      if (isProductInputLocked_()) { cancel(); return; }
       dragIdx = Number(item.dataset.idx);
       item.classList.add('dragging');
       grid.classList.add('drag-sorting');
@@ -2130,7 +2154,7 @@ function updateGenerateButton() {
   const hasPhotos = uploadedImages.length > 0;
   const hasCategory = !!el('category').value && el('category').value !== 'legacyUpper';
   const ready = hasPhotos && hasCategory;
-  el('generate-btn').disabled = !ready || descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress;
+  el('generate-btn').disabled = !ready || isProductInputLocked_();
   const note = el('generate-note');
   if (note) {
     note.hidden = ready;
@@ -2910,7 +2934,11 @@ function readDraftOperations_() {
       || !record.operationId || typeof record.fingerprint !== 'string' || !record.fingerprint)) {
       throw new Error('invalid receipt');
     }
-    return records.map(({ operationId, fingerprint, createdAt }) => ({ operationId, fingerprint, createdAt }));
+    return records.map(({ operationId, fingerprint, createdAt, workflowId, completed, completedResult }) => ({
+      operationId, fingerprint, createdAt,
+      ...(workflowId ? { workflowId: String(workflowId) } : {}),
+      ...(completed === true ? { completed: true, completedResult: safeCompletedDraftResult_(completedResult) } : {}),
+    }));
   } catch (_) {
     throw new Error('前回の受付記録を読めないため送信しません。「要確認」を開いて確認してください。');
   }
@@ -2933,12 +2961,49 @@ function writeDraftOperations_(records) {
   }
 }
 
-function getOrCreateDraftOperation_(payload, now = Date.now()) {
+function getCurrentProductWorkflowId_() {
+  if (!currentProductWorkflowId) {
+    currentProductWorkflowId = String(activeTemporaryDraftId || lastAiData?.product_id || '') || createOperationId_('product-workflow');
+  }
+  return currentProductWorkflowId;
+}
+
+function safeCompletedDraftResult_(result = {}) {
+  return {
+    status: 'done',
+    manualReviewFields: Array.isArray(result?.manualReviewFields) ? result.manualReviewFields.filter(field => field === 'brand') : [],
+    inventoryLink: { status: String(result?.inventoryLink?.status || '') },
+  };
+}
+
+function markDraftOperationResolved_(operationId, resolution, result = {}) {
+  if (!['saved', 'not_saved'].includes(resolution)) throw new Error('下書きの確認結果が正しくありません');
+  const records = readDraftOperations_();
+  const record = records.find(item => item.operationId === operationId);
+  if (!record) return;
+  delete record.completed;
+  delete record.completedResult;
+  if (resolution === 'saved') {
+    record.completed = true;
+    record.completedResult = safeCompletedDraftResult_(result);
+  }
+  writeDraftOperations_(records);
+}
+
+function getOrCreateDraftOperation_(payload, now = Date.now(), workflowId = '') {
   const fingerprint = draftPayloadFingerprint_(payload);
   const records = readDraftOperations_();
-  const existing = records.find(record => record.fingerprint === fingerprint);
-  if (existing) return { ...existing, reused: true };
-  const record = { operationId: createOperationId_('draft-start'), fingerprint, createdAt: now };
+  const existing = records.find(record => record.completed && workflowId && record.workflowId === workflowId)
+    || records.find(record => (!record.completed || !record.workflowId) && record.fingerprint === fingerprint);
+  if (existing) {
+    if (workflowId && !existing.workflowId) {
+      existing.workflowId = workflowId;
+      writeDraftOperations_(records);
+    }
+    return { ...existing, reused: true };
+  }
+  const record = { operationId: createOperationId_('draft-start'), fingerprint, createdAt: now,
+    ...(workflowId ? { workflowId } : {}) };
   writeDraftOperations_([record, ...records]);
   return { ...record, reused: false };
 }
@@ -4345,6 +4410,50 @@ function getAiTitleKeywordList(aiData = {}) {
   return [];
 }
 
+// AI may correctly describe a missing feature. Never turn that negative or
+// uncertain sentence into a positive selling claim in the shorter title.
+function titleClaimSentences_(value) {
+  return String(value || '').split(/[。！？!?\n]+/).map(text => text.trim()).filter(Boolean);
+}
+
+function isNegativeTitleClaim_(value) {
+  const text = String(value || '')
+    .replace(/目立った傷や汚れ(?:のない|なし|無し)/g, '良好');
+  return /では(?:ない|ありません|なく)|とは(?:言えない|いえない|言い切れない)|じゃない|(?:付属|含まれ)(?:しません|ていません|ない)|付いて(?:いない|いません)|付きません|ありません|(?:付属|タグ|ベルト|フード|ライナー|裏地|傷|汚れ)(?:は|が)?(?:なし|無し|ない)|欠品|欠損|不明|未確認|確認でき|判断でき|分かりません|わかりません|かどうか|とは限りません/.test(text);
+}
+
+function hasDeniedTitleClaim_(source, pattern) {
+  return titleClaimSentences_(source).some(sentence => pattern.test(sentence) && isNegativeTitleClaim_(sentence));
+}
+
+const TITLE_FACT_CLAIMS = [
+  [/美品|良品|新品|未使用/, /タグ付(?:き)?未使用|極美品|超美品|美品|良品|新品|未使用/g],
+  [/ベルト/, /ベルト(?:付(?:き)?|付属)/g],
+  [/フード/, /フード(?:付(?:き)?|付属)/g],
+  [/ライナー/, /ライナー(?:付(?:き)?|付属)/g],
+  [/タグ/, /タグ付(?:き)?/g],
+  [/裏地/, /裏地付(?:き)?/g],
+  [/ノバチェック/, /ノバチェック/g], [/ホース|騎士/, /ホースロゴ|騎士ロゴ/g],
+  [/刺繍/, /ロゴ刺繍|刺繍ロゴ/g], [/リバーシブル/, /リバーシブル/g],
+  [/[23２３]way/i, /[23２３]way/gi], [/カシミ[ヤア]/, /カシミ[ヤア]/g],
+  [/ウール/, /ウール/g], [/リネン|麻/, /リネン|麻/g],
+  [/シルク|絹/, /シルク|絹/g], [/レザー|本革/, /レザー|本革/g],
+];
+
+function titleFactsSource_(aiData) {
+  return [aiData.item, aiData.appeal, aiData.material, aiData.condition, aiData.mercari_condition]
+    .filter(Boolean).join('\n');
+}
+
+function removeDeniedTitleFacts_(value, aiData) {
+  let text = String(value || '');
+  const source = titleFactsSource_(aiData);
+  TITLE_FACT_CLAIMS.forEach(([claim, tokens]) => {
+    if (hasDeniedTitleClaim_(source, claim)) text = text.replace(tokens, ' ');
+  });
+  return text.replace(/[✨\uFE0E\uFE0F]/g, '').replace(/\s+/g, ' ').trim();
+}
+
 function extractTitleAppealWords(aiData) {
   const source = [
     aiData.appeal,
@@ -4353,12 +4462,15 @@ function extractTitleAppealWords(aiData) {
     aiData.mercari_condition,
     aiData.color,
     aiData.tag_size,
-  ].filter(Boolean).join(' ');
+  ].filter(Boolean).join('\n');
+  const affirmativeSource = titleClaimSentences_(source).filter(sentence => !isNegativeTitleClaim_(sentence)).join(' ');
   const baseTitle = [aiData.brand, aiData.brand_en, aiData.item].filter(Boolean).join(' ');
   const tokens = [];
 
   getAiTitleKeywordList(aiData).forEach(word => {
     const cleaned = cleanTitleSegment(word);
+    if (isNegativeTitleClaim_(cleaned)) return;
+    if (TITLE_FACT_CLAIMS.some(([pattern]) => pattern.test(cleaned) && hasDeniedTitleClaim_(titleFactsSource_(aiData), pattern))) return;
     if (/^(美品|良品|極美品)$/.test(cleaned)) {
       addUniqueTitleToken(tokens, '✨美品✨', baseTitle);
       return;
@@ -4366,7 +4478,8 @@ function extractTitleAppealWords(aiData) {
     addUniqueTitleToken(tokens, cleaned, baseTitle);
   });
 
-  if (/目立った傷や汚れ(のない|なし|無し)|未使用に近い|新品、未使用|新品|未使用|美品/.test(source)) {
+  if (!hasDeniedTitleClaim_(source, /美品|良品|新品|未使用/)
+    && /目立った傷や汚れ(のない|なし|無し)|未使用に近い|新品、未使用|新品|未使用|美品/.test(affirmativeSource)) {
     addUniqueTitleToken(tokens, '✨美品✨', baseTitle);
   }
 
@@ -4402,7 +4515,7 @@ function extractTitleAppealWords(aiData) {
   ];
 
   patterns.forEach(([pattern, word]) => {
-    if (pattern.test(source)) addUniqueTitleToken(tokens, word, baseTitle);
+    if (pattern.test(affirmativeSource) && !hasDeniedTitleClaim_(source, pattern)) addUniqueTitleToken(tokens, word, baseTitle);
   });
 
   return tokens;
@@ -4410,9 +4523,11 @@ function extractTitleAppealWords(aiData) {
 
 function isUnusedWithTags_(aiData = {}) {
   const text = [aiData.item, aiData.condition, aiData.appeal, aiData.mercari_condition,
-    ...getAiTitleKeywordList(aiData)].filter(Boolean).join(' ').replace(/[✨\uFE0E\uFE0F]/g, '');
+    ...getAiTitleKeywordList(aiData)].filter(Boolean).join('\n').replace(/[✨\uFE0E\uFE0F]/g, '');
+  if (hasDeniedTitleClaim_(text, /タグ|未使用|新品/) || /新品同様|未使用に近い|着用済み|使用済み/.test(text)) return false;
   if (/タグ(?:は|が)?(?:なし|無し|ない|ありません|付いていない|付きではない|付きではありません)|タグを(?:外し|切り)|未使用(?:ではない|ではありません|に近い)/.test(text)) return false;
-  return /(?:タグ付(?:き)?|タグ付き).*?(?:未使用|新品)|(?:未使用|新品).*?タグ付(?:き)?/.test(text);
+  const affirmative = titleClaimSentences_(text).filter(sentence => !isNegativeTitleClaim_(sentence)).join(' ');
+  return /(?:タグ付(?:き)?|タグ付き).*?(?:未使用|新品)|(?:未使用|新品).*?タグ付(?:き)?/.test(affirmative);
 }
 
 function buildMercariTitle(aiData = {}) {
@@ -4423,7 +4538,7 @@ function buildMercariTitle(aiData = {}) {
     return cleanTitleSegment(text);
   };
   const brand = cleanGeneratedPart(aiData.brand || aiData.brand_en || '');
-  const item = cleanGeneratedPart(aiData.item || '');
+  const item = cleanGeneratedPart(removeDeniedTitleFacts_(aiData.item, aiData));
   const appealWords = extractTitleAppealWords(aiData);
   const hasGoodCondition = appealWords.includes('✨美品✨');
   const conditionPrefix = taggedUnused ? '✨タグ付き未使用✨' : hasGoodCondition ? '✨美品✨' : '';
@@ -4497,7 +4612,7 @@ function restoreGenerationUiState_(state) {
 
 // ----- 生成実行 -----
 async function generateDescription() {
-  if (draftSaveInProgress) return;
+  if (draftSaveInProgress || temporarySaveInProgress) return;
   const measurements = collectMeasurements();
   if (!measurements || measurements.category === 'legacyUpper') { alert('トップス・アウターなどのカテゴリを選んでください'); return; }
   if (!uploadedImages.length) { alert('写真を選んでください'); return; }
@@ -5394,7 +5509,7 @@ async function saveCurrentAsTemporaryDraft_({
   allowIncomplete = false,
   announce = true,
 } = {}) {
-  if (draftSaveInProgress) return null;
+  if (draftSaveInProgress || temporarySaveInProgress) return null;
   if (photoProcessingInProgress) {
     showStatus('temporary-draft-status', '写真の処理が完了してから一時保存してください。', 'warn');
     return null;
@@ -5409,80 +5524,99 @@ async function saveCurrentAsTemporaryDraft_({
     return null;
   }
 
-  await requestPersistentStorage_();
-  const now = Date.now();
-  let existing = activeTemporaryDraftId
-    ? await getTemporaryDraft_(activeTemporaryDraftId)
-    : null;
-  if (existing?.status === 'generating') {
-    const recovered = await recoverInterruptedTemporaryDraft_(
-      existing.id,
-      now - TEMPORARY_DRAFT_GENERATION_STALE_MS,
-    );
-    if (!recovered) {
+  temporarySaveInProgress = true;
+  setTemporarySaveLock_(true);
+  stopActiveMultiVoiceInput({ clearStatus: true });
+  try {
+    const initialDraftId = activeTemporaryDraftId;
+    const inputState = compactTemporaryDraftState_(collectState());
+    const inputSignature = draftPayloadFingerprint_(inputState);
+    await requestPersistentStorage_();
+    const now = Date.now();
+    let existing = activeTemporaryDraftId
+      ? await getTemporaryDraft_(activeTemporaryDraftId)
+      : null;
+    if (existing?.status === 'generating') {
+      const recovered = await recoverInterruptedTemporaryDraft_(
+        existing.id,
+        now - TEMPORARY_DRAFT_GENERATION_STALE_MS,
+      );
+      if (!recovered) {
+        await refreshTemporaryDrafts_();
+        showStatus('temporary-draft-status', 'この商品は別の画面でAI生成中です。完了するまでお待ちください。', 'warn');
+        return null;
+      }
+      existing = await getTemporaryDraft_(existing.id);
+    }
+    const id = activeTemporaryDraftId || createOperationId_('input-draft');
+    const state = {
+      ...inputState,
+      temporaryDraftId: id,
+    };
+    const record = {
+      id,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+      status: inferTemporaryDraftStatus_(state),
+      errorMessage: '',
+      snapshot: compactTemporaryDraftState_(state),
+    };
+
+    const putResult = await putTemporaryDraft_(record, existing?.updatedAt ?? null);
+    if (!putResult.saved) {
       await refreshTemporaryDrafts_();
-      showStatus('temporary-draft-status', 'この商品は別の画面でAI生成中です。完了するまでお待ちください。', 'warn');
+      showStatus(
+        'temporary-draft-status',
+        putResult.reason === 'active'
+          ? '別の画面でAI生成が始まったため、一時保存は上書きしませんでした。現在の写真と採寸はこの画面に残しています。'
+          : '別の画面で同じ商品が更新されたため、一時保存は上書きしませんでした。現在の写真と採寸はこの画面に残しています。',
+        'warn',
+      );
       return null;
     }
-    existing = await getTemporaryDraft_(existing.id);
-  }
-  const id = activeTemporaryDraftId || createOperationId_('input-draft');
-  const state = {
-    ...collectState(),
-    temporaryDraftId: id,
-  };
-  const record = {
-    id,
-    createdAt: existing?.createdAt || now,
-    updatedAt: now,
-    status: inferTemporaryDraftStatus_(state),
-    errorMessage: '',
-    snapshot: compactTemporaryDraftState_(state),
-  };
-
-  const putResult = await putTemporaryDraft_(record, existing?.updatedAt ?? null);
-  if (!putResult.saved) {
+    activeTemporaryDraftId = id;
     await refreshTemporaryDrafts_();
-    showStatus(
-      'temporary-draft-status',
-      putResult.reason === 'active'
-        ? '別の画面でAI生成が始まったため、一時保存は上書きしませんでした。現在の写真と採寸はこの画面に残しています。'
-        : '別の画面で同じ商品が更新されたため、一時保存は上書きしませんでした。現在の写真と採寸はこの画面に残しています。',
-      'warn',
-    );
-    return null;
-  }
-  activeTemporaryDraftId = id;
-  await refreshTemporaryDrafts_();
 
-  if (resetAfter) {
-    await clearCurrentProduct_({ clearSession: true, scroll: true });
-    renderTemporaryDrafts_();
-    const tray = el('temporary-draft-stage');
-    if (tray) tray.open = false;
-  } else {
-    scheduleSave();
-  }
+    if (resetAfter) {
+      const latestState = compactTemporaryDraftState_({ ...collectState(), temporaryDraftId: initialDraftId });
+      if (draftPayloadFingerprint_(latestState) !== inputSignature) {
+        scheduleSave();
+        showStatus('temporary-draft-status', '一時保存しました。保存中に変更された入力はこの画面に残しています。', 'warn');
+        return record;
+      }
+      await clearCurrentProduct_({ clearSession: true, scroll: true, completingTemporarySave: true });
+      renderTemporaryDrafts_();
+      const tray = el('temporary-draft-stage');
+      if (tray) tray.open = false;
+    } else {
+      scheduleSave();
+    }
 
-  if (announce) {
-    showStatus(
-      'temporary-draft-status',
-      resetAfter
-        ? '一時保存しました。続けて次の商品の写真と採寸を入力できます。'
-        : '現在の入力も一時保存しました。',
-      'success',
-    );
+    if (announce) {
+      showStatus(
+        'temporary-draft-status',
+        resetAfter
+          ? '一時保存しました。続けて次の商品の写真と採寸を入力できます。'
+          : '現在の入力も一時保存しました。',
+        'success',
+      );
+    }
+    return record;
+  } finally {
+    temporarySaveInProgress = false;
+    setTemporarySaveLock_(false);
   }
-  return record;
 }
 
 async function openTemporaryDraft_(id) {
   if (draftSaveInProgress) throw new Error('下書き保存中は商品を切り替えられません');
+  if (temporarySaveInProgress) throw new Error('一時保存中は商品を切り替えられません');
   if (photoProcessingInProgress) {
     throw new Error('写真を処理中のため、商品を切り替えられません');
   }
   const record = await getTemporaryDraft_(id);
   if (draftSaveInProgress) throw new Error('下書き保存中は商品を切り替えられません');
+  if (temporarySaveInProgress) throw new Error('一時保存中は商品を切り替えられません');
   if (!record) throw new Error('選択した一時保存が見つかりません');
   await clearCurrentProduct_({ clearSession: true, scroll: false });
   activeTemporaryDraftId = id;
@@ -5501,7 +5635,7 @@ async function openTemporaryDraft_(id) {
 }
 
 async function handleTemporaryDraftAction_(event) {
-  if (draftSaveInProgress) return;
+  if (draftSaveInProgress || temporarySaveInProgress) return;
   const button = event.target.closest('[data-temporary-action]');
   if (!button) return;
   if (photoProcessingInProgress) {
@@ -5593,6 +5727,7 @@ function collectState() {
   });
   const raglanToggle = el('raglan-toggle');
   return {
+    productWorkflowId: getCurrentProductWorkflowId_(),
     photos: uploadedImages,
     category,
     measurementCategoryVersion: 2,
@@ -5662,9 +5797,10 @@ function scheduleSave() {
 }
 
 function restoreState(s) {
-  if (draftSaveInProgress) return;
+  if (draftSaveInProgress || temporarySaveInProgress) return;
   if (!s) return;
   activeTemporaryDraftId = s.temporaryDraftId || null;
+  currentProductWorkflowId = String(s.productWorkflowId || s.temporaryDraftId || s.lastAiData?.product_id || '') || createOperationId_('product-workflow');
   const restoredProductGender = resolveRestoredProductGender_(s);
   setSelectedProductGender(restoredProductGender);
   if (Array.isArray(s.photos) && s.photos.length) {
@@ -5754,8 +5890,9 @@ function escapeHtml(value) {
 }
 
 // ----- リセット -----
-async function clearCurrentProduct_({ clearSession = true, scroll = false } = {}) {
+async function clearCurrentProduct_({ clearSession = true, scroll = false, completingTemporarySave = false } = {}) {
   if (draftSaveInProgress) throw new Error('下書き保存中は入力を消去できません');
+  if (temporarySaveInProgress && !completingTemporarySave) throw new Error('一時保存中は入力を消去できません');
   photoProcessingOperationId += 1;
   if (_saveTimer) {
     clearTimeout(_saveTimer);
@@ -5768,6 +5905,7 @@ async function clearCurrentProduct_({ clearSession = true, scroll = false } = {}
   uploadedImages = [];
   lastAiData = null;
   activeTemporaryDraftId = null;
+  currentProductWorkflowId = '';
   renderPreviews();
   const photoInput = el('photo-input'); if (photoInput) photoInput.value = '';
   el('category').value = isNonApparelProductAudience() ? 'other' : '';
@@ -5806,7 +5944,7 @@ async function clearCurrentProduct_({ clearSession = true, scroll = false } = {}
 }
 
 async function resetAll() {
-  if (draftSaveInProgress) return;
+  if (draftSaveInProgress || temporarySaveInProgress) return;
   if (photoProcessingInProgress) {
     showStatus('status', '写真の処理が完了してからリセットしてください。', 'warn');
     return;
@@ -6805,7 +6943,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260920r</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260926a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -6816,7 +6954,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920r</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260926a</span>`;
 }
 
 function renderComposeStep() {
@@ -7408,7 +7546,7 @@ function renderComposePreview(canvas) {
 }
 
 async function addComposedImageToApp(dataUrl, options = {}) {
-  if (photoProcessingInProgress) return false;
+  if (isProductInputLocked_()) return false;
   if (uploadedImages.length >= MAX_SELECT_PHOTOS) {
     alert(`写真選択は最大${MAX_SELECT_PHOTOS}枚までです`); return false;
   }
@@ -7496,7 +7634,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260920r</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260926a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -7560,7 +7698,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920r</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260926a</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -7632,7 +7770,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260920r</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260926a</span>`;
       closeImageCompose();
     }
   });
@@ -8096,7 +8234,7 @@ function formatDraftSaveError_(error) {
 }
 
 async function saveDraft() {
-  if (draftSaveInProgress || descriptionGenerationInProgress || photoProcessingInProgress) return;
+  if (isProductInputLocked_()) return;
   const gasUrl = localStorage.getItem(SERVICE_URL_KEY);
   if (!gasUrl) {
     alert('設定画面でGAS URLを入力してください');
@@ -8174,9 +8312,12 @@ async function saveDraft() {
       mercariCondition: el('m-condition').value,
       inventoryUuid: inventoryState.uuid,
     });
+    const draftOperation = getOrCreateDraftOperation_(draftPayload.payload, Date.now(), getCurrentProductWorkflowId_());
+    draftOperationId = draftOperation.operationId;
+    draftReused = draftOperation.reused;
     waitControl = attachJobWaitCancel_(draftStatus);
     const reportConnectionStatus = message => { draftStatus.textContent = message; };
-    const tunnelUrl = await getMercariServiceUrl(reportConnectionStatus, { signal: waitControl.signal });
+    const tunnelUrl = draftOperation.completed ? '' : await getMercariServiceUrl(reportConnectionStatus, { signal: waitControl.signal });
     const refreshMacServiceUrl = createMacServiceUrlRefresher_(reportConnectionStatus, { signal: waitControl.signal });
 
     // 下書きリクエスト送信
@@ -8184,13 +8325,12 @@ async function saveDraft() {
     if (draftPayload.optimized) {
       draftStatus.textContent = '写真データを通信向けに最適化して送信中...';
     }
-    const draftOperation = getOrCreateDraftOperation_(draftPayload.payload);
-    draftOperationId = draftOperation.operationId;
-    draftReused = draftOperation.reused;
     if (draftOperation.reused) {
       draftStatus.textContent = '前回の受付状況を確認しながら再接続中...';
     }
-    const startedDraft = await startDraftJob_(tunnelUrl, draftPayload.payload, {
+    const startedDraft = draftOperation.completed
+      ? { completed: true, data: draftOperation.completedResult }
+      : await startDraftJob_(tunnelUrl, draftPayload.payload, {
       operationId: draftOperation.operationId,
       reused: draftOperation.reused,
       useOperationResult: true,
@@ -8229,9 +8369,12 @@ async function saveDraft() {
       && completedDraftData.manualReviewFields.includes('brand')) {
       draftStatus.textContent += ' 【要確認】ブランドは自動選択できなかったため、出品前にメルカリの下書きで手動確認・修正してください。';
     }
-    try { clearDraftOperation_(draftOperationId); } catch (cleanupError) {
+    if (draftOperation.completed) {
+      draftStatus.textContent += ' この商品は保存済みのため、新しい下書きは作成していません。保存後の変更はメルカリの下書きで編集してください。別の商品はリセットしてから入力できます。';
+    }
+    try { markDraftOperationResolved_(draftOperationId, 'saved', completedDraftData); } catch (cleanupError) {
       console.warn('[draft-receipt-cleanup]', cleanupError);
-      draftStatus.textContent += ' 端末の受付記録の整理は未完了ですが、下書き保存は完了しています。';
+      draftStatus.textContent += ' 端末の保存済み記録を更新できませんでした。下書き保存は完了しています。受付IDは保持しています。';
     }
   } catch (e) {
     console.error('[draft-save]', e);
@@ -8267,6 +8410,7 @@ globalThis.MercariAppTestHooks = {
   inventoryCandidateLabel_,
   getOrCreateDraftOperation_,
   clearDraftOperation_,
+  markDraftOperationResolved_, getCurrentProductWorkflowId_,
   shouldPreserveDraftOperation_,
   startDraftJob_,
   fetchDraftOperationResult_, pollDraftOperationResult_, waitForDraftPoll_,

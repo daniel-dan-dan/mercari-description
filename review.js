@@ -57,7 +57,7 @@
       try {
         const response = await api(path, body);
         if (verify && !verify(response)) throw new Error('記録結果が一致しません。自動再送せず再確認してください。');
-        if (path === '/draft/review') clearDraftOperation_(body.operationId);
+        if (path === '/draft/review') markDraftOperationResolved_(body.operationId, body.resolution, response.item || response);
         resultMessage = '確認結果を記録しました。販売価格・出品・在庫反映は実行していません。';
       } catch (error) {
         resultMessage = `確認記録の結果は未確定です。${error.message} 元の保留を確認してください。`;
@@ -77,7 +77,11 @@
     try {
       tunnel = await getMercariServiceUrl();
       let localOperationId = '';
-      try { localOperationId = JSON.parse(localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) || 'null')?.operationId || ''; } catch (_) {}
+      let localReceipt = null;
+      try {
+        localReceipt = JSON.parse(localStorage.getItem(DRAFT_OPERATION_STORAGE_KEY) || 'null');
+        localOperationId = localReceipt?.operationId || '';
+      } catch (_) {}
       const sections = [
         ['下書き保存の要確認', '/draft/review', 'items'],
         ['価格変更の結果不明', '/markdown/ambiguous', 'items'],
@@ -99,12 +103,19 @@
         if (path === '/draft/review' && localOperationId && !rows.some(row => row.operationId === localOperationId)) {
           const local = result.value.localOperation;
           node('p', `この端末の受付: ${local?.status || '未確認'}。受付IDは保持しています。`, section);
-          if (local?.terminal && local.operationId === localOperationId) {
+          if (localReceipt?.completed) {
+            node('p', 'この商品は保存済みです。重複保存を防ぐ受付記録を保持しています。', section);
+          } else if (local?.terminal && local.operationId === localOperationId) {
             const finish = node('button', 'この受付の終了状態を確認', section);
             finish.type = 'button'; finish.className = 'btn small';
             finish.addEventListener('click', () => {
               if (busy || !confirm(`Macの受付状態は ${local.status} です。この受付の確認を終了しますか？別の商品はこの確認をせずに保存できます。`)) return;
-              try { clearDraftOperation_(localOperationId); load(); } catch (error) {
+              try {
+                if (['confirmed', 'done', 'resolved_saved'].includes(local.status)) markDraftOperationResolved_(localOperationId, 'saved', local);
+                else if (['failed', 'error', 'resolved_not_saved'].includes(local.status)) markDraftOperationResolved_(localOperationId, 'not_saved', local);
+                else throw new Error('保存結果を確定できないため受付IDを保持します');
+                load();
+              } catch (error) {
                 status.textContent = `受付記録を整理できませんでした。${error.message}`;
               }
             });

@@ -58,9 +58,9 @@ function harness({ route, linked, manualReviewFields = ['brand'], manualCategory
   if (route === 'resume') {
     vm.runInContext(`
       const createFixtureOperation = getOrCreateDraftOperation_;
-      getOrCreateDraftOperation_ = payload => {
-        createFixtureOperation(payload);
-        return createFixtureOperation(payload);
+      getOrCreateDraftOperation_ = (...args) => {
+        createFixtureOperation(...args);
+        return createFixtureOperation(...args);
       };
     `, ctx);
   }
@@ -80,10 +80,18 @@ function harness({ route, linked, manualReviewFields = ['brand'], manualCategory
       assert.match(finalText, linked ? /出品確定後.*在庫連携を確認/ : /在庫未選択のため自動連携対象外/);
       assert.equal(get('draft-status').hidden, false);
       assert.equal(get('m-brand').value, 'requested brand', 'never alter the user input');
-      assert.equal(storage.has(receiptKey), false, 'verified done still clears only the completed receipt');
+      assert.equal(JSON.parse(storage.get(receiptKey)).completed, true, 'verified done remains attached to this product');
       assert.deepEqual(calls, route === 'normal' ? ['POST', 'GET'] : route === 'resume' ? ['GET'] : ['POST']);
       ctx.MercariAppTestHooks.updateListingWorkflow_();
       assert.ok(get('draft-status').textContent.includes(warning));
+      const callCount = calls.length;
+      await ctx.MercariAppTestHooks.saveDraft();
+      assert.equal(calls.length, callCount, 'saving this completed product again makes no remote request');
+      assert.match(get('draft-status').textContent, /新しい下書きは作成していません/);
+      assert.ok(get('draft-status').textContent.includes(warning));
+      get('price-input').value = '2600';
+      await ctx.MercariAppTestHooks.saveDraft();
+      assert.equal(calls.length, callCount, 'editing the same saved product cannot silently create another draft');
     }
   }
   for (const route of ['normal', 'post_done', 'resume']) {
@@ -92,7 +100,7 @@ function harness({ route, linked, manualReviewFields = ['brand'], manualCategory
     assert.match(get('draft-status').textContent, /【要確認】在庫連携/);
     assert.match(get('draft-status').textContent, /再保存は不要/);
     assert.ok(get('draft-status').textContent.includes(warning));
-    assert.equal(storage.has(receiptKey), false, 'save is confirmed even if inventory linking needs review');
+    assert.equal(JSON.parse(storage.get(receiptKey)).completed, true, 'save is confirmed even if inventory linking needs review');
   }
   for (const manualReviewFields of [undefined, null, [], ['size'], 'brand', ['Brand']]) {
     const fields = manualReviewFields === undefined ? [] : manualReviewFields;
