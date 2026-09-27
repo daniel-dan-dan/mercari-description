@@ -838,9 +838,11 @@ function updatePhotoSummary() {
   if (!pill) return;
   pill.textContent = `${uploadedImages.length}枚`;
   const limitNote = el('photo-limit-note');
-  if (limitNote) limitNote.textContent = uploadedImages.length > MAX_DRAFT_PHOTOS
-    ? `下書きには${uploadedImages.length - MAX_DRAFT_PHOTOS}枚減らしてください（合成・削除）`
-    : `下書きは${MAX_DRAFT_PHOTOS}枚まで・編集素材は${MAX_SELECT_PHOTOS}枚まで`;
+  if (limitNote) {
+    limitNote.hidden = uploadedImages.length <= MAX_DRAFT_PHOTOS;
+    limitNote.textContent = limitNote.hidden ? ''
+      : `下書きには${uploadedImages.length - MAX_DRAFT_PHOTOS}枚減らしてください（合成・削除）`;
+  }
   pill.classList.toggle('ready', uploadedImages.length >= 2);
   pill.classList.toggle('over-limit', uploadedImages.length > MAX_DRAFT_PHOTOS);
 }
@@ -6943,7 +6945,7 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260926a</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260927a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
@@ -6954,7 +6956,7 @@ function closeImageCompose() {
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260926a</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260927a</span>`;
 }
 
 function renderComposeStep() {
@@ -7634,7 +7636,7 @@ function openGridCompose(mode) {
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260926a</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260927a</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
@@ -7698,7 +7700,7 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260926a</span>`;
+    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260927a</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -7770,7 +7772,7 @@ function renderGridPreviewStep() {
       if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
         removeUploadedImagesByIndices(sourceIndices);
       }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260926a</span>`;
+      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260927a</span>`;
       closeImageCompose();
     }
   });

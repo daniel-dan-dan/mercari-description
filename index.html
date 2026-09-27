@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260926a">
-  <script src="public-config.js?v=20260926a"></script>
+  <link rel="stylesheet" href="styles.css?v=20260927a">
+  <script src="public-config.js?v=20260927a"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -59,13 +59,13 @@
           </div>
           <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
         </details>
-      <p class="settings-version" id="settings-version">v20260926a / UI改善・セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20260927a / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20260926a</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20260927a</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
@@ -109,11 +109,11 @@
 
       <!-- Step 1: 写真アップロード -->
       <div class="step photo-step">
-        <h2>① 写真をアップロード</h2>
-        <div class="photo-summary">
-          <span id="photo-count-pill" class="photo-count-pill">0枚</span>
-          <span id="photo-limit-note">下書きは20枚まで・編集素材は30枚まで</span>
+        <div class="photo-step-heading">
+          <h2>① 写真をアップロード</h2>
+          <span id="photo-count-pill" class="photo-count-pill" aria-live="polite">0枚</span>
         </div>
+        <p id="photo-limit-note" hidden></p>
         <label class="file-label" for="photo-input">
           <i data-lucide="camera" aria-hidden="true"></i> 写真を選ぶ / 撮影する
         </label>
@@ -286,7 +286,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20260926a</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20260927a</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -297,9 +297,9 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260926a"></script>
-  <script src="app.js?v=20260926a"></script>
-  <script src="review.js?v=20260926a"></script>
-  <script src="bootstrap.js?v=20260926a"></script>
+  <script src="catalog-data.js?v=20260927a"></script>
+  <script src="app.js?v=20260927a"></script>
+  <script src="review.js?v=20260927a"></script>
+  <script src="bootstrap.js?v=20260927a"></script>
 </body>
 </html>
