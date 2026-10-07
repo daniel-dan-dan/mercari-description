@@ -1,7 +1,7 @@
 'use strict';
 (function (root) {
   const MODEL_EDGE = 320;
-  const scriptRoot = typeof document !== 'undefined' ? new URL('.', document.currentScript.src).href : ''; 
+  const scriptRoot = typeof document !== 'undefined' ? new URL('.', document.currentScript.src).href : '';
   function normalizedMask(data) {
     if (!data || data.length !== MODEL_EDGE * MODEL_EDGE) throw Error('切り抜き結果のサイズが不正です');
     let min = Infinity, max = -Infinity;
