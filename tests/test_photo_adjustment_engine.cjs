@@ -141,6 +141,40 @@ assert.ok(mixedExposure.data[90 * 4] < mixedBytes[90 * 4]);
 const highKeyWhiteGarment = fixture(64, 64, p => grey(218 + p % 38));
 assert.deepEqual(engine.autoAdjust(highKeyWhiteGarment), neutral, 'a dominantly white garment is not automatically greyed');
 
+// A confirmed black garment photographed pale on a bright rug must approach
+// the requested reference without assigning that real-world colour to grey.
+const paleBlackPuffer = fixture(160, 160, (p, x, y) => {
+  if (x < 24 || x > 135 || y < 24 || y > 145) return [240, 235, 229];
+  if (x > 115 && y < 60) return [238, 30, 38];
+  return grey(p % 20 === 0 ? 96 : 124 + p % 15);
+});
+const pufferBytes = paleBlackPuffer.data.slice();
+const blackAuto = engine.autoAdjust(paleBlackPuffer, 'black');
+assert.deepEqual(blackAuto, { ...neutral, contrast: -20, highlights: 50 });
+assert.equal(engine.autoAdjust(paleBlackPuffer).contrast, 0, 'unknown grey/black colour never triggers the black profile');
+assert.deepEqual(engine.autoAdjust(paleBlackPuffer, 'untrusted'), engine.autoAdjust(paleBlackPuffer));
+assert.deepEqual(paleBlackPuffer.data, pufferBytes, 'black analysis does not mutate the source');
+engine.applyToImageData(paleBlackPuffer, blackAuto);
+let sourceFabric = 0, correctedFabric = 0, fabricCount = 0;
+for (let y = 60; y < 136; y++) for (let x = 48; x < 110; x++) {
+  const i = (y * 160 + x) * 4;
+  sourceFabric += pufferBytes[i]; correctedFabric += paleBlackPuffer.data[i]; fabricCount++;
+}
+assert.ok(correctedFabric / fabricCount > 95 && correctedFabric / fabricCount < sourceFabric / fabricCount - 12,
+  'pale black fabric is restrained but not crushed to black');
+const darkerBlack = fixture(160, 160, (p, x, y) => grey(x < 24 || x > 135 ? 240 : 78 + p % 18));
+const darkerAuto = engine.autoAdjust(darkerBlack, 'black');
+assert.ok(darkerAuto.highlights > 0 && darkerAuto.highlights < blackAuto.highlights, 'already dark fabric receives less correction');
+assert.equal(darkerAuto.shadows, 0, 'black profile never whitens dark seams');
+for (const image of [noChangeCases.blackGarmentWhiteBackground, highKeyWhiteGarment,
+  noChangeCases.wellExposedSaturatedColour, noChangeCases.tiny, noChangeCases.fullyTransparent]) {
+  assert.deepEqual(engine.autoAdjust(image, 'black'), neutral, 'unsupported or already deep black sources stay unchanged');
+}
+const stitchedFabric = fixture(3, 1, p => grey([96, 128, 148][p]));
+engine.applyToImageData(stitchedFabric, blackAuto);
+assert.ok(stitchedFabric.data[0] < stitchedFabric.data[4] && stitchedFabric.data[4] < stitchedFabric.data[8],
+  'seams and fabric reflections remain ordered and distinguishable');
+
 assert.throws(() => engine.autoAdjust(null), /RGBA ImageData/);
 assert.throws(() => engine.applyToImageData({ width: 4, height: 4, data: new Uint8ClampedArray(8) }, automatic), /RGBA ImageData/);
 

@@ -1510,6 +1510,7 @@ async function handlePhotoSelect(e) {
   }
   const operationId = ++photoProcessingOperationId;
   const startingDraftId = activeTemporaryDraftId;
+  const toneMode = el('photo-auto-tone')?.value === 'black' ? 'black' : 'standard';
   const processedImages = [];
   photoProcessingInProgress = true;
   setPhotoProcessingLock_(true);
@@ -1519,7 +1520,7 @@ async function handlePhotoSelect(e) {
     // and finish after every file is processed or ownership changes.
     for (const file of toAdd) {
       try {
-        const processed = await processImage(file);
+        const processed = await processImage(file, toneMode);
         if (operationId !== photoProcessingOperationId || startingDraftId !== activeTemporaryDraftId) {
           break;
         }
@@ -1586,7 +1587,7 @@ function adjustPhotoCanvas_(canvas, adjust) {
   return canvas;
 }
 
-async function processImage(file) {
+async function processImage(file, toneMode = 'standard') {
   const source = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
@@ -1600,7 +1601,7 @@ async function processImage(file) {
   const originalDataUrl = canvas.toDataURL('image/jpeg', 0.85);
   const originalBase64HQ = canvasHQ.toDataURL('image/jpeg', 0.92).split(',')[1];
   const sample = photoCanvas_(img, 160);
-  const adjust = MercariPhotoAdjust.autoAdjust(sample.getContext('2d').getImageData(0, 0, sample.width, sample.height));
+  const adjust = MercariPhotoAdjust.autoAdjust(sample.getContext('2d').getImageData(0, 0, sample.width, sample.height), toneMode);
   return applyPhotoAdjustment_({
     mediaType: 'image/jpeg', originalDataUrl, originalBase64HQ,
     dataUrl: originalDataUrl, base64: originalDataUrl.split(',')[1], base64HQ: originalBase64HQ,
@@ -1759,11 +1760,13 @@ function setupPhotoEditor_() {
     el(id).addEventListener('input', updatePhotoEditorPreview_);
   }
   el('photo-adjust-reset').addEventListener('click', () => setPhotoEditorValues_({ brightness: 0, contrast: 0 }));
-  el('photo-adjust-auto').addEventListener('click', () => {
-    if (!photoEditorState?.image || photoEditorState.busy) return;
-    const sample = photoCanvas_(photoEditorState.image, 160);
-    setPhotoEditorValues_(MercariPhotoAdjust.autoAdjust(sample.getContext('2d').getImageData(0, 0, sample.width, sample.height)));
-  });
+  for (const [id, mode] of [['photo-adjust-auto', 'standard'], ['photo-adjust-black', 'black']]) {
+    el(id).addEventListener('click', () => {
+      if (!photoEditorState?.image || photoEditorState.busy) return;
+      const sample = photoCanvas_(photoEditorState.image, 160);
+      setPhotoEditorValues_(MercariPhotoAdjust.autoAdjust(sample.getContext('2d').getImageData(0, 0, sample.width, sample.height), mode));
+    });
+  }
 }
 
 function renderPreviews() {
@@ -5975,6 +5978,7 @@ function scheduleSave() {
 function restoreState(s) {
   if (draftSaveInProgress || temporarySaveInProgress) return;
   if (!s) return;
+  const photoTone = el('photo-auto-tone'); if (photoTone) photoTone.value = 'standard';
   activeTemporaryDraftId = s.temporaryDraftId || null;
   currentProductWorkflowId = String(s.productWorkflowId || s.temporaryDraftId || s.lastAiData?.product_id || '') || createOperationId_('product-workflow');
   const restoredProductGender = resolveRestoredProductGender_(s);
@@ -6084,6 +6088,7 @@ async function clearCurrentProduct_({ clearSession = true, scroll = false, compl
   currentProductWorkflowId = '';
   renderPreviews();
   const photoInput = el('photo-input'); if (photoInput) photoInput.value = '';
+  const photoTone = el('photo-auto-tone'); if (photoTone) photoTone.value = 'standard';
   el('category').value = isNonApparelProductAudience() ? 'other' : '';
   renderMeasurements();
   el('title-text').value = '';

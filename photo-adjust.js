@@ -43,7 +43,7 @@
     return 255;
   }
 
-  function autoAdjust(imageData) {
+  function autoAdjust(imageData, mode = 'standard') {
     const data = validateImageData(imageData);
     const neutral = normalizeAdjust(null);
     const pixels = imageData.width * imageData.height;
@@ -60,6 +60,9 @@
     let bright = 0;
     let midtones = 0;
     let detailedHighlights = 0;
+    const garmentHistogram = new Uint32Array(256);
+    let garmentCount = 0;
+    let centreCount = 0;
     for (let pixel = 0; pixel < pixels; pixel += stride) {
       const i = pixel * 4;
       if (data[i + 3] < 240) continue;
@@ -68,11 +71,38 @@
       channelHistogram[Math.max(data[i], data[i + 1], data[i + 2])]++;
       count++;
       sum += luminance;
+      const x = (pixel % imageData.width) / imageData.width;
+      const y = Math.floor(pixel / imageData.width) / imageData.height;
+      if (x >= 0.25 && x <= 0.75 && y >= 0.30 && y <= 0.85) {
+        centreCount++;
+        const maximum = Math.max(data[i], data[i + 1], data[i + 2]);
+        const minimum = Math.min(data[i], data[i + 1], data[i + 2]);
+        if (maximum - minimum <= Math.max(12, maximum * 0.20)) {
+          garmentHistogram[luminance]++;
+          garmentCount++;
+        }
+      }
       if (luminance >= 200) bright++;
       if (luminance >= 65 && luminance <= 210) midtones++;
       if (luminance >= 220 && luminance <= 252) detailedHighlights++;
     }
     if (count < 256) return neutral;
+
+    // Black is a user-supplied fact, never inferred from a grey-looking photo.
+    // Central neutral tones estimate strength, reducing the influence of
+    // peripheral background and saturated props. Insufficient evidence leaves
+    // the source unchanged. This is a tone curve, not garment segmentation.
+    if (mode === 'black') {
+      if (garmentCount < 64 || garmentCount / Math.max(1, centreCount) < 0.35) return neutral;
+      const garmentMedian = percentile(garmentHistogram, garmentCount, 0.50);
+      if (garmentMedian < 55 || garmentMedian > 185) return neutral;
+      // Calibrated to the user's black puffer reference: median ~130 maps to
+      // brightness 0 / contrast -20 / shadows 0 / highlights 50. Darker fabric
+      // receives proportionally less correction, avoiding a crushed black.
+      const strength = Math.max(0, Math.min(1, (garmentMedian - 75) / 55));
+      return normalizeAdjust({ brightness: 0, contrast: -Math.round(20 * strength),
+        shadows: 0, highlights: Math.round(50 * strength) });
+    }
 
     const mean = sum / count;
     const p10 = percentile(histogram, count, 0.10);

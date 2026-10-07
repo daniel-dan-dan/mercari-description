@@ -4038,3 +4038,9 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 @media (max-height: 700px) {
   #photo-adjust-preview { height: min(22vh, 180px); }
 }
+
+.photo-tone-select { display: block; font-size: 12px; margin-bottom: 8px; }
+.photo-tone-select select { margin-top: 4px; width: 100%; }
+.photo-adjust-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.photo-adjust-presets .btn { min-width: 0; padding: 10px 4px; font-size: 12px; }
+#photo-adjust-reset { grid-column: 1 / -1; }
