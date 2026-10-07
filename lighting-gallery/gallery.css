@@ -1,0 +1,31 @@
+* { box-sizing: border-box; }
+:root { color-scheme: light; --paper: #f7f6f2; --ink: #252823; --muted: #666b61; --line: #dfe1d9; --accent: #3d5045; }
+html { scroll-behavior: smooth; scroll-padding-top: 86px; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; line-height: 1.7; }
+a { color: inherit; text-underline-offset: 4px; }
+a:focus-visible { outline: 3px solid #42644d; outline-offset: 4px; }
+.intro, main, footer { width: min(100% - 32px, 680px); margin-inline: auto; }
+.intro { padding: 36px 0 22px; }
+.kicker { font-size: 11px; font-weight: 700; letter-spacing: .16em; color: var(--muted); margin: 0 0 12px; }
+h1 { font-size: clamp(28px, 7.5vw, 40px); line-height: 1.4; letter-spacing: .03em; margin: 0; font-weight: 700; }
+.lead { font-size: 14px; margin: 16px 0 8px; }
+.preview-note { color: var(--muted); font-size: 11px; margin: 0; }
+.jump-nav { position: sticky; top: 0; z-index: 2; display: flex; justify-content: center; align-items: center; gap: 6px; padding: 10px 8px; background: var(--paper); border-block: 1px solid var(--line); }
+.jump-nav span { font-size: 11px; margin-right: 4px; color: var(--muted); }
+.jump-nav a { display: grid; place-items: center; min-width: 40px; min-height: 44px; border: 1px solid var(--line); border-radius: 50%; text-decoration: none; background: #fff; font-size: 14px; font-weight: 700; }
+.jump-nav a:hover { background: #e9ede6; }
+.concept { scroll-margin-top: 8px; margin-block: 26px 34px; background: #fff; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.concept-heading { display: flex; gap: 12px; align-items: center; padding: 18px 16px; }
+.number { font-size: 28px; line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; }
+.eyebrow { color: var(--muted); font-size: 11px; margin: 0 0 2px; }
+h2 { font-size: 18px; line-height: 1.5; margin: 0; }
+.image-link { display: block; }
+img { display: block; width: 100%; height: auto; }
+.concept-bottom { padding: 16px; }
+.concept-bottom p { font-size: 13px; margin: 0 0 12px; }
+.full-image { display: inline-block; padding-block: 8px; font-size: 12px; color: var(--accent); font-weight: 700; }
+footer { text-align: center; padding: 4px 0 40px; color: var(--muted); font-size: 12px; }
+footer p { margin: 0 0 12px; }
+footer a { display: inline-block; padding: 8px; }
+footer small { display: block; font-size: 10px; margin-top: 18px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
