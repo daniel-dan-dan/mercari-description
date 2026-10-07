@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261007i">
-  <script src="public-config.js?v=20261007i"></script>
+  <link rel="stylesheet" href="styles.css?v=20261008a">
+  <script src="public-config.js?v=20261008a"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -59,13 +59,13 @@
           </div>
           <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
         </details>
-      <p class="settings-version" id="settings-version">v20261007i / UI改善・セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20261008a / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261007i</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261008a</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
@@ -339,6 +339,17 @@
           <button id="photo-adjust-none" class="btn small" type="button">明るさの補正なし</button>
           <button id="photo-adjust-reset" class="btn small" type="button">元に戻す</button>
         </div>
+        <fieldset class="photo-batch-scope">
+          <legend>反映する写真</legend>
+          <div class="photo-batch-options">
+            <label><input id="photo-adjust-scope-current" type="radio" name="photo-adjust-scope" value="current" checked>この写真のみ</label>
+            <label><input id="photo-adjust-scope-all" type="radio" name="photo-adjust-scope" value="all" data-photo-requires-multiple="1">すべての写真</label>
+            <label><input id="photo-adjust-scope-selected" type="radio" name="photo-adjust-scope" value="selected" data-photo-requires-multiple="1">写真を選ぶ</label>
+          </div>
+          <p id="photo-adjust-target-count" class="note small" aria-live="polite">1枚に同じ設定を反映します</p>
+          <div id="photo-adjust-targets" class="photo-batch-targets" hidden></div>
+          <p class="note small">編集中の写真も含みます。5項目の設定をコピーし、各写真の補正前の画像から調整します。</p>
+        </fieldset>
         <p class="note small">「黒い服」「白い服」は実物の色に合わせて選んでください。色味は別の設定です。「元に戻す」で色味も解除します。背景や付属品にも明るさの補正がかかります。実物の色や汚れを確認してください。完全に黒・白になった部分の細部は復元できません。</p>
         <p id="photo-adjust-generated-note" class="note small" hidden>反映すると、説明文をもう一度生成する必要があります。</p>
         <p id="photo-adjust-status" class="photo-adjust-status" role="status" aria-live="polite"></p>
@@ -355,7 +366,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261007i</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261008a</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -366,10 +377,10 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20261007i"></script>
-  <script src="photo-adjust.js?v=20261007i"></script>
-  <script src="app.js?v=20261007i"></script>
-  <script src="review.js?v=20261007i"></script>
-  <script src="bootstrap.js?v=20261007i"></script>
+  <script src="catalog-data.js?v=20261008a"></script>
+  <script src="photo-adjust.js?v=20261008a"></script>
+  <script src="app.js?v=20261008a"></script>
+  <script src="review.js?v=20261008a"></script>
+  <script src="bootstrap.js?v=20261008a"></script>
 </body>
 </html>
