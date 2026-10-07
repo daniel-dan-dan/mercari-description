@@ -168,6 +168,19 @@ async function testPhotoRendering() {
   const repeatedTones = await context.applyPhotoAdjustment_(allTones, { shadows: 25, highlights: 30 });
   assert.equal(repeatedTones.base64, allTones.base64);
   assert.equal(repeatedTones.base64HQ, allTones.base64HQ);
+  const extendedAdjust = { brightness: -60, contrast: -40, shadows: 75, highlights: 100 };
+  const strong = await context.applyPhotoAdjustment_(changed, extendedAdjust);
+  const strongAgain = await context.applyPhotoAdjustment_(strong, extendedAdjust);
+  assert.equal(strong.base64, strongAgain.base64, 'extended correction remains non-cumulative');
+  assert.equal(strong.base64HQ, strongAgain.base64HQ);
+  assert.notEqual(strong.base64, changed.base64, 'extended setting updates AI bytes');
+  assert.notEqual(strong.base64HQ, changed.base64HQ, 'extended setting updates HQ bytes');
+  const savedStrong = hooks.hydrateTemporaryDraftPhoto_(hooks.compactTemporaryDraftPhoto_(strong));
+  for (const [key, value] of Object.entries(extendedAdjust)) assert.equal(savedStrong.adjust[key], value);
+  assert.equal(savedStrong.originalBase64HQ, originalHQ);
+  const resetStrong = await context.applyPhotoAdjustment_(savedStrong, {});
+  assert.equal(resetStrong.base64, originalSmall); assert.equal(resetStrong.base64HQ, originalHQ);
+
   const tonesReset = await context.applyPhotoAdjustment_(allTones, {});
   assert.equal(tonesReset.base64, originalSmall);
   assert.equal(tonesReset.base64HQ, originalHQ);

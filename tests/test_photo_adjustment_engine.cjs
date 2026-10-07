@@ -15,7 +15,7 @@ function fixture(width, height, colourAt) {
 const grey = value => [value, value, value];
 const neutral = { brightness: 0, contrast: 0, shadows: 0, highlights: 0, temp: 0 };
 
-assert.deepEqual(engine.normalizeAdjust({ brightness: '100', contrast: -80, temp: 50 }), { ...neutral, brightness: 30, contrast: -20 });
+assert.deepEqual(engine.normalizeAdjust({ brightness: '100', contrast: -80, temp: 50 }), { ...neutral, brightness: 60, contrast: -40 });
 for (const value of [undefined, null, NaN, Infinity, -Infinity, 'invalid', {}, Symbol('invalid')]) {
   assert.deepEqual(engine.normalizeAdjust({ brightness: value, contrast: value, shadows: value, highlights: value }), neutral);
 }
@@ -80,12 +80,49 @@ for (const brightness of [-30, 0, 12, 30]) {
   }
 }
 
+// Extended range must not create tonal inversions even at combined limits.
+for (const brightness of [-60, -45, 0, 45, 60]) for (const contrast of [-40, -30, 0, 30, 40]) {
+  for (const shadows of [0, 75, 100]) for (const highlights of [0, 75, 100]) {
+    const gradient = fixture(256, 1, p => grey(p));
+    engine.applyToImageData(gradient, { brightness, contrast, shadows, highlights });
+    assert.equal(gradient.data[0], 0); assert.equal(gradient.data[255 * 4], 255);
+    for (let p = 1; p < 256; p++) {
+      assert.ok(gradient.data[p * 4] >= gradient.data[(p - 1) * 4], 'extended controls cannot reverse light and dark');
+    }
+    assert.ok(gradient.data[180 * 4] > gradient.data[80 * 4], 'broad fabric tones remain distinguishable');
+  }
+}
+// A range extension must actually move the rendering past the old endpoint.
+for (const [key, oldLimit, newLimit, pixel] of [
+  ['brightness', 30, 60, 100], ['brightness', -30, -60, 100],
+  ['contrast', 20, 40, 48], ['contrast', -20, -40, 208],
+  ['shadows', 50, 100, 48], ['highlights', 50, 100, 180],
+]) {
+  const before = fixture(1, 1, () => grey(pixel));
+  const after = fixture(1, 1, () => grey(pixel));
+  engine.applyToImageData(before, { [key]: oldLimit }); engine.applyToImageData(after, { [key]: newLimit });
+  assert.ok(Math.abs(after.data[0] - pixel) > Math.abs(before.data[0] - pixel) + 5, key + ' changes beyond its former limit');
+}
+// Golden outputs captured from v20261007c ensure existing photos and presets
+// still render byte-for-byte identically when their values remain in old bounds.
+const crypto = require('node:crypto');
+for (const [adjust, expected] of [
+  [{ brightness: 30, contrast: 20, shadows: 50, highlights: 50 }, 'f5f1c421009e7e4212df043400fa437c4be564c530fc4f5bad2a9273b9de54a2'],
+  [{ brightness: -30, contrast: -20, shadows: 0, highlights: 50 }, '133fd065d9ec9ecd4abc8f74ea7242ba978126e7424456d8c2855e24bfd43fe0'],
+  [{ brightness: 0, contrast: -20, shadows: 0, highlights: 50 }, 'a92cdaecc10b419748577108199b6cef28f7e20067002b3c9e25e5c8fbfcafa0'],
+  [{ brightness: 8, contrast: 3, shadows: 25, highlights: 30 }, '146f3db4a45973e2eecfe0669b7876fa734192d90b2269eccaa4b5f53fe691ce'],
+]) {
+  const image = fixture(256, 1, p => [p, p * 7 % 256, p * 13 % 256, p]);
+  engine.applyToImageData(image, adjust);
+  assert.equal(crypto.createHash('sha256').update(image.data).digest('hex'), expected, 'old-range output must not drift');
+}
+
 const dirt = fixture(2, 1, p => grey(p === 0 ? 65 : 80));
 engine.applyToImageData(dirt, { brightness: 12 });
 assert.ok(dirt.data[0] < dirt.data[4], 'dark blemish remains visible after automatic correction');
 assert.ok(dirt.data[4] - dirt.data[0] >= 14, 'automatic exposure does not flatten the blemish');
 
-for (const adjustment of [{ brightness: 30, contrast: 20 }, { brightness: -30, contrast: -20 }, { shadows: 50 }, { highlights: 50 }, { brightness: 30, contrast: 20, shadows: 50, highlights: 50 }, automatic]) {
+for (const adjustment of [{ brightness: 30, contrast: 20 }, { brightness: -30, contrast: -20 }, { shadows: 50 }, { highlights: 50 }, { brightness: 30, contrast: 20, shadows: 50, highlights: 50 }, { brightness: 60, contrast: 40, shadows: 100, highlights: 100 }, { brightness: -60, contrast: -40, shadows: 100, highlights: 100 }, automatic]) {
   const colours = fixture(5, 1, p => [
     [120, 60, 30, 255], [50, 100, 150, 128], [250, 245, 240, 255],
     [255, 70, 20, 255], [40, 80, 160, 0],
@@ -111,7 +148,7 @@ engine.applyToImageData(contrastPhoto, { contrast: 20 });
 assert.ok(contrastPhoto.data[0] < 48 && contrastPhoto.data[8] > 208, 'manual contrast affects both sides of midgrey');
 
 // Shadow/highlight-only controls are effective while preserving known endpoints.
-assert.deepEqual(engine.normalizeAdjust({ shadows: '80', highlights: -10 }), { ...neutral, shadows: 50 });
+assert.deepEqual(engine.normalizeAdjust({ shadows: '180', highlights: -10 }), { ...neutral, shadows: 100 });
 const toneGradient = fixture(256, 1, p => grey(p));
 const lifted = fixture(256, 1, p => grey(p));
 const restrained = fixture(256, 1, p => grey(p));

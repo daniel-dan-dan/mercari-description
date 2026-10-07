@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261007c">
-  <script src="public-config.js?v=20261007c"></script>
+  <link rel="stylesheet" href="styles.css?v=20261007d">
+  <script src="public-config.js?v=20261007d"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -59,13 +59,13 @@
           </div>
           <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
         </details>
-      <p class="settings-version" id="settings-version">v20261007c / UI改善・セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20261007d / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261007c</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261007d</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
@@ -303,19 +303,19 @@
         <label class="photo-compare"><input id="photo-show-original" type="checkbox">補正前と比較</label>
         <div class="photo-slider-field">
           <label for="photo-brightness">明るさ <output id="photo-brightness-value" for="photo-brightness">0</output></label>
-          <input id="photo-brightness" type="range" min="-30" max="30" step="1" value="0">
+          <input id="photo-brightness" type="range" min="-60" max="60" step="1" value="0">
         </div>
         <div class="photo-slider-field">
           <label for="photo-contrast">コントラスト <output id="photo-contrast-value" for="photo-contrast">0</output></label>
-          <input id="photo-contrast" type="range" min="-20" max="20" step="1" value="0">
+          <input id="photo-contrast" type="range" min="-40" max="40" step="1" value="0">
         </div>
         <div class="photo-slider-field">
           <label for="photo-shadows">シャドウ（暗い部分を明るく） <output id="photo-shadows-value" for="photo-shadows">0</output></label>
-          <input id="photo-shadows" type="range" min="0" max="50" step="1" value="0">
+          <input id="photo-shadows" type="range" min="0" max="100" step="1" value="0">
         </div>
         <div class="photo-slider-field">
           <label for="photo-highlights">ハイライト（明るい部分を抑える） <output id="photo-highlights-value" for="photo-highlights">0</output></label>
-          <input id="photo-highlights" type="range" min="0" max="50" step="1" value="0">
+          <input id="photo-highlights" type="range" min="0" max="100" step="1" value="0">
         </div>
         <div class="button-row photo-adjust-presets">
           <button id="photo-adjust-auto" class="btn small" type="button">通常の自動調整</button>
@@ -337,7 +337,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261007c</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261007d</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -348,10 +348,10 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20261007c"></script>
-  <script src="photo-adjust.js?v=20261007c"></script>
-  <script src="app.js?v=20261007c"></script>
-  <script src="review.js?v=20261007c"></script>
-  <script src="bootstrap.js?v=20261007c"></script>
+  <script src="catalog-data.js?v=20261007d"></script>
+  <script src="photo-adjust.js?v=20261007d"></script>
+  <script src="app.js?v=20261007d"></script>
+  <script src="review.js?v=20261007d"></script>
+  <script src="bootstrap.js?v=20261007d"></script>
 </body>
 </html>

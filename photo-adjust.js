@@ -15,10 +15,10 @@
   function normalizeAdjust(adjust) {
     const value = adjust && typeof adjust === 'object' ? adjust : {};
     return {
-      brightness: boundedNumber(value.brightness, -30, 30),
-      contrast: boundedNumber(value.contrast, -20, 20),
-      shadows: boundedNumber(value.shadows, 0, 50),
-      highlights: boundedNumber(value.highlights, 0, 50),
+      brightness: boundedNumber(value.brightness, -60, 60),
+      contrast: boundedNumber(value.contrast, -40, 40),
+      shadows: boundedNumber(value.shadows, 0, 100),
+      highlights: boundedNumber(value.highlights, 0, 100),
       temp: 0,
     };
   }
@@ -132,6 +132,25 @@
     const data = validateImageData(imageData);
     const normalized = normalizeAdjust(adjust);
     if (!normalized.brightness && !normalized.contrast && !normalized.shadows && !normalized.highlights) return imageData;
+    // Keep the original range byte-compatible. Apply only the extra range as
+    // a second bounded pass; directly doubling coefficients can invert the
+    // highlight curve when brightness and contrast are both at their limits.
+    const first = {
+      brightness: boundedNumber(normalized.brightness, -30, 30),
+      contrast: boundedNumber(normalized.contrast, -20, 20),
+      shadows: boundedNumber(normalized.shadows, 0, 50),
+      highlights: boundedNumber(normalized.highlights, 0, 50),
+    };
+    const extra = {};
+    for (const key of ['brightness', 'contrast', 'shadows', 'highlights']) {
+      extra[key] = normalized[key] - first[key];
+    }
+    applyTonePass_(data, first);
+    if (Object.values(extra).some(value => value !== 0)) applyTonePass_(data, extra);
+    return imageData;
+  }
+
+  function applyTonePass_(data, normalized) {
     const brightness = normalized.brightness / 100;
     const contrast = normalized.contrast / 100;
 
@@ -164,7 +183,6 @@
       data[i + 1] = Math.round(green * gain);
       data[i + 2] = Math.round(blue * gain);
     }
-    return imageData;
   }
 
   return Object.freeze({ normalizeAdjust, autoAdjust, applyToImageData });
