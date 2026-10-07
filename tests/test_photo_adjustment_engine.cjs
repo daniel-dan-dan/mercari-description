@@ -13,7 +13,7 @@ function fixture(width, height, colourAt) {
   return { width, height, data };
 }
 const grey = value => [value, value, value];
-const neutral = { brightness: 0, contrast: 0, shadows: 0, highlights: 0, temp: 0 };
+const neutral = { brightness: 0, contrast: 0, shadows: 0, highlights: 0, temp: 0, warmth: 0 };
 
 assert.deepEqual(engine.normalizeAdjust({ brightness: '100', contrast: -80, temp: 50 }), { ...neutral, brightness: 60, contrast: -40 });
 for (const value of [undefined, null, NaN, Infinity, -Infinity, 'invalid', {}, Symbol('invalid')]) {
@@ -211,6 +211,52 @@ const stitchedFabric = fixture(3, 1, p => grey([96, 128, 148][p]));
 engine.applyToImageData(stitchedFabric, blackAuto);
 assert.ok(stitchedFabric.data[0] < stitchedFabric.data[4] && stitchedFabric.data[4] < stitchedFabric.data[8],
   'seams and fabric reflections remain ordered and distinguishable');
+
+// New modes do not repurpose legacy temperature metadata.
+assert.deepEqual(engine.autoAdjust(dark, 'none'), neutral);
+const whiteTexture = fixture(64, 64, p => grey(220 + p % 33));
+const whiteBytes = whiteTexture.data.slice();
+const whiteAuto = engine.autoAdjust(whiteTexture, 'white');
+assert.ok(whiteAuto.highlights >= 6 && whiteAuto.highlights <= 24);
+assert.equal(whiteAuto.brightness, 0);
+assert.equal(whiteAuto.warmth, 0);
+assert.deepEqual(whiteTexture.data, whiteBytes);
+engine.applyToImageData(whiteTexture, whiteAuto);
+assert.ok(whiteTexture.data[12 * 4] < whiteBytes[12 * 4]);
+assert.ok(whiteTexture.data[30 * 4] > whiteTexture.data[10 * 4], 'white texture stays ordered');
+for (const image of [fixture(64, 64, () => grey(240)), noChangeCases.white, noChangeCases.black, dark,
+  noChangeCases.wellExposedSaturatedColour, noChangeCases.fullyTransparent]) {
+  assert.deepEqual(engine.autoAdjust(image, 'white'), neutral, 'white preset requires bright surviving detail');
+}
+const oldTemperature = fixture(1, 1, () => [185, 165, 145]);
+engine.applyToImageData(oldTemperature, { temp: 50 });
+assert.deepEqual([...oldTemperature.data], [185, 165, 145, 255]);
+assert.equal(engine.normalizeAdjust({ warmth: Infinity }).warmth, 0);
+assert.equal(engine.normalizeAdjust({ warmth: '100' }).warmth, 50);
+for (const [warmth, colour] of [[-18, [185, 165, 145]], [18, [145, 165, 185]]]) {
+  const image = fixture(1, 1, () => colour);
+  engine.applyToImageData(image, { warmth });
+  assert.ok(Math.abs(image.data[0] - image.data[2]) < Math.abs(colour[0] - colour[2]), 'selected lighting direction reduces the cast');
+  assert.equal(image.data[1], colour[1]);
+}
+for (const warmth of [-50, -18, 18, 50]) {
+  const gradient = fixture(256, 1, p => grey(p));
+  engine.applyToImageData(gradient, { warmth });
+  for (const channel of [0, 1, 2]) {
+    assert.equal(gradient.data[channel], 0); assert.equal(gradient.data[255 * 4 + channel], 255);
+    for (let p = 1; p < 256; p++) assert.ok(gradient.data[p * 4 + channel] >= gradient.data[(p - 1) * 4 + channel]);
+  }
+  const transparent = fixture(1, 1, () => [100, 80, 50, 0]);
+  engine.applyToImageData(transparent, { warmth });
+  assert.deepEqual([...transparent.data], [100, 80, 50, 0]);
+}
+// Tone presets have no automatic white guess; genuine cream/blemishes remain.
+const cream = fixture(64, 64, p => p % 2 ? [239, 226, 201] : [226, 210, 180]);
+const creamAuto = engine.autoAdjust(cream, 'white');
+assert.equal(creamAuto.warmth, 0);
+engine.applyToImageData(cream, creamAuto);
+assert.ok(cream.data[0] > cream.data[2] && cream.data[4] > cream.data[6]);
+assert.ok(cream.data[0] < cream.data[4], 'darker yellowing remains visible');
 
 assert.throws(() => engine.autoAdjust(null), /RGBA ImageData/);
 assert.throws(() => engine.applyToImageData({ width: 4, height: 4, data: new Uint8ClampedArray(8) }, automatic), /RGBA ImageData/);

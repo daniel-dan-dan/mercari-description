@@ -1,4 +1,4 @@
-/* Local photo tone correction. No uploads, dependencies or colour-temperature changes. */
+/* Local photo tone correction. No uploads or dependencies. Colour correction is explicitly selected by the user. */
 (function (root, factory) {
   'use strict';
   const api = factory();
@@ -19,7 +19,8 @@
       contrast: boundedNumber(value.contrast, -40, 40),
       shadows: boundedNumber(value.shadows, 0, 100),
       highlights: boundedNumber(value.highlights, 0, 100),
-      temp: 0,
+      temp: 0, // Legacy placeholder remains ignored.
+      warmth: boundedNumber(value.warmth, -50, 50),
     };
   }
 
@@ -46,6 +47,7 @@
   function autoAdjust(imageData, mode = 'standard') {
     const data = validateImageData(imageData);
     const neutral = normalizeAdjust(null);
+    if (mode === 'none') return neutral;
     const pixels = imageData.width * imageData.height;
     // Tiny/flat images do not provide enough evidence to infer exposure.
     if (imageData.width < 16 || imageData.height < 16 || pixels < 256) return neutral;
@@ -104,6 +106,17 @@
         shadows: 0, highlights: Math.round(50 * strength) });
     }
 
+    // White is also user-confirmed. Restrain only surviving bright detail,
+    // without exposure lift, colour whitening or invented clipped texture.
+    if (mode === 'white') {
+      if (garmentCount < 64 || garmentCount / Math.max(1, centreCount) < 0.35) return neutral;
+      const median = percentile(garmentHistogram, garmentCount, 0.50);
+      const upper = percentile(garmentHistogram, garmentCount, 0.90);
+      const lower = percentile(garmentHistogram, garmentCount, 0.10);
+      if (upper - lower < 8 || median < 185 || upper < 225 || detailedHighlights / count < 0.08) return neutral;
+      return normalizeAdjust({ highlights: Math.min(24, Math.max(6, Math.round((upper - 215) / 2))) });
+    }
+
     const mean = sum / count;
     const p10 = percentile(histogram, count, 0.10);
     const p50 = percentile(histogram, count, 0.50);
@@ -131,7 +144,7 @@
   function applyToImageData(imageData, adjust) {
     const data = validateImageData(imageData);
     const normalized = normalizeAdjust(adjust);
-    if (!normalized.brightness && !normalized.contrast && !normalized.shadows && !normalized.highlights) return imageData;
+    if (!normalized.brightness && !normalized.contrast && !normalized.shadows && !normalized.highlights && !normalized.warmth) return imageData;
     // Keep the original range byte-compatible. Apply only the extra range as
     // a second bounded pass; directly doubling coefficients can invert the
     // highlight curve when brightness and contrast are both at their limits.
@@ -147,6 +160,18 @@
     }
     applyTonePass_(data, first);
     if (Object.values(extra).some(value => value !== 0)) applyTonePass_(data, extra);
+    if (normalized.warmth) {
+      // Smooth bounded channel curves preserve endpoints, alpha and tonal order.
+      // No scene-based white guess: real beige and stains cannot be distinguished
+      // from warm lighting reliably. Positive warms, negative cools.
+      const strength = normalized.warmth * 0.012;
+      for (let i = 0; i < data.length; i += 4) {
+        if (!data[i + 3]) continue;
+        const red = data[i], blue = data[i + 2];
+        data[i] = Math.round(red + strength * red * (1 - red / 255));
+        data[i + 2] = Math.round(blue - strength * blue * (1 - blue / 255));
+      }
+    }
     return imageData;
   }
 

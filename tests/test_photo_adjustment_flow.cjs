@@ -181,6 +181,19 @@ async function testPhotoRendering() {
   const resetStrong = await context.applyPhotoAdjustment_(savedStrong, {});
   assert.equal(resetStrong.base64, originalSmall); assert.equal(resetStrong.base64HQ, originalHQ);
 
+  const colourOnly = await context.applyPhotoAdjustment_(changed, { warmth: -18 });
+  assert.notEqual(colourOnly.base64, originalSmall, 'colour-only changes update AI');
+  assert.notEqual(colourOnly.base64HQ, originalHQ, 'colour-only changes update HQ');
+  const colourAgain = await context.applyPhotoAdjustment_(colourOnly, { warmth: -18 });
+  assert.equal(colourAgain.base64, colourOnly.base64);
+  assert.equal(colourAgain.base64HQ, colourOnly.base64HQ);
+  assert.equal(colourAgain.thumbnailBase64, colourOnly.thumbnailBase64);
+  const savedColour = hooks.hydrateTemporaryDraftPhoto_(hooks.compactTemporaryDraftPhoto_(colourOnly));
+  assert.equal(savedColour.adjust.warmth, -18);
+  assert.equal(savedColour.originalBase64HQ, originalHQ);
+  const resetColour = await context.applyPhotoAdjustment_(savedColour, {});
+  assert.equal(resetColour.base64, originalSmall); assert.equal(resetColour.base64HQ, originalHQ);
+
   const tonesReset = await context.applyPhotoAdjustment_(allTones, {});
   assert.equal(tonesReset.base64, originalSmall);
   assert.equal(tonesReset.base64HQ, originalHQ);
@@ -225,7 +238,7 @@ async function testPhotoEditorRaces() {
     context.editorEvents.length = 0;
     vm.runInContext(`
       uploadedImages = [editorPhoto]; activeTemporaryDraftId = 'photo-test';
-      photoEditorState = { photo: editorPhoto, image: {}, busy: false, draftId: 'photo-test', adjust: { brightness: 14, contrast: 5, shadows: 25, highlights: 22 } };
+      photoEditorState = { photo: editorPhoto, image: {}, busy: false, draftId: 'photo-test', adjust: { brightness: 14, contrast: 5, shadows: 18, highlights: 22, warmth: -18 } };
     `, context);
     return context.applyPhotoEditor_();
   };

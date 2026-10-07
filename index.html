@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261007h">
-  <script src="public-config.js?v=20261007h"></script>
+  <link rel="stylesheet" href="styles.css?v=20261007i">
+  <script src="public-config.js?v=20261007i"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -59,13 +59,13 @@
           </div>
           <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
         </details>
-      <p class="settings-version" id="settings-version">v20261007h / UI改善・セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20261007i / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261007h</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261007i</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
@@ -118,8 +118,18 @@
           <select id="photo-auto-tone">
             <option value="standard">通常（明るさを控えめに補正）</option>
             <option value="black">黒い服（白っぽい反射を抑える）</option>
+            <option value="white">白い服（明るい生地の濃淡を残す）</option>
+            <option value="none">補正なし（明るさを変えない）</option>
           </select>
         </label>
+        <label class="photo-tone-select" for="photo-auto-colour">室内灯の色味補正
+          <select id="photo-auto-colour" aria-describedby="photo-colour-note">
+            <option value="off">オフ（色味を変えない）</option>
+            <option value="warm">黄みを抑える（暖色の照明）</option>
+            <option value="cool">青みを抑える（寒色の照明）</option>
+          </select>
+        </label>
+        <p id="photo-colour-note" class="note small">新しく選ぶ写真に適用します。実物のベージュ・黄ばみは残してください。</p>
         <label class="file-label" for="photo-input">
           <i data-lucide="camera" aria-hidden="true"></i> 写真を選ぶ / 撮影する
         </label>
@@ -317,12 +327,19 @@
           <label for="photo-highlights">ハイライト（明るい部分を抑える） <output id="photo-highlights-value" for="photo-highlights">0</output></label>
           <input id="photo-highlights" type="range" min="0" max="100" step="1" value="0">
         </div>
+        <div class="photo-slider-field">
+          <label for="photo-warmth">室内灯の色味 <output id="photo-warmth-value" for="photo-warmth">0</output></label>
+          <input id="photo-warmth" type="range" min="-50" max="50" step="1" value="0" aria-describedby="photo-warmth-note">
+          <p id="photo-warmth-note" class="note small">左：黄みを抑える ／ 右：青みを抑える。0でオフ。</p>
+        </div>
         <div class="button-row photo-adjust-presets">
           <button id="photo-adjust-auto" class="btn small" type="button">通常の自動調整</button>
           <button id="photo-adjust-black" class="btn small" type="button">黒い服を自動調整</button>
+          <button id="photo-adjust-white" class="btn small" type="button">白い服を自動調整</button>
+          <button id="photo-adjust-none" class="btn small" type="button">明るさの補正なし</button>
           <button id="photo-adjust-reset" class="btn small" type="button">元に戻す</button>
         </div>
-        <p class="note small">「黒い服」は実物が黒の写真に使ってください。背景や付属品にも明るさの補正がかかります。実物の色や汚れを確認してください。完全に黒・白になった部分の細部は復元できません。</p>
+        <p class="note small">「黒い服」「白い服」は実物の色に合わせて選んでください。色味は別の設定です。「元に戻す」で色味も解除します。背景や付属品にも明るさの補正がかかります。実物の色や汚れを確認してください。完全に黒・白になった部分の細部は復元できません。</p>
         <p id="photo-adjust-generated-note" class="note small" hidden>反映すると、説明文をもう一度生成する必要があります。</p>
         <p id="photo-adjust-status" class="photo-adjust-status" role="status" aria-live="polite"></p>
         </div>
@@ -338,7 +355,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261007h</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261007i</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -349,10 +366,10 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20261007h"></script>
-  <script src="photo-adjust.js?v=20261007h"></script>
-  <script src="app.js?v=20261007h"></script>
-  <script src="review.js?v=20261007h"></script>
-  <script src="bootstrap.js?v=20261007h"></script>
+  <script src="catalog-data.js?v=20261007i"></script>
+  <script src="photo-adjust.js?v=20261007i"></script>
+  <script src="app.js?v=20261007i"></script>
+  <script src="review.js?v=20261007i"></script>
+  <script src="bootstrap.js?v=20261007i"></script>
 </body>
 </html>

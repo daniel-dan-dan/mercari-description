@@ -1510,7 +1510,10 @@ async function handlePhotoSelect(e) {
   }
   const operationId = ++photoProcessingOperationId;
   const startingDraftId = activeTemporaryDraftId;
-  const toneMode = el('photo-auto-tone')?.value === 'black' ? 'black' : 'standard';
+  const selectedTone = el('photo-auto-tone')?.value;
+  const toneMode = ['standard', 'black', 'white', 'none'].includes(selectedTone) ? selectedTone : 'standard';
+  const colourMode = el('photo-auto-colour')?.value;
+  const warmth = colourMode === 'warm' ? -18 : colourMode === 'cool' ? 18 : 0;
   const processedImages = [];
   photoProcessingInProgress = true;
   setPhotoProcessingLock_(true);
@@ -1520,7 +1523,7 @@ async function handlePhotoSelect(e) {
     // and finish after every file is processed or ownership changes.
     for (const file of toAdd) {
       try {
-        const processed = await processImage(file, toneMode);
+        const processed = await processImage(file, toneMode, warmth);
         if (operationId !== photoProcessingOperationId || startingDraftId !== activeTemporaryDraftId) {
           break;
         }
@@ -1579,7 +1582,7 @@ function photoCanvas_(img, maxEdge) {
 
 function adjustPhotoCanvas_(canvas, adjust) {
   const normalized = MercariPhotoAdjust.normalizeAdjust(adjust);
-  if (!normalized.brightness && !normalized.contrast && !normalized.shadows && !normalized.highlights) return canvas;
+  if (!normalized.brightness && !normalized.contrast && !normalized.shadows && !normalized.highlights && !normalized.warmth) return canvas;
   const ctx = canvas.getContext('2d');
   const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
   MercariPhotoAdjust.applyToImageData(pixels, normalized);
@@ -1587,7 +1590,7 @@ function adjustPhotoCanvas_(canvas, adjust) {
   return canvas;
 }
 
-async function processImage(file, toneMode = 'standard') {
+async function processImage(file, toneMode = 'standard', warmth = 0) {
   const source = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
@@ -1606,7 +1609,7 @@ async function processImage(file, toneMode = 'standard') {
     mediaType: 'image/jpeg', originalDataUrl, originalBase64HQ,
     dataUrl: originalDataUrl, base64: originalDataUrl.split(',')[1], base64HQ: originalBase64HQ,
     adjustSourceVersion: 1,
-  }, adjust);
+  }, { ...adjust, warmth });
 }
 
 async function applyPhotoAdjustment_(photo, requestedAdjust) {
@@ -1616,7 +1619,7 @@ async function applyPhotoAdjustment_(photo, requestedAdjust) {
   const canvas = photoCanvas_(original, MAX_IMAGE_EDGE);
   let dataUrl = source.originalDataUrl;
   let base64HQ = source.originalBase64HQ;
-  if (adjust.brightness || adjust.contrast || adjust.shadows || adjust.highlights) {
+  if (adjust.brightness || adjust.contrast || adjust.shadows || adjust.highlights || adjust.warmth) {
     adjustPhotoCanvas_(canvas, adjust);
     dataUrl = canvas.toDataURL('image/jpeg', 0.85);
     const originalHQ = await loadImage(`data:${source.mediaType};base64,${source.originalBase64HQ}`);
@@ -1642,9 +1645,10 @@ function updatePhotoEditorPreview_() {
   const adjust = MercariPhotoAdjust.normalizeAdjust({
     brightness: el('photo-brightness').value, contrast: el('photo-contrast').value,
     shadows: el('photo-shadows').value, highlights: el('photo-highlights').value,
+    warmth: el('photo-warmth').value,
   });
   state.adjust = adjust;
-  for (const key of ['brightness', 'contrast', 'shadows', 'highlights']) {
+  for (const key of ['brightness', 'contrast', 'shadows', 'highlights', 'warmth']) {
     el(`photo-${key}-value`).textContent = adjust[key] > 0 ? `+${adjust[key]}` : String(adjust[key]);
   }
   const preview = el('photo-adjust-preview');
@@ -1664,6 +1668,7 @@ function setPhotoEditorValues_(adjust) {
   el('photo-contrast').value = normalized.contrast;
   el('photo-shadows').value = normalized.shadows;
   el('photo-highlights').value = normalized.highlights;
+  el('photo-warmth').value = normalized.warmth;
   el('photo-show-original').checked = false;
   updatePhotoEditorPreview_();
 }
@@ -1712,7 +1717,7 @@ async function applyPhotoEditor_() {
   if (photoIndex < 0 || activeTemporaryDraftId !== state.draftId) { closePhotoEditor_(); return; }
   const currentAdjust = MercariPhotoAdjust.normalizeAdjust(hydrateTemporaryDraftPhoto_(state.photo).adjust);
   const nextAdjust = MercariPhotoAdjust.normalizeAdjust(state.adjust);
-  if (['brightness', 'contrast', 'shadows', 'highlights'].every(key => currentAdjust[key] === nextAdjust[key])) {
+  if (['brightness', 'contrast', 'shadows', 'highlights', 'warmth'].every(key => currentAdjust[key] === nextAdjust[key])) {
     closePhotoEditor_(); return;
   }
   const operationId = ++photoProcessingOperationId;
@@ -1741,7 +1746,7 @@ async function applyPhotoEditor_() {
   }
   if (!applied) return;
   closePhotoEditor_();
-  invalidateGeneratedResultAfterInputChange_('写真の明るさ');
+  invalidateGeneratedResultAfterInputChange_('写真の補正');
   renderPreviews();
   updateGenerateButton();
   scheduleSave();
@@ -1756,15 +1761,16 @@ function setupPhotoEditor_() {
   el('photo-adjust-cancel').addEventListener('click', closePhotoEditor_);
   dialog.addEventListener('cancel', event => { event.preventDefault(); closePhotoEditor_(); });
   el('photo-adjust-apply').addEventListener('click', applyPhotoEditor_);
-  for (const id of ['photo-brightness', 'photo-contrast', 'photo-shadows', 'photo-highlights', 'photo-show-original']) {
+  for (const id of ['photo-brightness', 'photo-contrast', 'photo-shadows', 'photo-highlights', 'photo-warmth', 'photo-show-original']) {
     el(id).addEventListener('input', updatePhotoEditorPreview_);
   }
   el('photo-adjust-reset').addEventListener('click', () => setPhotoEditorValues_({ brightness: 0, contrast: 0 }));
-  for (const [id, mode] of [['photo-adjust-auto', 'standard'], ['photo-adjust-black', 'black']]) {
+  for (const [id, mode] of [['photo-adjust-auto', 'standard'], ['photo-adjust-black', 'black'], ['photo-adjust-white', 'white'], ['photo-adjust-none', 'none']]) {
     el(id).addEventListener('click', () => {
       if (!photoEditorState?.image || photoEditorState.busy) return;
       const sample = photoCanvas_(photoEditorState.image, 160);
-      setPhotoEditorValues_(MercariPhotoAdjust.autoAdjust(sample.getContext('2d').getImageData(0, 0, sample.width, sample.height), mode));
+      setPhotoEditorValues_({ ...MercariPhotoAdjust.autoAdjust(sample.getContext('2d').getImageData(0, 0, sample.width, sample.height), mode),
+        warmth: photoEditorState.adjust?.warmth || 0 });
     });
   }
 }
@@ -5979,6 +5985,7 @@ function restoreState(s) {
   if (draftSaveInProgress || temporarySaveInProgress) return;
   if (!s) return;
   const photoTone = el('photo-auto-tone'); if (photoTone) photoTone.value = 'standard';
+  const photoColour = el('photo-auto-colour'); if (photoColour) photoColour.value = 'off';
   activeTemporaryDraftId = s.temporaryDraftId || null;
   currentProductWorkflowId = String(s.productWorkflowId || s.temporaryDraftId || s.lastAiData?.product_id || '') || createOperationId_('product-workflow');
   const restoredProductGender = resolveRestoredProductGender_(s);
@@ -6089,6 +6096,7 @@ async function clearCurrentProduct_({ clearSession = true, scroll = false, compl
   renderPreviews();
   const photoInput = el('photo-input'); if (photoInput) photoInput.value = '';
   const photoTone = el('photo-auto-tone'); if (photoTone) photoTone.value = 'standard';
+  const photoColour = el('photo-auto-colour'); if (photoColour) photoColour.value = 'off';
   el('category').value = isNonApparelProductAudience() ? 'other' : '';
   renderMeasurements();
   el('title-text').value = '';
