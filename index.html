@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260927a">
-  <script src="public-config.js?v=20260927a"></script>
+  <link rel="stylesheet" href="styles.css?v=20261007a">
+  <script src="public-config.js?v=20261007a"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -59,13 +59,13 @@
           </div>
           <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
         </details>
-      <p class="settings-version" id="settings-version">v20260927a / UI改善・セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20261007a / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20260927a</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261007a</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
@@ -119,6 +119,7 @@
         </label>
         <input type="file" id="photo-input" accept="image/*" multiple hidden>
         <div id="photo-preview" class="preview-grid"></div>
+        <p id="photo-auto-note" class="note small" hidden>新しく選んだ写真は明るさを自動調整。「明るさ」から確認・変更できます。</p>
         <details id="compose-btn-row" class="photo-edit-menu" hidden>
           <summary class="photo-edit-trigger">
             <span>写真編集</span>
@@ -282,11 +283,44 @@
 
     </section>
 
+    <dialog id="photo-adjust-dialog" aria-labelledby="photo-adjust-title">
+      <div class="photo-adjust-content">
+        <header class="modal-header">
+          <h2 id="photo-adjust-title">明るさ調整</h2>
+          <button id="photo-adjust-close" class="icon-btn" type="button" aria-label="明るさ調整を閉じる">×</button>
+        </header>
+        <figure class="photo-adjust-figure">
+          <canvas id="photo-adjust-preview" aria-label="写真の補正プレビュー"></canvas>
+          <figcaption id="photo-preview-caption">仕上がり</figcaption>
+        </figure>
+        <label class="photo-compare"><input id="photo-show-original" type="checkbox">補正前と比較</label>
+        <div class="photo-slider-field">
+          <label for="photo-brightness">明るさ <output id="photo-brightness-value" for="photo-brightness">0</output></label>
+          <input id="photo-brightness" type="range" min="-30" max="30" step="1" value="0">
+        </div>
+        <div class="photo-slider-field">
+          <label for="photo-contrast">コントラスト <output id="photo-contrast-value" for="photo-contrast">0</output></label>
+          <input id="photo-contrast" type="range" min="-20" max="20" step="1" value="0">
+        </div>
+        <div class="button-row photo-adjust-presets">
+          <button id="photo-adjust-auto" class="btn small" type="button">自動調整</button>
+          <button id="photo-adjust-reset" class="btn small" type="button">元に戻す</button>
+        </div>
+        <p class="note small">実物の色や汚れの見え方を確認してください。</p>
+        <p id="photo-adjust-generated-note" class="note small" hidden>反映すると、説明文をもう一度生成する必要があります。</p>
+        <p id="photo-adjust-status" class="photo-adjust-status" role="status" aria-live="polite"></p>
+        <div class="button-row photo-adjust-actions">
+          <button id="photo-adjust-cancel" class="btn" type="button">キャンセル</button>
+          <button id="photo-adjust-apply" class="btn primary" type="button">この写真に反映</button>
+        </div>
+      </div>
+    </dialog>
+
     <!-- 画像合成モーダル -->
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20260927a</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261007a</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -297,9 +331,10 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20260927a"></script>
-  <script src="app.js?v=20260927a"></script>
-  <script src="review.js?v=20260927a"></script>
-  <script src="bootstrap.js?v=20260927a"></script>
+  <script src="catalog-data.js?v=20261007a"></script>
+  <script src="photo-adjust.js?v=20261007a"></script>
+  <script src="app.js?v=20261007a"></script>
+  <script src="review.js?v=20261007a"></script>
+  <script src="bootstrap.js?v=20261007a"></script>
 </body>
 </html>

@@ -32,7 +32,9 @@ const originalPhoto = {
   base64: 'low-resolution-photo',
   base64HQ: 'high-resolution-photo',
   originalDataUrl: 'data:image/jpeg;base64,duplicate-low-resolution-photo',
-  adjust: { brightness: 1, temp: 2, contrast: 3 },
+  originalBase64HQ: 'original-high-resolution-photo',
+  adjustSourceVersion: 1,
+  adjust: { brightness: 1, temp: 0, contrast: 3 },
 };
 
 const compactPhoto = hooks.compactTemporaryDraftPhoto_(originalPhoto);
@@ -40,10 +42,13 @@ assert.equal(compactPhoto.base64, 'low-resolution-photo');
 assert.equal(compactPhoto.base64HQ, 'high-resolution-photo');
 assert.equal(Object.hasOwn(compactPhoto, 'dataUrl'), false);
 assert.equal(Object.hasOwn(compactPhoto, 'originalDataUrl'), false);
+assert.equal(compactPhoto.originalBase64, 'duplicate-low-resolution-photo');
+assert.equal(compactPhoto.originalBase64HQ, 'original-high-resolution-photo');
 
 const hydratedPhoto = hooks.hydrateTemporaryDraftPhoto_(compactPhoto);
 assert.equal(hydratedPhoto.dataUrl, 'data:image/jpeg;base64,low-resolution-photo');
-assert.equal(hydratedPhoto.originalDataUrl, hydratedPhoto.dataUrl);
+assert.equal(hydratedPhoto.originalDataUrl, originalPhoto.originalDataUrl);
+assert.equal(hydratedPhoto.originalBase64HQ, originalPhoto.originalBase64HQ);
 assert.equal(hydratedPhoto.base64HQ, 'high-resolution-photo');
 
 const compactState = hooks.compactTemporaryDraftState_({
@@ -103,8 +108,8 @@ const indexHtml = fs.readFileSync('index.html', 'utf8');
 });
 assert.match(indexHtml, />一時保存して次の商品へ</);
 assert.match(indexHtml, /この端末内に保存します/);
-assert.match(indexHtml, /styles\.css\?v=20260927a/);
-assert.match(indexHtml, /app\.js\?v=20260927a/);
+assert.match(indexHtml, /styles\.css\?v=20261007a/);
+assert.match(indexHtml, /app\.js\?v=20261007a/);
 
 assert.match(source, /const DB_VERSION = 2;/);
 assert.match(source, /const DB_TEMPORARY_DRAFT_STORE = 'inputDrafts';/);
@@ -135,7 +140,7 @@ assert.match(styles, /\.temporary-draft-card/);
 assert.match(styles, /\.btn\.temporary-save-btn/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20260927a/);
+assert.match(serviceWorker, /mercari-description-v20261007a/);
 
 console.log(JSON.stringify({
   ok: true,
@@ -144,5 +149,5 @@ console.log(JSON.stringify({
   compactPhotoFields: Object.keys(compactPhoto),
   measurementCount: hooks.temporaryDraftMeasurementCount_(compactState),
   statuses: ['incomplete', 'saved', 'failed', 'generated'],
-  version: 'v20260927a',
+  version: 'v20261007a',
 }));

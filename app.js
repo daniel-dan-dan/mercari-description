@@ -880,7 +880,7 @@ function isProductInputLocked_() {
 }
 
 function setTemporarySaveLock_(locked) {
-  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #reset-btn, #settings-btn').forEach(control => {
+  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #settings-btn').forEach(control => {
     if (locked) {
       if (control.dataset.temporarySaveWasDisabled === undefined) control.dataset.temporarySaveWasDisabled = control.disabled ? '1' : '0';
       control.disabled = true;
@@ -895,7 +895,7 @@ function setTemporarySaveLock_(locked) {
 
 function setDescriptionGenerationLock_(locked) {
   const controls = document.querySelectorAll(
-    '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #reset-btn, #settings-btn'
+    '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #settings-btn'
   );
   controls.forEach(control => {
     if (locked) {
@@ -921,7 +921,7 @@ function setDescriptionGenerationLock_(locked) {
 function setPhotoProcessingLock_(locked) {
   const controls = document.querySelectorAll(
     '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, '
-      + '#compose-modal button, #compose-modal input, #compose-modal select, #reset-btn, #settings-btn'
+      + '#compose-modal button, #compose-modal input, #compose-modal select, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #settings-btn'
   );
   controls.forEach(control => {
     if (locked) {
@@ -956,7 +956,7 @@ function draftFormSignature_() {
 }
 
 function setDraftSubmissionLock_(locked) {
-  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #reset-btn, #settings-btn').forEach(control => {
+  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #settings-btn').forEach(control => {
     if (locked) {
       if (control.dataset.draftWasDisabled === undefined) control.dataset.draftWasDisabled = control.disabled ? '1' : '0';
       control.disabled = true;
@@ -1113,6 +1113,7 @@ async function init() {
   });
   el('reset-btn').addEventListener('click', resetAll);
   el('photo-input').addEventListener('change', handlePhotoSelect);
+  setupPhotoEditor_();
   setSelectedProductGender(localStorage.getItem(PRODUCT_GENDER_STORAGE_KEY));
   renderMercariCategoryOptions();
   renderMercariSizeOptions();
@@ -1480,6 +1481,7 @@ async function revokeCurrentDeviceFromSettings_() {
 
 // ----- 写真アップロード＆リサイズ -----
 let uploadedImages = [];  // { dataUrl, mediaType, base64 }
+let photoEditorState = null;
 
 async function handlePhotoSelect(e) {
   if (draftSaveInProgress || temporarySaveInProgress) { e.target.value = ''; return; }
@@ -1513,6 +1515,8 @@ async function handlePhotoSelect(e) {
   setPhotoProcessingLock_(true);
   showStatus('status', '画像を処理中...', 'loading');
   try {
+    // Start with the selected files, continue while the same product owns this operation,
+    // and finish after every file is processed or ownership changes.
     for (const file of toAdd) {
       try {
         const processed = await processImage(file);
@@ -1556,41 +1560,205 @@ function createThumbnailBase64FromCanvas_(sourceCanvas, maxEdge = 180) {
   return thumbnail.toDataURL('image/jpeg', 0.72).split(',')[1] || '';
 }
 
-function processImage(file) {
-  return new Promise((resolve, reject) => {
+function photoCanvas_(img, maxEdge) {
+  const width = img.naturalWidth || img.width;
+  const height = img.naturalHeight || img.height;
+  if (!width || !height) throw new Error('写真のサイズを読み取れませんでした');
+  const scale = Math.min(1, maxEdge / Math.max(width, height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const ctx = canvas.getContext('2d');
+  // JPEG has no alpha; use a white background for transparent source images.
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+function adjustPhotoCanvas_(canvas, adjust) {
+  const normalized = MercariPhotoAdjust.normalizeAdjust(adjust);
+  if (!normalized.brightness && !normalized.contrast) return canvas;
+  const ctx = canvas.getContext('2d');
+  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  MercariPhotoAdjust.applyToImageData(pixels, normalized);
+  ctx.putImageData(pixels, 0, 0);
+  return canvas;
+}
+
+async function processImage(file) {
+  const source = await new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        // AI分析用（1024px）
-        const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.width, img.height));
-        const w = Math.round(img.width * scale);
-        const h = Math.round(img.height * scale);
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        const base64 = dataUrl.split(',')[1];
-        // Mercariアップロード用（1600px・高画質）
-        const scaleHQ = Math.min(1, MAX_MERCARI_EDGE / Math.max(img.width, img.height));
-        const wHQ = Math.round(img.width * scaleHQ);
-        const hHQ = Math.round(img.height * scaleHQ);
-        const canvasHQ = document.createElement('canvas');
-        canvasHQ.width = wHQ; canvasHQ.height = hHQ;
-        canvasHQ.getContext('2d').drawImage(img, 0, 0, wHQ, hHQ);
-        const base64HQ = canvasHQ.toDataURL('image/jpeg', 0.92).split(',')[1];
-        const thumbnailBase64 = createThumbnailBase64FromCanvas_(canvas);
-        resolve({
-          dataUrl, mediaType: 'image/jpeg', base64, base64HQ, thumbnailBase64,
-          originalDataUrl: dataUrl,
-          adjust: { brightness: 0, temp: 0, contrast: 0 },
-        });
-      };
-      img.onerror = reject;
-      img.src = reader.result;
-    };
-    reader.onerror = reject;
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('写真を読み込めませんでした'));
+    reader.onabort = () => reject(new Error('写真の読込みが中断されました'));
     reader.readAsDataURL(file);
+  });
+  const img = await loadImage(source);
+  const canvas = photoCanvas_(img, MAX_IMAGE_EDGE);
+  const canvasHQ = photoCanvas_(img, MAX_MERCARI_EDGE);
+  const originalDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  const originalBase64HQ = canvasHQ.toDataURL('image/jpeg', 0.92).split(',')[1];
+  const sample = photoCanvas_(img, 160);
+  const adjust = MercariPhotoAdjust.autoAdjust(sample.getContext('2d').getImageData(0, 0, sample.width, sample.height));
+  return applyPhotoAdjustment_({
+    mediaType: 'image/jpeg', originalDataUrl, originalBase64HQ,
+    dataUrl: originalDataUrl, base64: originalDataUrl.split(',')[1], base64HQ: originalBase64HQ,
+    adjustSourceVersion: 1,
+  }, adjust);
+}
+
+async function applyPhotoAdjustment_(photo, requestedAdjust) {
+  const source = hydrateTemporaryDraftPhoto_(photo);
+  const adjust = MercariPhotoAdjust.normalizeAdjust(requestedAdjust);
+  const original = await loadImage(source.originalDataUrl);
+  const canvas = photoCanvas_(original, MAX_IMAGE_EDGE);
+  let dataUrl = source.originalDataUrl;
+  let base64HQ = source.originalBase64HQ;
+  if (adjust.brightness || adjust.contrast) {
+    adjustPhotoCanvas_(canvas, adjust);
+    dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    const originalHQ = await loadImage(`data:${source.mediaType};base64,${source.originalBase64HQ}`);
+    const canvasHQ = adjustPhotoCanvas_(photoCanvas_(originalHQ, MAX_MERCARI_EDGE), adjust);
+    base64HQ = canvasHQ.toDataURL('image/jpeg', 0.92).split(',')[1];
+  }
+  return {
+    ...source, dataUrl, base64: dataUrl.split(',')[1], base64HQ,
+    thumbnailBase64: createThumbnailBase64FromCanvas_(canvas),
+    adjust, adjustSourceVersion: 1,
+  };
+}
+
+function setPhotoEditorControls_(disabled) {
+  document.querySelectorAll('#photo-adjust-dialog button, #photo-adjust-dialog input').forEach(control => {
+    control.disabled = disabled;
+  });
+}
+
+function updatePhotoEditorPreview_() {
+  const state = photoEditorState;
+  if (!state?.image) return;
+  const adjust = MercariPhotoAdjust.normalizeAdjust({
+    brightness: el('photo-brightness').value, contrast: el('photo-contrast').value,
+  });
+  state.adjust = adjust;
+  for (const key of ['brightness', 'contrast']) {
+    el(`photo-${key}-value`).textContent = adjust[key] > 0 ? `+${adjust[key]}` : String(adjust[key]);
+  }
+  const preview = el('photo-adjust-preview');
+  const canvas = state.previewSource || (state.previewSource = photoCanvas_(state.image, 640));
+  if (preview.width !== canvas.width || preview.height !== canvas.height) {
+    preview.width = canvas.width;
+    preview.height = canvas.height;
+  }
+  preview.getContext('2d').drawImage(canvas, 0, 0);
+  if (!el('photo-show-original').checked) adjustPhotoCanvas_(preview, adjust);
+  el('photo-preview-caption').textContent = el('photo-show-original').checked ? '補正前' : '仕上がり';
+}
+
+function setPhotoEditorValues_(adjust) {
+  const normalized = MercariPhotoAdjust.normalizeAdjust(adjust);
+  el('photo-brightness').value = normalized.brightness;
+  el('photo-contrast').value = normalized.contrast;
+  el('photo-show-original').checked = false;
+  updatePhotoEditorPreview_();
+}
+
+async function openPhotoEditor_(photo, trigger) {
+  if (isProductInputLocked_() || photoEditorState || !uploadedImages.includes(photo)) return;
+  const state = { photo, trigger, draftId: activeTemporaryDraftId, busy: false, image: null };
+  photoEditorState = state;
+  const dialog = el('photo-adjust-dialog');
+  el('photo-adjust-title').textContent = `${uploadedImages.indexOf(photo) + 1}枚目の明るさ調整`;
+  el('photo-adjust-status').textContent = '写真を読み込んでいます…';
+  el('photo-adjust-preview').width = 1;
+  el('photo-adjust-preview').height = 1;
+  el('photo-show-original').checked = false;
+  setPhotoEditorControls_(true);
+  el('photo-adjust-close').disabled = false;
+  el('photo-adjust-cancel').disabled = false;
+  el('photo-adjust-generated-note').hidden = !lastAiData;
+  dialog.showModal();
+  try {
+    const source = hydrateTemporaryDraftPhoto_(photo);
+    state.image = await loadImage(source.originalDataUrl);
+    if (photoEditorState !== state) return;
+    setPhotoEditorValues_(source.adjust);
+    setPhotoEditorControls_(false);
+    el('photo-adjust-status').textContent = '';
+  } catch (error) {
+    if (photoEditorState !== state) return;
+    console.error('写真の補正前データを読み込めませんでした:', error);
+    el('photo-adjust-status').textContent = '写真を読み込めませんでした。閉じてもう一度お試しください。';
+  }
+}
+
+function closePhotoEditor_() {
+  if (photoEditorState?.busy) return;
+  const trigger = photoEditorState?.trigger;
+  photoEditorState = null;
+  el('photo-adjust-dialog').close();
+  if (trigger?.isConnected) trigger.focus();
+}
+
+async function applyPhotoEditor_() {
+  const state = photoEditorState;
+  if (!state?.image || state.busy || isProductInputLocked_()) return;
+  const photoIndex = uploadedImages.indexOf(state.photo);
+  if (photoIndex < 0 || activeTemporaryDraftId !== state.draftId) { closePhotoEditor_(); return; }
+  const currentAdjust = MercariPhotoAdjust.normalizeAdjust(hydrateTemporaryDraftPhoto_(state.photo).adjust);
+  if (currentAdjust.brightness === state.adjust.brightness && currentAdjust.contrast === state.adjust.contrast) {
+    closePhotoEditor_(); return;
+  }
+  const operationId = ++photoProcessingOperationId;
+  state.busy = true;
+  photoProcessingInProgress = true;
+  setPhotoProcessingLock_(true);
+  setPhotoEditorControls_(true);
+  el('photo-adjust-status').textContent = '写真に反映しています…';
+  let applied = false;
+  try {
+    const updated = await applyPhotoAdjustment_(state.photo, state.adjust);
+    if (photoEditorState !== state || operationId !== photoProcessingOperationId
+        || activeTemporaryDraftId !== state.draftId || uploadedImages[photoIndex] !== state.photo) {
+      throw new Error('商品が切り替わったため反映できませんでした');
+    }
+    uploadedImages[photoIndex] = updated;
+    applied = true;
+  } catch (error) {
+    console.error('写真補正の反映に失敗しました:', error);
+    el('photo-adjust-status').textContent = '反映できませんでした。元の写真は保持しています。もう一度お試しください。';
+  } finally {
+    state.busy = false;
+    photoProcessingInProgress = false;
+    setPhotoProcessingLock_(false);
+    setPhotoEditorControls_(false);
+  }
+  if (!applied) return;
+  closePhotoEditor_();
+  invalidateGeneratedResultAfterInputChange_('写真の明るさ');
+  renderPreviews();
+  updateGenerateButton();
+  scheduleSave();
+  updateDraftChecklist();
+  el('photo-preview').querySelectorAll('.photo-adjust-open')[photoIndex]?.focus();
+}
+
+function setupPhotoEditor_() {
+  const dialog = el('photo-adjust-dialog');
+  if (!dialog) return;
+  el('photo-adjust-close').addEventListener('click', closePhotoEditor_);
+  el('photo-adjust-cancel').addEventListener('click', closePhotoEditor_);
+  dialog.addEventListener('cancel', event => { event.preventDefault(); closePhotoEditor_(); });
+  el('photo-adjust-apply').addEventListener('click', applyPhotoEditor_);
+  for (const id of ['photo-brightness', 'photo-contrast', 'photo-show-original']) {
+    el(id).addEventListener('input', updatePhotoEditorPreview_);
+  }
+  el('photo-adjust-reset').addEventListener('click', () => setPhotoEditorValues_({ brightness: 0, contrast: 0 }));
+  el('photo-adjust-auto').addEventListener('click', () => {
+    if (!photoEditorState?.image || photoEditorState.busy) return;
+    const sample = photoCanvas_(photoEditorState.image, 160);
+    setPhotoEditorValues_(MercariPhotoAdjust.autoAdjust(sample.getContext('2d').getImageData(0, 0, sample.width, sample.height)));
   });
 }
 
@@ -1606,9 +1774,15 @@ function renderPreviews() {
       <img src="${img.dataUrl}" alt="">
       <button class="remove" type="button" data-idx="${idx}" title="削除" aria-label="${idx + 1}枚目の写真を削除">×</button>
       <span class="preview-num">${idx + 1}</span>
+      <button class="photo-adjust-open" type="button" aria-label="${idx + 1}枚目の明るさを調整">明るさ</button>
     `;
+    const adjustButton = item.querySelector('.photo-adjust-open');
+    adjustButton.disabled = isProductInputLocked_();
+    adjustButton.addEventListener('click', () => openPhotoEditor_(img, adjustButton));
     grid.appendChild(item);
   });
+  const adjustNote = el('photo-auto-note');
+  if (adjustNote) adjustNote.hidden = !uploadedImages.length;
   grid.querySelectorAll('.remove').forEach(b => {
     b.disabled = isProductInputLocked_();
     b.addEventListener('click', () => {
@@ -1724,7 +1898,7 @@ function setupDragSort(grid) {
 
   // --- デスクトップ: HTML5 drag API ---
   grid.addEventListener('dragstart', (e) => {
-    if (isProductInputLocked_()) { e.preventDefault(); return; }
+    if (isProductInputLocked_() || e.target.closest('button')) { e.preventDefault(); return; }
     const item = e.target.closest('.preview-item');
     if (!item) return;
     dragIdx = Number(item.dataset.idx);
@@ -1758,7 +1932,7 @@ function setupDragSort(grid) {
   grid.addEventListener('touchstart', (e) => {
     if (isProductInputLocked_()) return;
     const item = e.target.closest('.preview-item');
-    if (!item || e.target.closest('.remove')) return;
+    if (!item || e.target.closest('button')) return;
 
     const t0 = e.touches[0];
     const startX = t0.clientX, startY = t0.clientY;
@@ -4936,42 +5110,38 @@ async function clearSessionDb() {
 }
 
 function compactTemporaryDraftPhoto_(photo = {}) {
-  const mediaType = String(photo.mediaType || 'image/jpeg');
-  const dataUrlBase64 = String(photo.dataUrl || '').split(',')[1] || '';
-  const base64 = String(photo.base64 || dataUrlBase64 || photo.base64HQ || '');
-  const base64HQ = String(photo.base64HQ || '');
+  const source = hydrateTemporaryDraftPhoto_(photo);
+  const originalBase64 = source.originalDataUrl.split(',')[1] || '';
   return {
-    mediaType,
-    base64,
-    base64HQ: base64HQ && base64HQ !== base64 ? base64HQ : '',
-    thumbnailBase64: String(photo.thumbnailBase64 || ''),
-    adjust: photo.adjust || { brightness: 0, temp: 0, contrast: 0 },
+    mediaType: source.mediaType,
+    base64: source.base64,
+    base64HQ: source.base64HQ !== source.base64 ? source.base64HQ : '',
+    thumbnailBase64: source.thumbnailBase64,
+    originalBase64: originalBase64 !== source.base64 ? originalBase64 : '',
+    originalBase64HQ: source.originalBase64HQ !== source.base64HQ ? source.originalBase64HQ : '',
+    adjust: source.adjust,
+    adjustSourceVersion: 1,
   };
 }
 
 function hydrateTemporaryDraftPhoto_(photo = {}) {
-  if (photo.dataUrl) {
-    return {
-      ...photo,
-      base64: photo.base64 || String(photo.dataUrl).split(',')[1] || '',
-      base64HQ: photo.base64HQ || photo.base64 || String(photo.dataUrl).split(',')[1] || '',
-      thumbnailBase64: photo.thumbnailBase64 || '',
-      originalDataUrl: photo.originalDataUrl || photo.dataUrl,
-      adjust: photo.adjust || { brightness: 0, temp: 0, contrast: 0 },
-    };
-  }
   const mediaType = String(photo.mediaType || 'image/jpeg');
-  const base64 = String(photo.base64 || photo.base64HQ || '');
+  const base64 = String(photo.base64 || String(photo.dataUrl || '').split(',')[1] || photo.base64HQ || '');
   const base64HQ = String(photo.base64HQ || base64);
   const dataUrl = base64 ? `data:${mediaType};base64,${base64}` : '';
+  // Older records did not retain a reliable original. Start from their current image
+  // without reapplying old adjustment metadata or downgrading their HQ image.
+  const hasSource = photo.adjustSourceVersion === 1;
+  const originalBase64 = hasSource
+    ? String(photo.originalBase64 || String(photo.originalDataUrl || '').split(',')[1] || base64)
+    : base64;
   return {
-    mediaType,
-    base64,
-    base64HQ,
+    mediaType, base64, base64HQ, dataUrl,
     thumbnailBase64: String(photo.thumbnailBase64 || ''),
-    dataUrl,
-    originalDataUrl: dataUrl,
-    adjust: photo.adjust || { brightness: 0, temp: 0, contrast: 0 },
+    originalDataUrl: originalBase64 ? `data:${mediaType};base64,${originalBase64}` : '',
+    originalBase64HQ: hasSource ? String(photo.originalBase64HQ || base64HQ) : base64HQ,
+    adjust: hasSource ? (photo.adjust || { brightness: 0, temp: 0, contrast: 0 }) : { brightness: 0, temp: 0, contrast: 0 },
+    adjustSourceVersion: 1,
   };
 }
 
@@ -7573,7 +7743,7 @@ async function addComposedImageToApp(dataUrl, options = {}) {
     const composedImage = {
       dataUrl: smallDataUrl, mediaType: 'image/jpeg',
       base64: smallDataUrl.split(',')[1], base64HQ, thumbnailBase64,
-      originalDataUrl: smallDataUrl, adjust: { brightness: 0, temp: 0, contrast: 0 },
+      originalDataUrl: smallDataUrl, originalBase64HQ: base64HQ, adjustSourceVersion: 1, adjust: { brightness: 0, temp: 0, contrast: 0 },
     };
     if (options.insertAt === 'front') {
       uploadedImages.unshift(composedImage);

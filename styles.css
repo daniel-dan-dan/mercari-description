@@ -3975,3 +3975,52 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
   width: 100%;
   margin-top: 10px;
 }
+
+/* Photo adjustments use the same original for preview, AI and draft images. */
+.preview-item { height: 134px; }
+.preview-item .preview-num { bottom: 43px; }
+.photo-adjust-open {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  margin-top: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--brand-dark);
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.photo-adjust-open:disabled { opacity: .5; cursor: default; }
+#photo-auto-note { margin: 0 0 8px; }
+#photo-adjust-dialog {
+  width: min(94vw, 580px);
+  max-height: 94vh;
+  max-height: 94svh;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface, #fff);
+  color: var(--ink);
+  box-shadow: 0 24px 70px #22191d55;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#photo-adjust-dialog::backdrop { background: #21191eb3; }
+.photo-adjust-content { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.photo-adjust-content p { margin: 0; }
+.photo-adjust-content .modal-header { gap: 8px; }
+.photo-adjust-figure { margin: 0; position: relative; background: #f2eeef; border-radius: 10px; overflow: hidden; }
+#photo-adjust-preview { display: block; width: 100%; height: min(38vh, 360px); object-fit: contain; }
+.photo-adjust-figure figcaption { position: absolute; bottom: 8px; left: 8px; border-radius: 20px; padding: 3px 9px; color: #fff; background: #201b20b3; font-size: 12px; }
+.photo-compare { display: flex; align-items: center; gap: 8px; min-height: 40px; font-size: 13px; }
+.photo-compare input { width: 18px; height: 18px; margin: 0; }
+.photo-slider-field label { display: flex; align-items: center; justify-content: space-between; margin: 0; font-size: 14px; }
+.photo-slider-field output { font-variant-numeric: tabular-nums; color: var(--brand-dark); }
+.photo-slider-field input[type="range"] { width: 100%; height: 34px; padding: 0; margin: 0; accent-color: var(--brand); }
+.photo-adjust-presets, .photo-adjust-actions { margin: 0; }
+.photo-adjust-status { color: var(--brand-dark); font-size: 13px; }
+.photo-adjust-status:empty { display: none; }
+.photo-adjust-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 8px; }
+.photo-adjust-actions button { min-height: 44px; }
