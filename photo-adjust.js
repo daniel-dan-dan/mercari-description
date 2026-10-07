@@ -141,6 +141,53 @@
     return normalizeAdjust({ brightness: brightness >= 2 ? brightness : 0, contrast: 0, shadows, highlights });
   }
 
+  function exposureProfile(imageData) {
+    const data = validateImageData(imageData);
+    const pixels = imageData.width * imageData.height;
+    const stride = Math.max(1, Math.ceil(pixels / 16384));
+    const centre = new Uint32Array(256), whole = new Uint32Array(256);
+    let count = 0, centreCount = 0, redGreen = 0, blueGreen = 0, neutral = 0, bright = 0;
+    for (let pixel = 0; pixel < pixels; pixel += stride) {
+      const i = pixel * 4;
+      if (data[i + 3] < 240) continue;
+      const red = data[i], green = data[i + 1], blue = data[i + 2];
+      const luma = Math.round(.2126 * red + .7152 * green + .0722 * blue);
+      whole[luma]++; count++;
+      if (luma >= 220) bright++;
+      const x = pixel % imageData.width / imageData.width;
+      const y = Math.floor(pixel / imageData.width) / imageData.height;
+      if (x < .25 || x > .75 || y < .30 || y > .85) continue;
+      centre[luma]++; centreCount++;
+      redGreen += red - green; blueGreen += blue - green;
+      const maximum = Math.max(red, green, blue), minimum = Math.min(red, green, blue);
+      if (maximum - minimum <= Math.max(12, maximum * .20)) neutral++;
+    }
+    if (count < 256 || centreCount < 64 || imageData.width < 16 || imageData.height < 16) return null;
+    const low = percentile(centre, centreCount, .10), high = percentile(centre, centreCount, .90);
+    return { low, high, median: percentile(centre, centreCount, .50),
+      wholeMedian: percentile(whole, count, .50), spread: high - low,
+      redGreen: redGreen / centreCount, blueGreen: blueGreen / centreCount,
+      neutral: neutral / centreCount, bright: bright / count,
+      aspect: imageData.width / imageData.height };
+  }
+
+  function similarExposure(reference, candidate) {
+    // Compare exposure and colour statistics, not garment identity or real colour.
+    // Flat/clipped sources offer insufficient evidence. Suggestions still require
+    // user review; labels, close-ups and different lighting may need separate edits.
+    if (!reference || !candidate || reference.spread < 12 || candidate.spread < 12) return false;
+    const aspect = candidate.aspect / reference.aspect;
+    return aspect >= .75 && aspect <= 1.33
+      && Math.abs(reference.median - candidate.median) <= 18
+      && Math.abs(reference.low - candidate.low) <= 24
+      && Math.abs(reference.high - candidate.high) <= 24
+      && Math.abs(reference.wholeMedian - candidate.wholeMedian) <= 24
+      && Math.abs(reference.redGreen - candidate.redGreen) <= 10
+      && Math.abs(reference.blueGreen - candidate.blueGreen) <= 10
+      && Math.abs(reference.neutral - candidate.neutral) <= .20
+      && Math.abs(reference.bright - candidate.bright) <= .15;
+  }
+
   function applyToImageData(imageData, adjust) {
     const data = validateImageData(imageData);
     const normalized = normalizeAdjust(adjust);
@@ -210,5 +257,5 @@
     }
   }
 
-  return Object.freeze({ normalizeAdjust, autoAdjust, applyToImageData });
+  return Object.freeze({ normalizeAdjust, autoAdjust, exposureProfile, similarExposure, applyToImageData });
 });

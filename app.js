@@ -1656,6 +1656,7 @@ function updatePhotoEditorScope_() {
   const count = photoEditorTargets_(state).length;
   el('photo-adjust-target-count').textContent = `${count}枚に同じ設定を反映します`;
   el('photo-adjust-apply').textContent = scope === 'current' ? 'この写真に反映' : `${count}枚に反映`;
+  updatePhotoEditorSuggestion_();
 }
 
 function renderPhotoEditorTargets_() {
@@ -1687,6 +1688,83 @@ function renderPhotoEditorTargets_() {
   updatePhotoEditorScope_();
 }
 
+function updatePhotoEditorSuggestion_() {
+  const state = photoEditorState;
+  const visible = !!state?.proposalSamples && state.scope === 'selected';
+  el('photo-adjust-suggestion').hidden = !visible;
+  if (!visible) return;
+  const targets = photoEditorTargets_(state);
+  const selectedNumbers = [], otherNumbers = [];
+  state.photos.forEach((photo, index) => (targets.includes(photo) ? selectedNumbers : otherNumbers).push(index + 1));
+  el('photo-adjust-suggestion-members').textContent = `反映するグループ：${selectedNumbers.join('・')}枚目`;
+  el('photo-adjust-suggestion-other').textContent = otherNumbers.length
+    ? `個別確認に残す写真：${otherNumbers.join('・')}枚目（今回は変更しません）` : 'すべての写真が反映対象です';
+  const adjust = MercariPhotoAdjust.normalizeAdjust(state.adjust);
+  el('photo-adjust-suggestion-values').textContent = [['brightness', '明るさ'], ['contrast', 'コントラスト'],
+    ['shadows', 'シャドウ'], ['highlights', 'ハイライト'], ['warmth', '色味']]
+    .map(([key, label]) => `${label} ${adjust[key] > 0 ? '+' : ''}${adjust[key]}`).join(' ／ ');
+  const showPreview = el('photo-adjust-group-preview').checked;
+  el('photo-adjust-target-preview-caption').textContent = showPreview ? 'チェックした写真の補正後の見本' : '現在の写真';
+  const images = el('photo-adjust-targets').querySelectorAll('img');
+  state.photos.forEach((photo, index) => {
+    if (!showPreview || !targets.includes(photo)) { images[index].src = photo.dataUrl; return; }
+    const sample = state.proposalSamples.get(photo);
+    const canvas = document.createElement('canvas');
+    canvas.width = sample.width; canvas.height = sample.height;
+    canvas.getContext('2d').drawImage(sample, 0, 0);
+    adjustPhotoCanvas_(canvas, adjust);
+    images[index].src = canvas.toDataURL('image/jpeg', .80);
+  });
+}
+
+async function suggestPhotoEditorTargets_() {
+  const state = photoEditorState;
+  if (!state?.image || state.busy || isProductInputLocked_() || state.photos.length < 2) return;
+  const operationId = ++photoProcessingOperationId;
+  const sameProduct = () => photoEditorState === state && activeTemporaryDraftId === state.draftId
+    && operationId === photoProcessingOperationId && uploadedImages.length === state.photos.length
+    && state.photos.every((photo, index) => photo === uploadedImages[index]);
+  state.busy = true;
+  photoProcessingInProgress = true;
+  setPhotoProcessingLock_(true); setPhotoEditorControls_(true);
+  try {
+    const samples = new Map(), selected = new Set([state.photo]);
+    const referenceCanvas = photoCanvas_(state.image, 128);
+    const reference = MercariPhotoAdjust.exposureProfile(referenceCanvas.getContext('2d')
+      .getImageData(0, 0, referenceCanvas.width, referenceCanvas.height));
+    // Start with the current photo set, continue only while it belongs to this
+    // product, and finish with a reviewable proposal; never edit photo records.
+    for (let index = 0; index < state.photos.length; index++) {
+      if (!sameProduct()) throw new Error('商品または写真が変わりました');
+      el('photo-adjust-status').textContent = `似た明るさ・色味の写真を探しています… ${index + 1}/${state.photos.length}枚`;
+      const photo = state.photos[index];
+      const image = photo === state.photo ? state.image : await loadImage(hydrateTemporaryDraftPhoto_(photo).originalDataUrl);
+      if (!sameProduct()) throw new Error('商品または写真が変わりました');
+      const canvas = photoCanvas_(image, 128);
+      samples.set(photo, canvas);
+      const profile = MercariPhotoAdjust.exposureProfile(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height));
+      if (MercariPhotoAdjust.similarExposure(reference, profile)) selected.add(photo);
+    }
+    if (!sameProduct()) throw new Error('商品または写真が変わりました');
+    state.proposalSamples = samples;
+    state.selectedPhotos = selected;
+    state.scope = 'selected';
+    el('photo-adjust-group-preview').checked = true;
+    renderPhotoEditorTargets_();
+    el('photo-adjust-status').textContent = selected.size > 1
+      ? '補正案を確認し、対象のチェックを変更できます。反映ボタンを押すまで写真は変更しません。'
+      : '同じ設定を使える写真を十分に判断できませんでした。対象は手動でも選べます。';
+    el('photo-adjust-suggestion').scrollIntoView({ block: 'nearest' });
+  } catch (error) {
+    console.error('写真の補正候補を比較できませんでした:', error);
+    if (photoEditorState === state) el('photo-adjust-status').textContent = '補正案を作れませんでした。写真は変更していません。';
+  } finally {
+    state.busy = false; photoProcessingInProgress = false;
+    setPhotoProcessingLock_(false);
+    if (photoEditorState === state) setPhotoEditorControls_(false);
+  }
+}
+
 function updatePhotoEditorPreview_() {
   const state = photoEditorState;
   if (!state?.image) return;
@@ -1708,6 +1786,7 @@ function updatePhotoEditorPreview_() {
   preview.getContext('2d').drawImage(canvas, 0, 0);
   if (!el('photo-show-original').checked) adjustPhotoCanvas_(preview, adjust);
   el('photo-preview-caption').textContent = el('photo-show-original').checked ? '補正前' : '仕上がり';
+  updatePhotoEditorSuggestion_();
 }
 
 function setPhotoEditorValues_(adjust) {
@@ -1830,6 +1909,8 @@ function setupPhotoEditor_() {
   el('photo-adjust-cancel').addEventListener('click', closePhotoEditor_);
   dialog.addEventListener('cancel', event => { event.preventDefault(); closePhotoEditor_(); });
   el('photo-adjust-apply').addEventListener('click', applyPhotoEditor_);
+  el('photo-adjust-suggest').addEventListener('click', suggestPhotoEditorTargets_);
+  el('photo-adjust-group-preview').addEventListener('change', updatePhotoEditorSuggestion_);
   for (const scope of ['current', 'all', 'selected']) {
     el(`photo-adjust-scope-${scope}`).addEventListener('change', event => {
       if (!event.target.checked || !photoEditorState?.image || photoEditorState.busy) return;

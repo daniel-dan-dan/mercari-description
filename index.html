@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261008a">
-  <script src="public-config.js?v=20261008a"></script>
+  <link rel="stylesheet" href="styles.css?v=20261008b">
+  <script src="public-config.js?v=20261008b"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -59,13 +59,13 @@
           </div>
           <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
         </details>
-      <p class="settings-version" id="settings-version">v20261008a / UI改善・セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20261008b / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261008a</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261008b</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
@@ -341,12 +341,22 @@
         </div>
         <fieldset class="photo-batch-scope">
           <legend>反映する写真</legend>
+          <button id="photo-adjust-suggest" class="btn small photo-suggest-button" type="button" data-photo-requires-multiple="1">似た写真の補正案を確認</button>
+          <p class="note small">この写真の設定をお手本に、明るさ・色味が近い写真を探します。</p>
           <div class="photo-batch-options">
             <label><input id="photo-adjust-scope-current" type="radio" name="photo-adjust-scope" value="current" checked>この写真のみ</label>
             <label><input id="photo-adjust-scope-all" type="radio" name="photo-adjust-scope" value="all" data-photo-requires-multiple="1">すべての写真</label>
             <label><input id="photo-adjust-scope-selected" type="radio" name="photo-adjust-scope" value="selected" data-photo-requires-multiple="1">写真を選ぶ</label>
           </div>
           <p id="photo-adjust-target-count" class="note small" aria-live="polite">1枚に同じ設定を反映します</p>
+          <div id="photo-adjust-suggestion" class="photo-suggestion-note" hidden>
+            <p id="photo-adjust-suggestion-members"></p>
+            <p id="photo-adjust-suggestion-values" class="note small"></p>
+            <p id="photo-adjust-suggestion-other" class="note small"></p>
+            <label class="photo-compare"><input id="photo-adjust-group-preview" type="checkbox" checked>補正後の見本を表示</label>
+            <p id="photo-adjust-target-preview-caption" class="note small"></p>
+            <p class="note small">候補は明るさ・色味の近さで選びます。タグ・接写は個別にご確認ください。</p>
+          </div>
           <div id="photo-adjust-targets" class="photo-batch-targets" hidden></div>
           <p class="note small">編集中の写真も含みます。5項目の設定をコピーし、各写真の補正前の画像から調整します。</p>
         </fieldset>
@@ -366,7 +376,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261008a</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261008b</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -377,10 +387,10 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20261008a"></script>
-  <script src="photo-adjust.js?v=20261008a"></script>
-  <script src="app.js?v=20261008a"></script>
-  <script src="review.js?v=20261008a"></script>
-  <script src="bootstrap.js?v=20261008a"></script>
+  <script src="catalog-data.js?v=20261008b"></script>
+  <script src="photo-adjust.js?v=20261008b"></script>
+  <script src="app.js?v=20261008b"></script>
+  <script src="review.js?v=20261008b"></script>
+  <script src="bootstrap.js?v=20261008b"></script>
 </body>
 </html>
