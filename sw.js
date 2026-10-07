@@ -1,17 +1,26 @@
 const CACHE_PREFIX = 'mercari-description-';
-const CACHE_NAME = 'mercari-description-v20261007d';
+const CACHE_NAME = 'mercari-description-v20261007e';
 const ASSETS = [
   './',
   './index.html',
   './pair.html',
-  './styles.css?v=20261007d',
-  './public-config.js?v=20261007d',
-  './catalog-data.js?v=20261007d',
-  './photo-adjust.js?v=20261007d',
-  './app.js?v=20261007d',
-  './review.js?v=20261007d',
-  './bootstrap.js?v=20261007d',
-  './pair.js?v=20261007d',
+  './styles.css?v=20261007e',
+  './public-config.js?v=20261007e',
+  './catalog-data.js?v=20261007e',
+  './photo-adjust.js?v=20261007e',
+  './background-template.js?v=20261007e',
+  './background-worker.js?v=20261007e',
+  './assets/backgrounds/white-carpet-ivy.png',
+  './vendor/onnxruntime/ort.wasm.min.js',
+  './vendor/onnxruntime/ort-wasm-simd-threaded.mjs',
+  './vendor/onnxruntime/ort-wasm-simd-threaded.wasm',
+  './vendor/onnxruntime/LICENSE',
+  './models/u2netp.onnx',
+  './models/LICENSE',
+  './app.js?v=20261007e',
+  './review.js?v=20261007e',
+  './bootstrap.js?v=20261007e',
+  './pair.js?v=20261007e',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -24,7 +33,9 @@ function validAssetResponse_(asset, response) {
   if (response.url && new URL(response.url).origin !== self.location.origin) return false;
   const path = new URL(asset, self.location.href).pathname;
   const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-  if (/\.js$/.test(path)) return ['text/javascript', 'application/javascript'].includes(mime);
+  if (/\.(?:js|mjs)$/.test(path)) return ['text/javascript', 'application/javascript'].includes(mime);
+  if (/\.wasm$/.test(path)) return ['application/wasm', 'application/octet-stream'].includes(mime);
+  if (/\.onnx$/.test(path)) return mime === 'application/octet-stream';
   if (/\.css$/.test(path)) return mime === 'text/css';
   if (/\.png$/.test(path)) return mime === 'image/png';
   if (/\.json$/.test(path)) return ['application/json', 'application/manifest+json'].includes(mime);

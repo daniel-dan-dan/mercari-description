@@ -1114,6 +1114,7 @@ async function init() {
   el('reset-btn').addEventListener('click', resetAll);
   el('photo-input').addEventListener('change', handlePhotoSelect);
   setupPhotoEditor_();
+  setupBackgroundTemplate_();
   setSelectedProductGender(localStorage.getItem(PRODUCT_GENDER_STORAGE_KEY));
   renderMercariCategoryOptions();
   renderMercariSizeOptions();
@@ -1482,6 +1483,7 @@ async function revokeCurrentDeviceFromSettings_() {
 // ----- 写真アップロード＆リサイズ -----
 let uploadedImages = [];  // { dataUrl, mediaType, base64 }
 let photoEditorState = null;
+let backgroundTemplateState = null;
 
 async function handlePhotoSelect(e) {
   if (draftSaveInProgress || temporarySaveInProgress) { e.target.value = ''; return; }
@@ -1546,6 +1548,207 @@ async function handlePhotoSelect(e) {
   hideStatus('status');
   scheduleSave();
   updateDraftChecklist();
+}
+
+function backgroundTemplateControls_(busy) {
+  for (const id of ['background-template-photo', 'background-template-size', 'background-template-original', 'background-template-retry', 'background-mask-mode', 'background-mask-undo']) {
+    el(id).disabled = busy;
+  }
+  el('background-template-apply').disabled = busy || !backgroundTemplateState?.mask;
+}
+
+function updateBackgroundTemplatePreview_() {
+  const state = backgroundTemplateState;
+  if (!state?.image || !state.background || !state.mask) return;
+  const size = Number(el('background-template-size').value);
+  el('background-template-size-value').textContent = String(size);
+  const canvas = el('background-template-preview');
+  const editing = el('background-mask-mode').value !== 'preview';
+  const original = el('background-template-original').checked || editing;
+  canvas.classList.toggle('mask-editing', editing);
+  let result;
+  try {
+    result = original ? photoCanvas_(state.image, 640)
+      : MercariBackgroundTemplate.render(state.image, state.background, state.mask, size, 640);
+  } catch (error) {
+    el('background-template-apply').disabled = true;
+    el('background-template-status').textContent = '服の輪郭が残っていません。「1つ戻す」か「欠けた服を戻す」で直してください。';
+    return;
+  }
+  el('background-template-apply').disabled = state.preparing || state.applying || editing || isProductInputLocked_();
+  canvas.width = result.width; canvas.height = result.height;
+  canvas.getContext('2d').drawImage(result, 0, 0);
+  if (editing) {
+    const overlay = document.createElement('canvas'); overlay.width = overlay.height = 320;
+    const ctx = overlay.getContext('2d'), pixels = ctx.createImageData(320, 320);
+    for (let i = 0; i < state.mask.length; i++) {
+      pixels.data[i * 4] = 255; pixels.data[i * 4 + 1] = 30; pixels.data[i * 4 + 2] = 50;
+      pixels.data[i * 4 + 3] = Math.round((255 - state.mask[i]) * 0.35);
+    }
+    ctx.putImageData(pixels, 0, 0); canvas.getContext('2d').drawImage(overlay, 0, 0, canvas.width, canvas.height);
+  }
+}
+
+async function prepareBackgroundTemplate_() {
+  const state = backgroundTemplateState;
+  if (!state || state.preparing || state.applying || isProductInputLocked_()) return;
+  const photo = uploadedImages[Number(el('background-template-photo').value)];
+  if (!photo) return;
+  state.photo = photo; state.mask = null; state.image = null;
+  state.history = []; state.painting = false;
+  el('background-mask-mode').value = 'preview';
+  state.preparing = true; state.abort = new AbortController();
+  state.operationId = ++photoProcessingOperationId;
+  photoProcessingInProgress = true; setPhotoProcessingLock_(true); backgroundTemplateControls_(true);
+  el('background-template-original').checked = false;
+  el('background-template-status').textContent = '写真と背景を読み込んでいます…';
+  el('background-template-preview').width = el('background-template-preview').height = 1;
+  try {
+    const source = hydrateTemporaryDraftPhoto_(photo);
+    const [image, background] = await Promise.all([
+      loadImage(`data:${source.mediaType};base64,${source.base64HQ}`),
+      loadImage('assets/backgrounds/white-carpet-ivy.png'),
+    ]);
+    if (backgroundTemplateState !== state || state.abort.signal.aborted) return;
+    const mask = await MercariBackgroundTemplate.cutout(image, message => {
+      if (backgroundTemplateState === state) el('background-template-status').textContent = message;
+    }, state.abort.signal);
+    if (backgroundTemplateState !== state || state.operationId !== photoProcessingOperationId
+        || state.draftId !== activeTemporaryDraftId || !uploadedImages.includes(photo)) return;
+    state.image = image; state.background = background; state.mask = mask;
+    updateBackgroundTemplatePreview_();
+    el('background-template-status').textContent = '仕上がりを確認して「1枚目に追加」を押してください。';
+  } catch (error) {
+    if (backgroundTemplateState !== state || error.name === 'AbortError') return;
+    console.error('背景テンプレートの準備に失敗:', error);
+    el('background-template-status').textContent = error.message + ' 元の写真は保持しています。';
+  } finally {
+    state.preparing = false;
+    if (state.operationId === photoProcessingOperationId) {
+      photoProcessingInProgress = false; setPhotoProcessingLock_(false);
+    }
+    if (backgroundTemplateState === state) backgroundTemplateControls_(false);
+  }
+}
+
+function closeBackgroundTemplate_() {
+  const state = backgroundTemplateState;
+  if (state?.applying) return;
+  backgroundTemplateState = null;
+  state?.abort?.abort();
+  if (state?.preparing && state.operationId === photoProcessingOperationId) {
+    ++photoProcessingOperationId;
+    photoProcessingInProgress = false; setPhotoProcessingLock_(false);
+  }
+  el('background-template-dialog').close();
+  el('background-template-open').focus();
+}
+
+function openBackgroundTemplate_() {
+  if (isProductInputLocked_() || backgroundTemplateState || photoEditorState || !uploadedImages.length) return;
+  if (uploadedImages.length >= MAX_SELECT_PHOTOS) {
+    showStatus('status', '背景付きの写真を追加するため、写真を1枚減らしてください。元写真は自動で削除しません。', 'warn'); return;
+  }
+  backgroundTemplateState = { draftId: activeTemporaryDraftId, preparing: false, applying: false };
+  const select = el('background-template-photo'); select.replaceChildren();
+  uploadedImages.forEach((photo, index) => {
+    const option = document.createElement('option'); option.value = String(index); option.textContent = `${index + 1}枚目の写真`; select.append(option);
+  });
+  el('background-template-size').value = '84';
+  el('background-template-close').disabled = el('background-template-cancel').disabled = false;
+  el('background-template-dialog').showModal();
+  prepareBackgroundTemplate_();
+}
+
+function buildBackgroundTemplatePhoto_(canvas) {
+  const small = document.createElement('canvas'); small.width = small.height = MAX_IMAGE_EDGE;
+  small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
+  const dataUrl = small.toDataURL('image/jpeg', 0.85);
+  const base64HQ = canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+  const base64 = dataUrl.split(',')[1];
+  if (!base64 || !base64HQ) throw Error('仕上がり画像を保存できませんでした');
+  return {
+    mediaType: 'image/jpeg', dataUrl, base64, base64HQ,
+    thumbnailBase64: createThumbnailBase64FromCanvas_(small),
+    originalDataUrl: dataUrl, originalBase64HQ: base64HQ,
+    adjustSourceVersion: 1, adjust: { brightness: 0, temp: 0, contrast: 0, shadows: 0, highlights: 0 },
+  };
+}
+
+function applyBackgroundTemplate_() {
+  const state = backgroundTemplateState;
+  if (!state?.mask || state.preparing || state.applying || isProductInputLocked_()) return;
+  if (state.draftId !== activeTemporaryDraftId || !uploadedImages.includes(state.photo)) {
+    closeBackgroundTemplate_(); return;
+  }
+  if (uploadedImages.length >= MAX_SELECT_PHOTOS) {
+    el('background-template-status').textContent = '写真が上限に達したため追加できません。元写真は保持しています。'; return;
+  }
+  state.applying = true; photoProcessingInProgress = true;
+  setPhotoProcessingLock_(true); backgroundTemplateControls_(true);
+  el('background-template-close').disabled = el('background-template-cancel').disabled = true;
+  let added = false;
+  try {
+    const canvas = MercariBackgroundTemplate.render(state.image, state.background, state.mask, Number(el('background-template-size').value), MAX_MERCARI_EDGE);
+    const photo = buildBackgroundTemplatePhoto_(canvas);
+    uploadedImages.unshift(photo); added = true;
+  } catch (error) {
+    console.error('背景テンプレートの反映に失敗:', error);
+    el('background-template-status').textContent = '追加できませんでした。元の写真は保持しています。もう一度お試しください。';
+  } finally {
+    state.applying = false; photoProcessingInProgress = false; setPhotoProcessingLock_(false); backgroundTemplateControls_(false);
+    el('background-template-close').disabled = el('background-template-cancel').disabled = false;
+  }
+  if (!added) return;
+  closeBackgroundTemplate_();
+  invalidateGeneratedResultAfterInputChange_('背景テンプレートの写真');
+  renderPreviews(); updateGenerateButton(); scheduleSave(); updateDraftChecklist();
+  showStatus('status', '背景付きの写真を1枚目に追加しました。元の写真も残しています。', 'success');
+}
+
+function setupBackgroundTemplate_() {
+  if (!el('background-template-dialog')) return;
+  el('background-template-open').addEventListener('click', openBackgroundTemplate_);
+  for (const id of ['background-template-close', 'background-template-cancel']) el(id).addEventListener('click', closeBackgroundTemplate_);
+  el('background-template-dialog').addEventListener('cancel', event => { event.preventDefault(); closeBackgroundTemplate_(); });
+  el('background-template-photo').addEventListener('change', prepareBackgroundTemplate_);
+  el('background-template-retry').addEventListener('click', prepareBackgroundTemplate_);
+  for (const id of ['background-template-size', 'background-template-original']) el(id).addEventListener('input', updateBackgroundTemplatePreview_);
+  el('background-template-apply').addEventListener('click', applyBackgroundTemplate_);
+  el('background-mask-mode').addEventListener('change', () => {
+    el('background-template-original').checked = false; updateBackgroundTemplatePreview_();
+  });
+  el('background-mask-undo').addEventListener('click', () => {
+    const state = backgroundTemplateState;
+    if (state?.history?.length && !state.preparing && !state.applying) {
+      state.mask = state.history.pop(); updateBackgroundTemplatePreview_();
+    }
+  });
+  const canvas = el('background-template-preview');
+  const paint = event => {
+    const state = backgroundTemplateState;
+    if (!state?.painting || !state.mask || state.preparing || state.applying || isProductInputLocked_()) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left) * 320 / rect.width, y = (event.clientY - rect.top) * 320 / rect.height;
+    const value = el('background-mask-mode').value === 'keep' ? 255 : 0;
+    // Connect pointer samples so a quick finger stroke leaves no untreated gaps.
+    const last = state.lastPaint || { x, y }, steps = Math.max(1, Math.ceil(Math.hypot(x - last.x, y - last.y) / 3));
+    for (let step = 1; step <= steps; step++) {
+      MercariBackgroundTemplate.paintMask(state.mask, last.x + (x - last.x) * step / steps, last.y + (y - last.y) * step / steps, 9, value);
+    }
+    state.lastPaint = { x, y }; updateBackgroundTemplatePreview_(); event.preventDefault();
+  };
+  canvas.addEventListener('pointerdown', event => {
+    const state = backgroundTemplateState;
+    if (!state?.mask || state.preparing || state.applying || isProductInputLocked_()
+        || el('background-mask-mode').value === 'preview') return;
+    state.history.push(state.mask.slice()); if (state.history.length > 10) state.history.shift();
+    state.painting = true; state.lastPaint = null; canvas.setPointerCapture(event.pointerId); paint(event);
+  });
+  canvas.addEventListener('pointermove', paint);
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) canvas.addEventListener(type, () => {
+    if (backgroundTemplateState) { backgroundTemplateState.painting = false; backgroundTemplateState.lastPaint = null; }
+  });
 }
 
 function createThumbnailBase64FromCanvas_(sourceCanvas, maxEdge = 180) {
@@ -1804,6 +2007,8 @@ function renderPreviews() {
   });
   const composeBtnRow = el('compose-btn-row');
   if (composeBtnRow) composeBtnRow.hidden = uploadedImages.length < 2;
+  const backgroundButton = el('background-template-open');
+  if (backgroundButton) backgroundButton.disabled = !uploadedImages.length || isProductInputLocked_();
   updatePhotoSummary();
 }
 

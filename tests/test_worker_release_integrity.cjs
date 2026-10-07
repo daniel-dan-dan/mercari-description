@@ -30,8 +30,8 @@ function fixture({ badMime = false, failPut = false } = {}) {
     fetch: async input => {
       calls.fetch++;
       const path = new URL(key(input)).pathname;
-      const mime = path.endsWith('.js') ? badMime ? 'text/html' : 'text/javascript'
-        : path.endsWith('.css') ? 'text/css' : path.endsWith('.png') ? 'image/png'
+      const mime = (/\.(?:js|mjs)$/.test(path)) ? badMime ? 'text/html' : 'text/javascript'
+        : path.endsWith('.wasm') ? 'application/wasm' : path.endsWith('.onnx') ? 'application/octet-stream' : path.endsWith('.css') ? 'text/css' : path.endsWith('.png') ? 'image/png'
           : path.endsWith('.json') ? 'application/json' : path.endsWith('/LICENSE') ? 'text/plain' : 'text/html';
       return new Response(body, { headers: { 'Content-Type': mime } });
     },

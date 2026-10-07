@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#f23d4a">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex, nofollow, noarchive">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://static.mercdn.net; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com https://*.trycloudflare.com http://127.0.0.1:* http://localhost:*; font-src 'self' data:; media-src 'self' data: blob:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob: https://static.mercdn.net; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com https://*.trycloudflare.com http://127.0.0.1:* http://localhost:*; font-src 'self' data:; media-src 'self' data: blob:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
   <title>メルカリAI出品</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261007d">
-  <script src="public-config.js?v=20261007d"></script>
+  <link rel="stylesheet" href="styles.css?v=20261007e">
+  <script src="public-config.js?v=20261007e"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -59,13 +59,13 @@
           </div>
           <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
         </details>
-      <p class="settings-version" id="settings-version">v20261007d / UI改善・セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20261007e / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261007d</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261007e</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
@@ -126,6 +126,11 @@
         <input type="file" id="photo-input" accept="image/*" multiple hidden>
         <div id="photo-preview" class="preview-grid"></div>
         <p id="photo-auto-note" class="note small" hidden>選んだ補正で新しい写真を自動調整。「明るさ」から確認・変更できます。</p>
+        <button id="background-template-open" class="background-template-open" type="button" disabled>
+          <img src="assets/backgrounds/white-carpet-ivy.png" alt="白いカーペット、自然光とアイビーの背景" width="72" height="72">
+          <span><strong>背景テンプレート</strong><small>白カーペット・自然光・アイビー</small></span>
+          <span aria-hidden="true">›</span>
+        </button>
         <details id="compose-btn-row" class="photo-edit-menu" hidden>
           <summary class="photo-edit-trigger">
             <span>写真編集</span>
@@ -333,11 +338,49 @@
       </div>
     </dialog>
 
+    <dialog id="background-template-dialog" aria-labelledby="background-template-title">
+      <div class="background-template-content">
+        <header class="modal-header">
+          <h2 id="background-template-title">背景テンプレート</h2>
+          <button id="background-template-close" class="icon-btn" type="button" aria-label="背景テンプレートを閉じる">×</button>
+        </header>
+        <div class="background-template-scroll">
+          <label for="background-template-photo">使う写真</label>
+          <select id="background-template-photo"></select>
+          <p class="note small">白カーペット・自然光・アイビー</p>
+          <figure class="photo-adjust-figure"><canvas id="background-template-preview" width="1" height="1"></canvas></figure>
+          <label class="photo-original-toggle"><input id="background-template-original" type="checkbox">元の写真と比較</label>
+          <div class="photo-slider-field">
+            <label for="background-template-size">服の大きさ <output id="background-template-size-value">84</output></label>
+            <input id="background-template-size" type="range" min="65" max="90" value="84">
+          </div>
+          <button id="background-template-retry" class="btn small" type="button">もう一度切り抜く</button>
+          <details class="background-mask-tools">
+            <summary>輪郭を直す</summary>
+            <label for="background-mask-mode">指でなぞって調整</label>
+            <select id="background-mask-mode">
+              <option value="preview">仕上がりを見る</option>
+              <option value="keep">欠けた服を戻す</option>
+              <option value="erase">余分な背景を消す</option>
+            </select>
+            <p class="note small">編集時は元写真を表示します。赤い部分が消える範囲です。</p>
+            <button id="background-mask-undo" class="btn small" type="button">1つ戻す</button>
+          </details>
+          <p class="note small">服の輪郭や付属品が欠けていないか確認してください。元の写真も残して、仕上がりを1枚目に追加します。</p>
+          <p id="background-template-status" role="status" aria-live="polite"></p>
+        </div>
+        <div class="background-template-actions">
+          <button id="background-template-cancel" class="btn" type="button">キャンセル</button>
+          <button id="background-template-apply" class="btn primary" type="button" disabled>1枚目に追加</button>
+        </div>
+      </div>
+    </dialog>
+
     <!-- 画像合成モーダル -->
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261007d</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261007e</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -348,10 +391,11 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20261007d"></script>
-  <script src="photo-adjust.js?v=20261007d"></script>
-  <script src="app.js?v=20261007d"></script>
-  <script src="review.js?v=20261007d"></script>
-  <script src="bootstrap.js?v=20261007d"></script>
+  <script src="catalog-data.js?v=20261007e"></script>
+  <script src="photo-adjust.js?v=20261007e"></script>
+  <script src="background-template.js?v=20261007e"></script>
+  <script src="app.js?v=20261007e"></script>
+  <script src="review.js?v=20261007e"></script>
+  <script src="bootstrap.js?v=20261007e"></script>
 </body>
 </html>

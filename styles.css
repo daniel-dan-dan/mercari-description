@@ -4044,3 +4044,23 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 .photo-adjust-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .photo-adjust-presets .btn { min-width: 0; padding: 10px 4px; font-size: 12px; }
 #photo-adjust-reset { grid-column: 1 / -1; }
+
+/* Background template: one-tap first-photo entry, scrollable mobile preview. */
+.background-template-open { display:grid;grid-template-columns:64px minmax(0,1fr) 16px;align-items:center;gap:10px;width:100%;margin:14px 0 4px;padding:10px;text-align:left;border:1px solid #e6ccd0;border-radius:14px;background:#fff;color:var(--text);cursor:pointer; }
+.background-template-open img { width:64px;height:64px;object-fit:cover;border-radius:9px; }
+.background-template-open strong,.background-template-open small { display:block; }
+.background-template-open small { font-size:12px;color:#79696c;margin-top:4px; }
+.background-template-open:disabled { opacity:.55;cursor:default; }
+#background-template-dialog { width:min(520px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 32px);padding:0;border:1px solid #e9d9dc;border-radius:20px;overflow:hidden;background:#fff;color:var(--text); }
+#background-template-dialog::backdrop { background:#21191eb3; }
+.background-template-content { display:flex;flex-direction:column;max-height:calc(100dvh - 34px); }
+.background-template-content .modal-header { padding:16px 16px 8px;flex-shrink:0; }
+.background-template-content h2 { margin:0;font-size:19px; }
+.background-template-scroll { padding:8px 16px 12px;overflow-y:auto;min-height:0; }
+.background-template-scroll select { width:100%; }
+#background-template-preview { display:block;width:100%;height:auto; }
+.background-template-actions { display:grid;grid-template-columns:1fr 1.4fr;gap:8px;padding:12px 16px max(12px,env(safe-area-inset-bottom));border-top:1px solid #efdee1;background:#fff;flex-shrink:0; }
+#background-template-status { min-height:20px;margin:8px 0;color:#6b4c53;font-size:13px; }
+.background-mask-tools { margin:12px 0;padding:10px;border:1px solid #e8d7db;border-radius:10px; }
+.background-mask-tools summary { cursor:pointer;font-size:14px;font-weight:600; }
+#background-template-preview.mask-editing { touch-action:none;cursor:crosshair; }

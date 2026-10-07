@@ -69,7 +69,7 @@ for (const htmlFile of ['index.html', 'pair.html']) {
   const csp = html.match(/Content-Security-Policy" content="([^"]+)"/)?.[1] || '';
   assert.match(csp, /script-src 'self'/);
   assert.match(csp, /style-src 'self'/);
-  assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
+  assert.doesNotMatch(csp, /'unsafe-inline'|'unsafe-eval'/);
   assert.match(csp, /object-src 'none'/);
   assert.match(csp, /base-uri 'none'/);
   assert.match(html, /name="robots" content="noindex, nofollow, noarchive"/);
@@ -82,7 +82,7 @@ for (const htmlFile of ['index.html', 'pair.html']) {
   });
 }
 
-const version = '20261007d';
+const version = '20261007e';
 const indexHtml = fs.readFileSync('index.html', 'utf8');
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
