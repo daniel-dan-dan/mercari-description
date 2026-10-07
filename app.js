@@ -1607,7 +1607,7 @@ async function prepareBackgroundTemplate_() {
     const source = hydrateTemporaryDraftPhoto_(photo);
     const [image, background] = await Promise.all([
       loadImage(`data:${source.mediaType};base64,${source.base64HQ}`),
-      loadImage('assets/backgrounds/white-carpet-ivy.png?v=20261007f'),
+      loadImage('assets/backgrounds/white-carpet-ivy.png?v=20261007g'),
     ]);
     if (backgroundTemplateState !== state || state.abort.signal.aborted) return;
     const mask = await MercariBackgroundTemplate.cutout(image, message => {

@@ -16,6 +16,58 @@
     if (count < mask.length * 0.01 || count > mask.length * 0.98) throw Error('服の輪郭を確認できませんでした。別の写真をお試しください');
     return mask;
   }
+  function restoreConnectedFabric(mask, pixels) {
+    const n = MODEL_EDGE * MODEL_EDGE;
+    if (mask.length !== n || pixels.length !== n * 4) throw Error('輪郭補正の写真サイズが不正です');
+    // A neutral bright border is evidence of the user's white-carpet setup.
+    // Other backgrounds retain the model result rather than guessing a fabric color.
+    const luminance = new Float32Array(n), border = [];
+    let borderCount = 0, foregroundCount = 0;
+    for (let y = 0; y < MODEL_EDGE; y++) for (let x = 0; x < MODEL_EDGE; x++) {
+      const i = y * MODEL_EDGE + x, k = i * 4;
+      const r = pixels[k], g = pixels[k + 1], b = pixels[k + 2];
+      luminance[i] = r * 0.2126 + g * 0.7152 + b * 0.0722;
+      if (mask[i] >= 128) foregroundCount++;
+      if (x < 12 || x >= MODEL_EDGE - 12 || y < 12 || y >= MODEL_EDGE - 12) {
+        borderCount++;
+        if (mask[i] < 32 && Math.min(r, g, b) > 170 && Math.max(r, g, b) - Math.min(r, g, b) < 55) border.push(luminance[i]);
+      }
+    }
+    if (border.length < borderCount * 0.6 || !foregroundCount) return mask.slice();
+    border.sort((a, b) => a - b);
+    const backgroundLow = border[Math.floor(border.length * 0.1)];
+    if (backgroundLow < 205) return mask.slice();
+    const limit = backgroundLow - 14;
+    const distance = new Uint8Array(n).fill(255), queue = new Int32Array(n);
+    let head = 0, tail = 0;
+    for (let i = 0; i < n; i++) if (mask[i] >= 160) { distance[i] = 0; queue[tail++] = i; }
+    function neighbours(i, visit) {
+      if (i % MODEL_EDGE) visit(i - 1);
+      if (i % MODEL_EDGE < MODEL_EDGE - 1) visit(i + 1);
+      if (i >= MODEL_EDGE) visit(i - MODEL_EDGE);
+      if (i < n - MODEL_EDGE) visit(i + MODEL_EDGE);
+    }
+    // Bound reconstruction to a small neighbourhood of existing garment pixels.
+    while (head < tail) {
+      const i = queue[head++];
+      if (distance[i] >= 32) continue;
+      neighbours(i, j => { if (distance[j] === 255) { distance[j] = distance[i] + 1; queue[tail++] = j; } });
+    }
+    const result = mask.slice(), reached = new Uint8Array(n);
+    head = 0; tail = 0;
+    for (let i = 0; i < n; i++) if (mask[i] >= 128) { reached[i] = 1; queue[tail++] = i; }
+    let added = 0;
+    while (head < tail) {
+      const i = queue[head++];
+      neighbours(i, j => {
+        if (reached[j] || distance[j] > 32 || luminance[j] >= limit) return;
+        reached[j] = 1; queue[tail++] = j; result[j] = 255; added++;
+      });
+    }
+    // Reject broad changes caused by a dark shadow or ambiguous background.
+    if (added > n * 0.18 || added > foregroundCount * 0.45) return mask.slice();
+    return result;
+  }
   function bounds(mask, width, height) {
     if (mask.length !== width * height) throw Error('輪郭のサイズが不正です');
     let left = width, top = height, right = -1, bottom = -1;
@@ -62,7 +114,7 @@
   }
   function cutout(image, onProgress, signal) {
     return new Promise((resolve, reject) => {
-      const worker = new Worker(new URL(`background-worker.js?v=${root.MercariPublicConfig?.version?.slice(1) || '20261007f'}`, scriptRoot).href);
+      const worker = new Worker(new URL(`background-worker.js?v=${root.MercariPublicConfig?.version?.slice(1) || '20261007g'}`, scriptRoot).href);
       let settled = false;
       const finish = (error, value) => {
         if (settled) return;
@@ -77,10 +129,11 @@
       worker.onmessage = event => {
         if (event.data.progress) { onProgress?.(event.data.progress); return; }
         if (event.data.error) { finish(Error(event.data.error)); return; }
-        try { finish(null, normalizedMask(new Float32Array(event.data.mask))); } catch (error) { finish(error); }
+        try { finish(null, restoreConnectedFabric(normalizedMask(new Float32Array(event.data.mask)), repairPixels)); } catch (error) { finish(error); }
       };
       const sample = canvas(MODEL_EDGE, MODEL_EDGE); sample.getContext('2d').drawImage(image, 0, 0, MODEL_EDGE, MODEL_EDGE);
       const pixels = sample.getContext('2d').getImageData(0, 0, MODEL_EDGE, MODEL_EDGE).data;
+      const repairPixels = pixels.slice();
       worker.postMessage({ pixels: pixels.buffer }, [pixels.buffer]);
     });
   }
@@ -92,7 +145,7 @@
       }
     }
   }
-  const api = { normalizedMask, bounds, fit, render, cutout, paintMask };
+  const api = { normalizedMask, restoreConnectedFabric, bounds, fit, render, cutout, paintMask };
   root.MercariBackgroundTemplate = api;
   if (typeof module === 'object' && module.exports) module.exports = api;
 })(globalThis);
