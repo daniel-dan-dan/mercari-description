@@ -62,7 +62,7 @@
   }
   function cutout(image, onProgress, signal) {
     return new Promise((resolve, reject) => {
-      const worker = new Worker(new URL(`background-worker.js?v=${root.MercariPublicConfig?.version?.slice(1) || '20261007e'}`, scriptRoot).href);
+      const worker = new Worker(new URL(`background-worker.js?v=${root.MercariPublicConfig?.version?.slice(1) || '20261007f'}`, scriptRoot).href);
       let settled = false;
       const finish = (error, value) => {
         if (settled) return;
