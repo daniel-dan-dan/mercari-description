@@ -13,14 +13,14 @@ function fixture(width, height, colourAt) {
   return { width, height, data };
 }
 const grey = value => [value, value, value];
-const neutral = { brightness: 0, contrast: 0, temp: 0 };
+const neutral = { brightness: 0, contrast: 0, shadows: 0, highlights: 0, temp: 0 };
 
-assert.deepEqual(engine.normalizeAdjust({ brightness: '100', contrast: -80, temp: 50 }), { brightness: 30, contrast: -20, temp: 0 });
+assert.deepEqual(engine.normalizeAdjust({ brightness: '100', contrast: -80, temp: 50 }), { ...neutral, brightness: 30, contrast: -20 });
 for (const value of [undefined, null, NaN, Infinity, -Infinity, 'invalid', {}, Symbol('invalid')]) {
-  assert.deepEqual(engine.normalizeAdjust({ brightness: value, contrast: value }), neutral);
+  assert.deepEqual(engine.normalizeAdjust({ brightness: value, contrast: value, shadows: value, highlights: value }), neutral);
 }
 assert.deepEqual(engine.normalizeAdjust(null), neutral);
-assert.deepEqual(engine.normalizeAdjust({ brightness: -3.5, contrast: '7.5' }), { brightness: -3.5, contrast: 7.5, temp: 0 });
+assert.deepEqual(engine.normalizeAdjust({ brightness: -3.5, contrast: '7.5' }), { ...neutral, brightness: -3.5, contrast: 7.5 });
 
 const dark = fixture(64, 64, p => grey(30 + p % 101));
 const originalDark = dark.data.slice();
@@ -67,12 +67,16 @@ assert.deepEqual(untouched.data, untouchedBytes, 'zero correction is byte-for-by
 // the surrounding surface. Wider real-world tonal details remain distinguishable.
 for (const brightness of [-30, 0, 12, 30]) {
   for (const contrast of [-20, 0, 20]) {
+    for (const shadows of [0, 12, 50]) {
+      for (const highlights of [0, 12, 50]) {
     const gradient = fixture(256, 1, p => grey(p));
-    engine.applyToImageData(gradient, { brightness, contrast });
+    engine.applyToImageData(gradient, { brightness, contrast, shadows, highlights });
     assert.equal(gradient.data[0], 0);
     assert.equal(gradient.data[255 * 4], 255);
     for (let p = 1; p < 256; p++) assert.ok(gradient.data[p * 4] >= gradient.data[(p - 1) * 4]);
     for (let p = 8; p <= 248; p += 8) assert.ok(gradient.data[p * 4] > gradient.data[(p - 8) * 4]);
+      }
+    }
   }
 }
 
@@ -81,7 +85,7 @@ engine.applyToImageData(dirt, { brightness: 12 });
 assert.ok(dirt.data[0] < dirt.data[4], 'dark blemish remains visible after automatic correction');
 assert.ok(dirt.data[4] - dirt.data[0] >= 14, 'automatic exposure does not flatten the blemish');
 
-for (const adjustment of [{ brightness: 30, contrast: 20 }, { brightness: -30, contrast: -20 }, automatic]) {
+for (const adjustment of [{ brightness: 30, contrast: 20 }, { brightness: -30, contrast: -20 }, { shadows: 50 }, { highlights: 50 }, { brightness: 30, contrast: 20, shadows: 50, highlights: 50 }, automatic]) {
   const colours = fixture(5, 1, p => [
     [120, 60, 30, 255], [50, 100, 150, 128], [250, 245, 240, 255],
     [255, 70, 20, 255], [40, 80, 160, 0],
@@ -106,6 +110,37 @@ const contrastPhoto = fixture(3, 1, p => grey([48, 128, 208][p]));
 engine.applyToImageData(contrastPhoto, { contrast: 20 });
 assert.ok(contrastPhoto.data[0] < 48 && contrastPhoto.data[8] > 208, 'manual contrast affects both sides of midgrey');
 
+// Shadow/highlight-only controls are effective while preserving known endpoints.
+assert.deepEqual(engine.normalizeAdjust({ shadows: '80', highlights: -10 }), { ...neutral, shadows: 50 });
+const toneGradient = fixture(256, 1, p => grey(p));
+const lifted = fixture(256, 1, p => grey(p));
+const restrained = fixture(256, 1, p => grey(p));
+engine.applyToImageData(lifted, { shadows: 50 });
+engine.applyToImageData(restrained, { highlights: 50 });
+assert.ok(lifted.data[32 * 4] > 32, 'shadow detail receives a lift');
+assert.ok(lifted.data[32 * 4] - 32 > lifted.data[224 * 4] - 224, 'shadow lift is concentrated in dark tones');
+assert.ok(restrained.data[232 * 4] < 232, 'near-white detail is lowered');
+assert.ok(232 - restrained.data[232 * 4] > 32 - restrained.data[32 * 4], 'highlight suppression is concentrated in light tones');
+assert.ok(restrained.data[248 * 4] - restrained.data[232 * 4] > 16, 'near-white differences become more visible');
+assert.equal(lifted.data[0], 0, 'black pixels cannot gain invented detail');
+assert.equal(restrained.data[255 * 4], 255, 'clipped white pixels remain without invented detail');
+
+const mixedExposure = fixture(100, 100, p => {
+  const band = p % 100;
+  return grey(band < 20 ? 15 + band : band < 80 ? 80 + band - 20 : 225 + band - 80);
+});
+const mixedBytes = mixedExposure.data.slice();
+const mixedAuto = engine.autoAdjust(mixedExposure);
+assert.ok(mixedAuto.shadows > 0 && mixedAuto.shadows <= 12, 'mixed scenes receive restrained shadow correction');
+assert.ok(mixedAuto.highlights > 0 && mixedAuto.highlights <= 12, 'mixed scenes receive restrained highlight correction');
+assert.equal(mixedAuto.brightness, 0, 'the whole mixed scene is not brightened');
+assert.deepEqual(mixedExposure.data, mixedBytes, 'tone analysis is read-only');
+engine.applyToImageData(mixedExposure, mixedAuto);
+assert.ok(mixedExposure.data[5 * 4] > mixedBytes[5 * 4]);
+assert.ok(mixedExposure.data[90 * 4] < mixedBytes[90 * 4]);
+const highKeyWhiteGarment = fixture(64, 64, p => grey(218 + p % 38));
+assert.deepEqual(engine.autoAdjust(highKeyWhiteGarment), neutral, 'a dominantly white garment is not automatically greyed');
+
 assert.throws(() => engine.autoAdjust(null), /RGBA ImageData/);
 assert.throws(() => engine.applyToImageData({ width: 4, height: 4, data: new Uint8ClampedArray(8) }, automatic), /RGBA ImageData/);
 
@@ -113,4 +148,4 @@ const browser = vm.createContext({ Uint8ClampedArray, Uint32Array, ArrayBuffer }
 vm.runInContext(fs.readFileSync(require.resolve('../photo-adjust.js'), 'utf8'), browser);
 assert.equal(typeof browser.MercariPhotoAdjust.applyToImageData, 'function', 'standalone browser global is available');
 assert.equal(browser.MercariPhotoAdjust.autoAdjust(fixture(64, 64, p => grey(30 + p % 101))).brightness, automatic.brightness);
-console.log('PASS photo tone engine: conservative exposure decisions, bounded controls, RGB/alpha preservation, monotonic detail and browser export');
+console.log('PASS photo tone engine: conservative exposure decisions, shadow/highlight recovery limits, bounded controls, RGB/alpha preservation, monotonic detail and browser export');

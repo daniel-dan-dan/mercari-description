@@ -1578,7 +1578,7 @@ function photoCanvas_(img, maxEdge) {
 
 function adjustPhotoCanvas_(canvas, adjust) {
   const normalized = MercariPhotoAdjust.normalizeAdjust(adjust);
-  if (!normalized.brightness && !normalized.contrast) return canvas;
+  if (!normalized.brightness && !normalized.contrast && !normalized.shadows && !normalized.highlights) return canvas;
   const ctx = canvas.getContext('2d');
   const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
   MercariPhotoAdjust.applyToImageData(pixels, normalized);
@@ -1615,7 +1615,7 @@ async function applyPhotoAdjustment_(photo, requestedAdjust) {
   const canvas = photoCanvas_(original, MAX_IMAGE_EDGE);
   let dataUrl = source.originalDataUrl;
   let base64HQ = source.originalBase64HQ;
-  if (adjust.brightness || adjust.contrast) {
+  if (adjust.brightness || adjust.contrast || adjust.shadows || adjust.highlights) {
     adjustPhotoCanvas_(canvas, adjust);
     dataUrl = canvas.toDataURL('image/jpeg', 0.85);
     const originalHQ = await loadImage(`data:${source.mediaType};base64,${source.originalBase64HQ}`);
@@ -1640,9 +1640,10 @@ function updatePhotoEditorPreview_() {
   if (!state?.image) return;
   const adjust = MercariPhotoAdjust.normalizeAdjust({
     brightness: el('photo-brightness').value, contrast: el('photo-contrast').value,
+    shadows: el('photo-shadows').value, highlights: el('photo-highlights').value,
   });
   state.adjust = adjust;
-  for (const key of ['brightness', 'contrast']) {
+  for (const key of ['brightness', 'contrast', 'shadows', 'highlights']) {
     el(`photo-${key}-value`).textContent = adjust[key] > 0 ? `+${adjust[key]}` : String(adjust[key]);
   }
   const preview = el('photo-adjust-preview');
@@ -1660,6 +1661,8 @@ function setPhotoEditorValues_(adjust) {
   const normalized = MercariPhotoAdjust.normalizeAdjust(adjust);
   el('photo-brightness').value = normalized.brightness;
   el('photo-contrast').value = normalized.contrast;
+  el('photo-shadows').value = normalized.shadows;
+  el('photo-highlights').value = normalized.highlights;
   el('photo-show-original').checked = false;
   updatePhotoEditorPreview_();
 }
@@ -1707,7 +1710,8 @@ async function applyPhotoEditor_() {
   const photoIndex = uploadedImages.indexOf(state.photo);
   if (photoIndex < 0 || activeTemporaryDraftId !== state.draftId) { closePhotoEditor_(); return; }
   const currentAdjust = MercariPhotoAdjust.normalizeAdjust(hydrateTemporaryDraftPhoto_(state.photo).adjust);
-  if (currentAdjust.brightness === state.adjust.brightness && currentAdjust.contrast === state.adjust.contrast) {
+  const nextAdjust = MercariPhotoAdjust.normalizeAdjust(state.adjust);
+  if (['brightness', 'contrast', 'shadows', 'highlights'].every(key => currentAdjust[key] === nextAdjust[key])) {
     closePhotoEditor_(); return;
   }
   const operationId = ++photoProcessingOperationId;
@@ -1751,7 +1755,7 @@ function setupPhotoEditor_() {
   el('photo-adjust-cancel').addEventListener('click', closePhotoEditor_);
   dialog.addEventListener('cancel', event => { event.preventDefault(); closePhotoEditor_(); });
   el('photo-adjust-apply').addEventListener('click', applyPhotoEditor_);
-  for (const id of ['photo-brightness', 'photo-contrast', 'photo-show-original']) {
+  for (const id of ['photo-brightness', 'photo-contrast', 'photo-shadows', 'photo-highlights', 'photo-show-original']) {
     el(id).addEventListener('input', updatePhotoEditorPreview_);
   }
   el('photo-adjust-reset').addEventListener('click', () => setPhotoEditorValues_({ brightness: 0, contrast: 0 }));

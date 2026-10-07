@@ -17,6 +17,8 @@
     return {
       brightness: boundedNumber(value.brightness, -30, 30),
       contrast: boundedNumber(value.contrast, -20, 20),
+      shadows: boundedNumber(value.shadows, 0, 50),
+      highlights: boundedNumber(value.highlights, 0, 50),
       temp: 0,
     };
   }
@@ -56,6 +58,8 @@
     let count = 0;
     let sum = 0;
     let bright = 0;
+    let midtones = 0;
+    let detailedHighlights = 0;
     for (let pixel = 0; pixel < pixels; pixel += stride) {
       const i = pixel * 4;
       if (data[i + 3] < 240) continue;
@@ -65,6 +69,8 @@
       count++;
       sum += luminance;
       if (luminance >= 200) bright++;
+      if (luminance >= 65 && luminance <= 210) midtones++;
+      if (luminance >= 220 && luminance <= 252) detailedHighlights++;
     }
     if (count < 256) return neutral;
 
@@ -74,18 +80,28 @@
     const p90 = percentile(histogram, count, 0.90);
     // A visible bright background or saturated colour is evidence against a
     // global exposure increase, even when most of the frame is a black garment.
-    if (mean >= 112 || p50 >= 110 || p90 < 55 || p90 >= 185 || p90 - p10 < 18
+    const skipExposure = mean >= 112 || p50 >= 110 || p90 < 55 || p90 >= 185 || p90 - p10 < 18
         || bright / count >= 0.025 || percentile(histogram, count, 0.99) >= 225
-        || percentile(channelHistogram, count, 0.95) >= 230) return neutral;
+        || percentile(channelHistogram, count, 0.95) >= 230;
 
-    const brightness = Math.round(Math.min(12, (115 - mean) / 3, (190 - p90) / 5));
-    return normalizeAdjust({ brightness: brightness >= 2 ? brightness : 0, contrast: 0 });
+    const brightness = skipExposure ? 0 : Math.round(Math.min(12, (115 - mean) / 3, (190 - p90) / 5));
+    // Mixed dark/bright scenes with substantial midtones can benefit from local
+    // tone ranges. Dominantly black garments and high-key white photos stay as-is.
+    // Clipped endpoints are never treated as recoverable texture.
+    const hasMidtones = midtones / count >= 0.20;
+    const shadows = hasMidtones && p50 >= 80 && p50 <= 190 && p10 >= 2 && p10 <= 40
+        && p90 >= 170 && p90 - p10 >= 145
+      ? Math.min(12, Math.round((45 - p10) / 4) + 2) : 0;
+    const highlights = hasMidtones && p50 >= 75 && p50 <= 200 && p90 >= 225
+        && detailedHighlights / count >= 0.08
+      ? Math.min(12, Math.round((p90 - 220) / 3)) : 0;
+    return normalizeAdjust({ brightness: brightness >= 2 ? brightness : 0, contrast: 0, shadows, highlights });
   }
 
   function applyToImageData(imageData, adjust) {
     const data = validateImageData(imageData);
     const normalized = normalizeAdjust(adjust);
-    if (normalized.brightness === 0 && normalized.contrast === 0) return imageData;
+    if (!normalized.brightness && !normalized.contrast && !normalized.shadows && !normalized.highlights) return imageData;
     const brightness = normalized.brightness / 100;
     const contrast = normalized.contrast / 100;
 
@@ -100,7 +116,20 @@
       // The shoulder fades at the brightest channel so highlights never clip.
       // For grey pixels this curve is monotonic across the complete control
       // range; pure black/white stay fixed and alpha is never changed.
-      const gain = 1 + (1.6 * brightness + 2 * contrast * (2 * luminance - 1)) * (1 - maximum);
+      let gain = 1 + (1.6 * brightness + 2 * contrast * (2 * luminance - 1)) * (1 - maximum);
+      let adjustedMaximum = maximum * gain;
+      // Monotonic curves preserve ordering and colour ratios: lift low values
+      // with a smooth shoulder, then spread the remaining near-white detail.
+      // At maximum controls the shadow derivative stays positive (>0.64),
+      // as does the highlight derivative (>=0.70). Pure black/white are fixed.
+      if (normalized.shadows) {
+        const shadowGain = Math.exp(normalized.shadows * 0.016 * Math.pow(1 - adjustedMaximum, 3));
+        gain *= shadowGain;
+        adjustedMaximum *= shadowGain;
+      }
+      if (normalized.highlights) {
+        gain *= 1 - normalized.highlights * 0.024 * adjustedMaximum * adjustedMaximum * (1 - adjustedMaximum);
+      }
       data[i] = Math.round(red * gain);
       data[i + 1] = Math.round(green * gain);
       data[i + 2] = Math.round(blue * gain);

@@ -27,7 +27,7 @@ const adjustedPhoto = {
   thumbnailBase64: bytes('adjusted tray thumbnail'),
   originalDataUrl: jpeg(originalSmall), originalBase64HQ: originalHQ,
   adjustSourceVersion: 1,
-  adjust: { brightness: 14, contrast: 5, temp: 0 },
+  adjust: { brightness: 14, contrast: 5, shadows: 18, highlights: 22, temp: 0 },
 };
 
 // An edited photo must keep its source through temporary saves and later edits.
@@ -45,6 +45,8 @@ assert.equal(fromTemporarySave.originalDataUrl, jpeg(originalSmall));
 assert.equal(fromTemporarySave.originalBase64HQ, originalHQ);
 assert.equal(fromTemporarySave.adjust.brightness, 14);
 assert.equal(fromTemporarySave.adjust.contrast, 5);
+assert.equal(fromTemporarySave.adjust.shadows, 18);
+assert.equal(fromTemporarySave.adjust.highlights, 22);
 assert.equal(fromTemporarySave.thumbnailBase64, adjustedPhoto.thumbnailBase64);
 
 const state = hooks.compactTemporaryDraftState_({ photos: [fromTemporarySave], category: 'tops' });
@@ -54,6 +56,8 @@ assert.equal(reopened.originalBase64HQ, originalHQ);
 assert.equal(reopened.base64, currentSmall);
 assert.equal(reopened.base64HQ, currentHQ);
 assert.equal(reopened.adjust.brightness, 14);
+assert.equal(reopened.adjust.shadows, 18);
+assert.equal(reopened.adjust.highlights, 22);
 
 // The current-input save uses full photo objects, unlike a temporary save.
 const fromCurrentInput = hooks.hydrateTemporaryDraftPhoto_(structuredClone(adjustedPhoto));
@@ -154,6 +158,22 @@ async function testPhotoRendering() {
   assert.ok(loadedSources.includes(jpeg(originalSmall)));
   assert.ok(loadedSources.includes(jpeg(originalHQ)));
 
+  const shadowOnly = await context.applyPhotoAdjustment_(changed, { shadows: 25 });
+  const highlightOnly = await context.applyPhotoAdjustment_(changed, { highlights: 30 });
+  assert.notEqual(shadowOnly.base64, originalSmall, 'shadow-only changes update the AI image');
+  assert.notEqual(shadowOnly.base64HQ, originalHQ, 'shadow-only changes update the HQ image');
+  assert.notEqual(highlightOnly.base64, originalSmall, 'highlight-only changes update the AI image');
+  assert.notEqual(highlightOnly.base64HQ, originalHQ, 'highlight-only changes update the HQ image');
+  const allTones = await context.applyPhotoAdjustment_(changed, { shadows: 25, highlights: 30 });
+  const repeatedTones = await context.applyPhotoAdjustment_(allTones, { shadows: 25, highlights: 30 });
+  assert.equal(repeatedTones.base64, allTones.base64);
+  assert.equal(repeatedTones.base64HQ, allTones.base64HQ);
+  const tonesReset = await context.applyPhotoAdjustment_(allTones, {});
+  assert.equal(tonesReset.base64, originalSmall);
+  assert.equal(tonesReset.base64HQ, originalHQ);
+  assert.equal(tonesReset.adjust.shadows, 0);
+  assert.equal(tonesReset.adjust.highlights, 0);
+
   const repeated = await context.applyPhotoAdjustment_(changed, { brightness: 8, contrast: 3 });
   assert.equal(repeated.base64, changed.base64, 'adjustment does not accumulate across edits');
   assert.equal(repeated.base64HQ, changed.base64HQ);
@@ -192,7 +212,7 @@ async function testPhotoEditorRaces() {
     context.editorEvents.length = 0;
     vm.runInContext(`
       uploadedImages = [editorPhoto]; activeTemporaryDraftId = 'photo-test';
-      photoEditorState = { photo: editorPhoto, image: {}, busy: false, draftId: 'photo-test', adjust: { brightness: 5, contrast: 2 } };
+      photoEditorState = { photo: editorPhoto, image: {}, busy: false, draftId: 'photo-test', adjust: { brightness: 14, contrast: 5, shadows: 25, highlights: 22 } };
     `, context);
     return context.applyPhotoEditor_();
   };

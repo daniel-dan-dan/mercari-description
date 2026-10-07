@@ -4024,3 +4024,17 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 .photo-adjust-status:empty { display: none; }
 .photo-adjust-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 8px; }
 .photo-adjust-actions button { min-height: 44px; }
+
+/* Keep all four tone controls reachable on small phone screens. */
+#photo-adjust-preview { height: min(29vh, 290px); }
+.photo-slider-field label { gap: 8px; }
+.photo-slider-field output { flex-shrink: 0; }
+#photo-adjust-dialog { overflow: hidden; }
+.photo-adjust-content { max-height: 94vh; max-height: 94svh; box-sizing: border-box; }
+.photo-adjust-content > .modal-header, .photo-adjust-actions { flex-shrink: 0; }
+.photo-adjust-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; }
+.photo-adjust-figure { flex-shrink: 0; }
+.photo-adjust-actions .btn { min-width: 0; padding: 10px 8px; font-size: 14px; white-space: nowrap; }
+@media (max-height: 700px) {
+  #photo-adjust-preview { height: min(22vh, 180px); }
+}
