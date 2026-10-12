@@ -4062,3 +4062,7 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 .photo-suggestion-note > p:first-child { font-size: 13px; font-weight: 700; }
 
 #photo-adjust-group-preview { accent-color: var(--brand); }
+
+/* Inventory estimates stay visible, alongside the newest-first fallback. */
+.inventory-match-reason { color: #9a4962; line-height: 1.5; }
+#inventory-suggest-btn { grid-column: 1 / -1; }

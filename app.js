@@ -44,6 +44,12 @@ const inventoryCandidateCache = new Map();
 const inventoryCandidateRequests = new Map();
 let inventoryCandidateRows = [];
 let inventoryCandidateRenderKey = "";
+let inventorySuggestionRows = [];
+let inventorySuggestionContextKey = '';
+let inventorySuggestionRequestedKey = '';
+let inventorySuggestionEpoch = 0;
+let inventorySuggestionTimer = null;
+let inventorySuggestionState = 'idle';
 const MAX_DRAFT_PAYLOAD_BYTES = 28 * 1024 * 1024;
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（AI分析用・コスト節約）
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
@@ -1221,6 +1227,9 @@ async function init() {
   el('price-input').addEventListener('input', () => {
     scheduleSave();
     updateDraftChecklist();
+  });
+  el('inventory-suggest-btn').addEventListener('click', () => {
+    loadInventorySuggestions_({ force: true }).catch(() => {});
   });
   el('inventory-clear-btn').addEventListener('click', () => clearInventorySelection_());
   el('inventory-candidates-btn').addEventListener('click', () => {
@@ -3217,6 +3226,7 @@ function setInventoryReference_(value, {
 }
 
 function clearInventorySelection_({ persist = true } = {}) {
+  if (el('inventory-candidate-status')) el('inventory-candidate-status').textContent = '';
   el('inventory-uuid-input').value = '';
   el('inventory-reference-input').value = '';
   el('inventory-label-input').value = '';
@@ -3948,6 +3958,12 @@ function inventoryCandidateLabel_(candidate = {}) {
 function inventoryMatchText_(value) {
   return String(value || '').normalize('NFKC').toLowerCase()
     .replace(/極美品|美品|新品|未使用|希少|レア|送料無料|送料込み|メンズ|レディース/g, '')
+    .replace(/\bburberrys?\b|バーバリーズ/g, 'バーバリー').replace(/\bbeams\b/g, 'ビームス')
+    .replace(/\blondon\b|ロンドン/g, 'ロンドン')
+    .replace(/\bnavy\b|ネイビー|紺色?/g, 'ネイビー')
+    .replace(/\bblack\b|ブラック|黒色?/g, 'ブラック')
+    .replace(/\bwhite\b|ホワイト|白色?/g, 'ホワイト')
+    .replace(/\bbrown\b|ブラウン|茶色/g, 'ブラウン')
     .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
@@ -3956,6 +3972,7 @@ function inventoryMatchContext_() {
     title: el('title-text')?.value || '',
     brands: [el('m-brand')?.value, lastAiData?.brand, lastAiData?.brand_en].filter(Boolean),
     size: lastAiData?.tag_size || '',
+    keywords: Array.isArray(lastAiData?.title_keywords) ? lastAiData.title_keywords : [],
   };
 }
 
@@ -3965,7 +3982,7 @@ function rankInventoryCandidates_(items, context = {}) {
   const brands = [...new Set((context.brands || []).map(compact).filter(v => v.length >= 2))];
   const grams = value => new Set(Array.from({ length: Math.max(0, value.length - 1) }, (_, i) => value.slice(i, i + 2)));
   const stripBrand = value => brands.reduce((v, b) => v.split(b).join(''), value);
-  const titleBody = stripBrand(title);
+  const titleBody = stripBrand(compact([context.title, ...(context.keywords || [])].join(' ')));
   const wanted = grams(titleBody);
   const seen = new Set();
   const latest = items.filter(item => {
@@ -3985,19 +4002,25 @@ function rankInventoryCandidates_(items, context = {}) {
     const sizeMatch = size && inventoryMatchText_(item.productName).split(' ').includes(size);
     const exact = title.length >= 5 && name === title;
     const plausible = exact || (common >= 4 && similarity >= (brandMatch ? 0.32 : 0.58));
-    return { item, index, score: plausible ? similarity + (brandMatch ? 0.25 : 0) + (sizeMatch ? 0.05 : 0) : 0 };
+    const reasons = [brandMatch ? 'ブランド名が近い' : '', exact ? '商品名が一致' : (common >= 4 ? '商品名の特徴が近い' : ''), sizeMatch ? 'サイズ表記が一致' : ''].filter(Boolean);
+    return { item, index, reasons, score: plausible ? similarity + (brandMatch ? 0.25 : 0) + (sizeMatch ? 0.05 : 0) : 0 };
   });
   const suggested = scored.filter(row => row.score > 0).sort((a,b) => b.score-a.score || a.index-b.index).slice(0,3);
   const ids = new Set(suggested.map(row => row.item.inventoryUuid));
-  return { suggested: suggested.map(row => row.item), latest: latest.map(row => row.item).filter(item => !ids.has(item.inventoryUuid)) };
+  return { suggested: suggested.map(row => row.item), reasons: Object.fromEntries(suggested.map(row => [row.item.inventoryUuid, row.reasons])), latest: latest.map(row => row.item).filter(item => !ids.has(item.inventoryUuid)) };
 }
 
 function renderInventoryCandidates_(items) {
   const list = el('inventory-candidate-list');
   if (!list) return;
-  const { suggested, latest } = rankInventoryCandidates_(Array.isArray(items) ? items : [], inventoryMatchContext_());
+  const context = inventoryMatchContext_();
+  const rows = Array.isArray(items) ? items : [];
+  const extras = inventorySuggestionContextKey === JSON.stringify(context) ? inventorySuggestionRows : [];
+  const { suggested, reasons } = rankInventoryCandidates_([...rows, ...extras], context);
+  const suggestedIds = new Set(suggested.map(row => row.inventoryUuid));
+  const latest = rankInventoryCandidates_(rows, {}).latest.filter(row => !suggestedIds.has(row.inventoryUuid));
   if (!suggested.length && !latest.length) {
-    list.innerHTML = '<div class="inventory-candidate-empty">在庫候補はありません</div>';
+    list.innerHTML = '<div class="inventory-group-label">この商品の候補（推定）</div><div class="inventory-candidate-empty">' + escapeHtml(inventorySuggestionMessage_(context)) + '</div>';
     return;
   }
   const cards = (candidates, recommended) => candidates.map(candidate => {
@@ -4008,20 +4031,96 @@ function renderInventoryCandidates_(items) {
         data-inventory-candidate-uuid="${escapeHtml(uuid)}"
         data-inventory-candidate-name="${escapeHtml(label.name)}"
         data-inventory-candidate-meta="${escapeHtml(label.meta)}">
-        <span><strong>${escapeHtml(label.name)}</strong><small>${escapeHtml(label.meta)}</small></span>
+        <span><strong>${escapeHtml(label.name)}</strong><small>${escapeHtml(label.meta)}</small>${recommended ? `<small class="inventory-match-reason">${escapeHtml((reasons[uuid] || []).join('・'))}</small>` : ''}</span>
         <em>選択</em>
       </button>`;
   }).join('');
-  list.innerHTML = (suggested.length ? '<div class="inventory-group-label">この商品の候補</div>' + cards(suggested, true) : '')
+  list.innerHTML = '<div class="inventory-group-label">この商品の候補（推定）</div>' + (suggested.length ? cards(suggested, true) : '<div class="inventory-candidate-empty">' + escapeHtml(inventorySuggestionMessage_(context)) + '</div>')
     + (latest.length ? '<div class="inventory-group-label">最新順</div>' + cards(latest, false) : '');
 }
 
+function inventorySuggestionMessage_(context = {}) {
+  if (!String(context.title || '').trim()) return '商品名が入ると一致しそうな在庫を探せます。';
+  if (inventorySuggestionState === 'loading') return 'ブランド名などで在庫シートを検索中…';
+  if (inventorySuggestionState === 'failed') return '追加の候補を取得できませんでした。「一致しそうな在庫を探す」で再試行できます。';
+  return '一致しそうな在庫が見つかりませんでした。検索欄からも探せます。';
+}
+
+function inventorySuggestionQueries_(context = {}) {
+  const valid = value => {
+    const text = String(value || '').normalize('NFKC').trim().replace(/\s+/g, ' ');
+    return text.length >= 2 && /[\p{L}\p{N}]/u.test(text) && !/^(?:不明|未登録|ノーブランド|unknown)$/i.test(text) ? text : '';
+  };
+  const brands = (context.brands || []).map(valid).filter(Boolean);
+  // A base English brand also finds differently spaced sub-lines in the sheet.
+  const queries = brands.flatMap(b => {
+    if (/^burberrys?(?:\s|\(|$)/i.test(b)) return ['BURBERRY', 'バーバリー'];
+    if (/^バーバリー/.test(b)) return ['バーバリー', 'BURBERRY'];
+    if (/^beams(?:\s|$)/i.test(b)) return ['BEAMS', 'ビームス'];
+    if (/^ビームス/.test(b)) return ['ビームス', 'BEAMS'];
+    return [b];
+  });
+  if (!queries.length) {
+    queries.push(...String(context.title || '').normalize('NFKC').split(/\s+/).map(valid)
+      .filter(v => !/^(?:美品|極美品|新品|未使用|希少|レア|メンズ|レディース)$/.test(v)));
+  }
+  const seen = new Set();
+  return queries.filter(q => { const key = q.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, 2);
+}
+
+async function loadInventorySuggestions_({ force = false } = {}) {
+  const context = inventoryMatchContext_();
+  const key = JSON.stringify(context);
+  const epoch = ++inventorySuggestionEpoch;
+  clearTimeout(inventorySuggestionTimer);
+  inventorySuggestionRequestedKey = key;
+  inventorySuggestionRows = [];
+  inventorySuggestionContextKey = key;
+  const queries = inventorySuggestionQueries_(context);
+  const current = () => epoch === inventorySuggestionEpoch && key === JSON.stringify(inventoryMatchContext_());
+  const button = el('inventory-suggest-btn');
+  const finish = state => {
+    if (!current()) return;
+    inventorySuggestionState = state;
+    if (button) button.disabled = false;
+    renderInventoryCandidates_(inventoryCandidateRows);
+  };
+  if (!String(context.title || '').trim() || !queries.length) { finish('idle'); return []; }
+  inventorySuggestionState = 'loading';
+  if (button) button.disabled = true;
+  renderInventoryCandidates_(inventoryCandidateRows);
+  // Start with the current product, continue sequentially for at most two
+  // read-only searches, end after both/failed read/product change. Never link.
+  try {
+    const found = [];
+    for (const query of queries) {
+      if (!current()) return [];
+      found.push(...await fetchInventoryCandidates_(query, { force }));
+    }
+    if (!current()) return [];
+    inventorySuggestionRows = rankInventoryCandidates_(found, context).suggested;
+    finish('ready');
+    return inventorySuggestionRows;
+  } catch (error) { finish('failed'); throw error; }
+}
+
 function refreshInventorySuggestions_() {
-  if (!inventoryCandidateRows.length) return;
-  const key = JSON.stringify(inventoryMatchContext_());
+  const context = inventoryMatchContext_();
+  const key = JSON.stringify(context);
   if (key === inventoryCandidateRenderKey) return;
   inventoryCandidateRenderKey = key;
+  ++inventorySuggestionEpoch;
+  clearTimeout(inventorySuggestionTimer);
+  inventorySuggestionState = 'idle';
+  inventorySuggestionRows = [];
+  const button = el('inventory-suggest-btn');
+  if (button) button.disabled = false;
   renderInventoryCandidates_(inventoryCandidateRows);
+  if (getApiAuthToken() && String(context.title || '').trim() && key !== inventorySuggestionRequestedKey) {
+    inventorySuggestionTimer = setTimeout(() => {
+      loadInventorySuggestions_().catch(error => console.warn('[inventory-suggestions]', error));
+    }, 650);
+  }
 }
 
 async function fetchInventoryCandidates_(query, { force = false } = {}) {
@@ -6261,6 +6360,9 @@ async function clearCurrentProduct_({ clearSession = true, scroll = false, compl
   el('price-input').value = '';
   clearInventorySelection_({ persist: false });
   el('inventory-search-input').value = '';
+  if (el('inventory-candidate-status')) el('inventory-candidate-status').textContent = '';
+  inventorySuggestionRequestedKey = '';
+  inventoryCandidateRenderKey = '';
   el('inventory-candidate-panel').hidden = false;
   inventoryCandidateRows = inventoryCandidateCache.get('')?.items || [];
   renderInventoryCandidates_(inventoryCandidateRows);
@@ -8751,7 +8853,7 @@ globalThis.MercariAppTestHooks = {
   draftPayloadFingerprint_,
   parseInventoryReference_,
   normalizeInventoryUuid_,
-  rankInventoryCandidates_, fetchInventoryCandidates_, loadInventoryCandidates_,
+  rankInventoryCandidates_, inventorySuggestionQueries_, loadInventorySuggestions_, refreshInventorySuggestions_, fetchInventoryCandidates_, loadInventoryCandidates_,
   isMercariInventoryCandidate_,
   inventoryCandidateLabel_,
   getOrCreateDraftOperation_,
