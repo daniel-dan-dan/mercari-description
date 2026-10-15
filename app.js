@@ -3436,6 +3436,13 @@ function makeDescriptionApiError_(data = {}, status = 0) {
     );
   } else if (rateLimitError) {
     message = 'OpenAI APIが混み合っています。入力内容は残っています。数分待って再実行してください。';
+  } else if (code === 'OPENAI_OUTPUT_EMPTY') {
+    const attempts = Number(data.attempts);
+    const retried = Number.isInteger(attempts) && attempts > 1 && attempts <= 3
+      ? `自動で${attempts - 1}回再試行しましたが、正常な回答を受け取れませんでした。` : '';
+    message = 'AI側で回答を生成できずに終了しました。' + retried
+      + '写真が多すぎるためとは確認できません。写真と採寸はこの端末に残っています。'
+      + '30秒ほど待ってから、もう一度「説明文を生成」を押してください。';
   } else if (code === 'OPENAI_TEMPORARY_UNAVAILABLE') {
     message = 'OpenAI APIに一時的な障害が発生しています。入力内容は残っています。少し待って再実行してください。';
   }
