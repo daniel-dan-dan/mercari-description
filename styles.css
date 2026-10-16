@@ -3955,7 +3955,6 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 #main-screen > header { gap: 8px; padding-inline: 0; }
 #main-screen > header .header-actions { flex-shrink: 0; gap: 5px; }
 #main-screen > header .icon-btn { width: 44px; padding-inline: 0; }
-#main-screen > header .header-actions .icon-btn { font-size: 23px; line-height: 1; }
 .inventory-started-note { padding: 10px 12px; margin: 0 0 12px; border-left: 3px solid #c93648; background: #fff4f5; color: #63333d; font-size: 13px; overflow-wrap: anywhere; }
 #inventory-hub-screen { min-height: calc(100dvh - 32px); backdrop-filter: none; -webkit-backdrop-filter: none; padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
 .inventory-hub-header { gap: 12px; margin-bottom: 20px; padding: 0; }

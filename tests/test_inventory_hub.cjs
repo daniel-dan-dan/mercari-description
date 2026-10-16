@@ -103,8 +103,12 @@ function fixture(handler, initial = null) {
 
   const html = fs.readFileSync('index.html', 'utf8');
   assert.match(html, /id="reset-btn"[\s\S]*?id="inventory-hub-open"[\s\S]*?id="settings-btn"/);
-  assert.match(html, /id="inventory-hub-open"[^>]*aria-label="在庫"[^>]*><span aria-hidden="true">📦<\/span><\/button>/);
+  for (const [id, icon] of [['reset-btn', 'trash-2'], ['inventory-hub-open', 'package'], ['settings-btn', 'settings']]) {
+    const button = html.match(new RegExp('<button[^>]*id="' + id + '"[^>]*>[\\s\\S]*?</button>'))?.[0] || '';
+    assert.ok(button.includes('data-lucide="' + icon + '"'), id + ' uses the shared outline icon set');
+    assert.ok(button.includes('aria-label='), id + ' keeps its accessible name');
+  }
   assert.doesNotMatch(source, /\.innerHTML\s*=/);
-  assert.match(fs.readFileSync('sw.js', 'utf8'), /inventory-hub\.js\?v=20261017e/);
+  assert.match(fs.readFileSync('sw.js', 'utf8'), /inventory-hub\.js\?v=20261017f/);
   console.log('PASS inventory hub: held rows, filters, safe links, GET-only recovery, reload, exact receipt, no double writes, storage failures and stale reads');
 })().catch(error => { console.error(error); process.exitCode = 1; });
