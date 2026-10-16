@@ -3951,6 +3951,65 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 #setup-screen .settings-header h1 { margin: 0; }
 .settings-header .btn { width: auto; flex: 0 0 auto; }
 
+/* Inventory is a sibling screen, preserving the listing form beneath it. */
+#main-screen > header { gap: 8px; padding-inline: 0; }
+#main-screen > header .header-actions { flex-shrink: 0; gap: 5px; }
+#main-screen > header .icon-btn { width: 44px; padding-inline: 0; }
+#inventory-hub-open { font-size: 23px; line-height: 1; }
+.inventory-started-note { padding: 10px 12px; margin: 0 0 12px; border-left: 3px solid #c93648; background: #fff4f5; color: #63333d; font-size: 13px; overflow-wrap: anywhere; }
+#inventory-hub-screen { min-height: calc(100dvh - 32px); backdrop-filter: none; -webkit-backdrop-filter: none; padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
+.inventory-hub-header { gap: 12px; margin-bottom: 20px; padding: 0; }
+.inventory-hub-header h1 { flex: 1; color: #2d1e4a; background: none; -webkit-text-fill-color: currentColor; font-size: 21px; }
+.inventory-hub-header .btn { width: auto; flex: 0 0 auto; padding: 8px 11px; }
+.inventory-hub-sync > .btn { width: 100%; min-height: 50px; font-size: 16px; }
+.inventory-hub-sync .note { margin-block: 8px 0; }
+#inventory-hub-last-checked { text-align: center; font-size: 12px; }
+#inventory-hub-notice { font-size: 12px; line-height: 1.65; }
+.inventory-hub #inventory-hub-status { margin-block: 14px 8px; overflow-wrap: anywhere; }
+.inventory-hub-resume { width: 100%; }
+.inventory-hub-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid #e9dce0; margin-block: 24px 16px; gap: 3px; }
+.inventory-hub-filters button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 10px 2px; background: transparent; border: 0; border-bottom: 3px solid transparent; color: #76656d; font: inherit; font-size: 12px; min-height: 62px; cursor: pointer; }
+.inventory-hub-filters button strong { font-size: 21px; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.inventory-hub-filters button[aria-pressed="true"] { border-bottom-color: #f23d4a; color: #b92a3c; background: #fff4f5; font-weight: 700; }
+.inventory-hub-search { -webkit-appearance: none; appearance: none; box-sizing: border-box; width: 100%; border: 1px solid #e4d7dc; border-radius: 12px; min-height: 46px; padding: 10px 12px; font: inherit; font-size: 16px; background: #fff; color: #241f22; }
+.inventory-hub-search:focus { outline: 2px solid #f23d4a; outline-offset: 2px; }
+#inventory-hub-result-count { margin-block: 12px 4px; font-size: 12px; }
+.inventory-hub-card { padding: 18px 0; border-bottom: 1px solid #e9dce0; overflow-wrap: anywhere; }
+.inventory-hub-card h2 { display: block; color: #33282e; font-size: 16px; line-height: 1.55; margin: 0 0 7px; }
+.inventory-hub-meta { margin: 4px 0; color: #71636a; font-size: 12px; line-height: 1.65; }
+.inventory-hub-reason { font-size: 12px; line-height: 1.6; margin: 8px 0; color: #77523b; }
+.inventory-hub-start { display: block; margin-top: 14px; width: 100%; color: #bc2f42; border-color: #d9a9b1; background: #fff; min-height: 46px; }
+.inventory-hub-empty { color: #71636a; font-size: 14px; text-align: center; padding: 36px 10px; margin: 0; }
+.inventory-hub-candidate { margin-top: 12px; padding: 12px; border: 1px solid #e6d8dd; border-radius: 12px; background: #fffafa; }
+.inventory-hub-candidate-label { display: block; color: #91616a; font-size: 11px; margin-bottom: 8px; }
+.inventory-hub-candidate > .btn { width: 100%; margin-top: 12px; }
+.inventory-hub-match-product { display: flex; align-items: flex-start; gap: 10px; margin-top: 8px; }
+.inventory-hub-match-product > div { min-width: 0; }
+.inventory-hub-match-product strong { display: block; font-size: 14px; font-weight: 600; line-height: 1.55; }
+.inventory-hub-match-product img { width: 64px; height: 64px; object-fit: cover; flex: 0 0 64px; border-radius: 8px; background: #f2eded; }
+.inventory-hub-link { display: inline-flex; align-items: center; min-height: 44px; color: #b72c40; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.inventory-hub-dialog { width: calc(100% - 28px); max-width: 440px; max-height: calc(100dvh - 44px); overflow-y: auto; border: 1px solid #e4d7dc; border-radius: 18px; padding: 22px 18px; color: #33282e; box-shadow: 0 12px 60px #27161e33; }
+.inventory-hub-dialog::backdrop { background: #251e2c99; }
+.inventory-hub-dialog h2 { font-size: 19px; display: block; margin-bottom: 10px; }
+.inventory-hub-dialog .note { font-size: 14px; }
+.inventory-hub-identity { border-top: 1px solid #eadce1; margin-top: 14px; padding-top: 12px; overflow-wrap: anywhere; }
+.inventory-hub-identity > small { display: block; color: #82606c; margin-bottom: 6px; }
+.inventory-hub-identity > strong { display: block; font-size: 15px; }
+.inventory-hub-dialog-actions { display: flex; flex-direction: column-reverse; gap: 8px; margin-top: 20px; }
+.inventory-hub-dialog-actions .btn { width: 100%; min-height: 48px; }
+@media (max-width: 480px) {
+  #main-screen > header .app-heading { display: block; }
+  #main-screen > header h1 { font-size: clamp(16px, 4.8vw, 20px); white-space: nowrap; }
+  #main-screen > header .app-version { font-size: 10px; }
+  #inventory-hub-screen { padding-inline: 14px; }
+}
+@media (max-width: 350px) {
+  #main-screen > header { gap: 4px; }
+  #main-screen > header .header-actions { gap: 3px; }
+  #main-screen > header h1 { font-size: 15px; }
+  #inventory-hub-screen { padding-inline: 10px; }
+}
+
 #title-text { min-height: 76px; resize: none; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; margin-bottom: 4px; }
 .title-character-count { margin: 0 0 14px; text-align: right; color: #78616b; font-size: 12px; font-variant-numeric: tabular-nums; }
 .title-character-count.over-limit { color: #c62f48; font-weight: 700; }

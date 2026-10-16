@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261016a">
-  <script src="public-config.js?v=20261016a"></script>
+  <link rel="stylesheet" href="styles.css?v=20261017a">
+  <script src="public-config.js?v=20261017a"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -59,20 +59,46 @@
           </div>
           <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
         </details>
-      <p class="settings-version" id="settings-version">v20261016a / UI改善・セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20261017a / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
+    <section id="inventory-hub-screen" class="screen inventory-hub" aria-labelledby="inventory-hub-title" hidden>
+      <header class="inventory-hub-header">
+        <button id="inventory-hub-back" class="btn small" type="button">← 戻る</button>
+        <h1 id="inventory-hub-title" tabindex="-1">在庫</h1>
+        <button id="inventory-hub-refresh" class="btn small" type="button" aria-label="在庫一覧を更新">更新</button>
+      </header>
+      <div class="inventory-hub-sync">
+        <button id="inventory-hub-reconcile" class="btn primary" type="button">メルカリと照合</button>
+        <p id="inventory-hub-last-checked" class="note small">最終照合：未確認</p>
+        <p id="inventory-hub-notice" class="note small">未出品候補は、出品済みと確認できていない在庫です。</p>
+      </div>
+      <p id="inventory-hub-status" class="status" role="status" aria-live="polite" hidden></p>
+      <button id="inventory-hub-resume" class="btn small inventory-hub-resume" type="button" hidden>照合結果を再確認</button>
+      <nav class="inventory-hub-filters" aria-label="在庫の表示切り替え">
+        <button type="button" data-inventory-hub-filter="unlisted" aria-pressed="true"><span>未出品候補</span><strong id="inventory-hub-count-unlisted">—</strong></button>
+        <button type="button" data-inventory-hub-filter="listed" aria-pressed="false"><span>出品中</span><strong id="inventory-hub-count-listed">—</strong></button>
+        <button type="button" data-inventory-hub-filter="review" aria-pressed="false"><span>確認待ち</span><strong id="inventory-hub-count-review">—</strong></button>
+      </nav>
+      <label for="inventory-hub-search" class="sr-only">在庫を商品名・管理番号で検索</label>
+      <input id="inventory-hub-search" class="inventory-hub-search" type="search" placeholder="商品名・管理番号で検索" autocomplete="off">
+      <p id="inventory-hub-result-count" class="note small" aria-live="polite"></p>
+      <div id="inventory-hub-list" class="inventory-hub-list" aria-busy="false"></div>
+    </section>
+
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261016a</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261017a</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
+          <button id="inventory-hub-open" class="icon-btn" type="button" title="在庫" aria-label="在庫" disabled><span aria-hidden="true">📦</span></button>
           <button id="settings-btn" class="icon-btn" title="設定" aria-label="設定"><i data-lucide="settings" aria-hidden="true"></i></button>
         </div>
       </header>
 
       <p id="session-save-status" class="status session-save-status" role="alert" aria-live="assertive" hidden></p>
+      <p id="inventory-started-note" class="inventory-started-note" role="status" hidden></p>
 
 
       <div id="description-panel" class="tab-panel active" role="region" aria-label="説明文・下書き作成">
@@ -377,7 +403,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261016a</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261017a</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -388,10 +414,11 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20261016a"></script>
-  <script src="photo-adjust.js?v=20261016a"></script>
-  <script src="app.js?v=20261016a"></script>
-  <script src="review.js?v=20261016a"></script>
-  <script src="bootstrap.js?v=20261016a"></script>
+  <script src="catalog-data.js?v=20261017a"></script>
+  <script src="photo-adjust.js?v=20261017a"></script>
+  <script src="app.js?v=20261017a"></script>
+  <script src="inventory-hub.js?v=20261017a"></script>
+  <script src="review.js?v=20261017a"></script>
+  <script src="bootstrap.js?v=20261017a"></script>
 </body>
 </html>

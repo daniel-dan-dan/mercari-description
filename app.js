@@ -885,8 +885,42 @@ function isProductInputLocked_() {
   return descriptionGenerationInProgress || photoProcessingInProgress || draftSaveInProgress || temporarySaveInProgress;
 }
 
+let inventoryHubReady_ = false;
+let inventoryHubSwitchInProgress_ = false;
+
+async function startListingFromInventory_(item, { saveCurrent = false } = {}) {
+  const uuid = normalizeInventoryUuid_(item?.inventoryUuid);
+  if (!uuid || !isMercariInventoryCandidate_(item) || item.canList !== true || item.listingState !== 'unlisted') {
+    throw new Error('この在庫から出品を始められません。一覧を更新してください。');
+  }
+  if (isProductInputLocked_() || inventoryHubSwitchInProgress_) throw new Error('処理が終わってから商品を切り替えてください。');
+  if (normalizeInventoryUuid_(el('inventory-uuid-input')?.value) === uuid) return { continued: true };
+  inventoryHubSwitchInProgress_ = true;
+  try {
+    if (hasMeaningfulCurrentInput_()) {
+      if (!saveCurrent) throw new Error('現在の入力を一時保存してから切り替えてください。');
+      const originalDraftId = activeTemporaryDraftId;
+      const signature = draftPayloadFingerprint_(compactTemporaryDraftState_(collectState()));
+      const saved = await saveCurrentAsTemporaryDraft_({ resetAfter: false, allowIncomplete: true, announce: false });
+      if (!saved) throw new Error('現在の入力を保存できなかったため、商品を切り替えていません。');
+      const current = compactTemporaryDraftState_({ ...collectState(), temporaryDraftId: originalDraftId });
+      if (signature !== draftPayloadFingerprint_(current)) {
+        throw new Error('保存中に入力が変わったため、商品を切り替えていません。現在の入力は残っています。');
+      }
+    }
+    if (isProductInputLocked_()) throw new Error('処理が始まったため、商品を切り替えていません。');
+    await clearCurrentProduct_({ clearSession: true, scroll: false });
+    const label = inventoryCandidateLabel_(item);
+    setInventoryReference_(uuid, { label: label.name, meta: label.meta, showReference: false });
+    await saveCurrentSessionNow_();
+    return { continued: false };
+  } finally {
+    inventoryHubSwitchInProgress_ = false;
+  }
+}
+
 function setTemporarySaveLock_(locked) {
-  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #settings-btn').forEach(control => {
+  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #inventory-hub-open, #settings-btn').forEach(control => {
     if (locked) {
       if (control.dataset.temporarySaveWasDisabled === undefined) control.dataset.temporarySaveWasDisabled = control.disabled ? '1' : '0';
       control.disabled = true;
@@ -901,7 +935,7 @@ function setTemporarySaveLock_(locked) {
 
 function setDescriptionGenerationLock_(locked) {
   const controls = document.querySelectorAll(
-    '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #settings-btn'
+    '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #inventory-hub-open, #settings-btn'
   );
   controls.forEach(control => {
     if (locked) {
@@ -927,7 +961,7 @@ function setDescriptionGenerationLock_(locked) {
 function setPhotoProcessingLock_(locked) {
   const controls = document.querySelectorAll(
     '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, '
-      + '#compose-modal button, #compose-modal input, #compose-modal select, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #settings-btn'
+      + '#compose-modal button, #compose-modal input, #compose-modal select, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #inventory-hub-open, #settings-btn'
   );
   controls.forEach(control => {
     if (locked) {
@@ -962,7 +996,7 @@ function draftFormSignature_() {
 }
 
 function setDraftSubmissionLock_(locked) {
-  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #settings-btn').forEach(control => {
+  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #inventory-hub-open, #settings-btn').forEach(control => {
     if (locked) {
       if (control.dataset.draftWasDisabled === undefined) control.dataset.draftWasDisabled = control.disabled ? '1' : '0';
       control.disabled = true;
@@ -1304,6 +1338,8 @@ async function init() {
   // Price changes are managed exclusively in Price Desk.
   updateGenerateButton();
   updateTemporarySaveButton_();
+  inventoryHubReady_ = true;
+  if (el('inventory-hub-open')) el('inventory-hub-open').disabled = isProductInputLocked_();
 }
 
 // ----- 設定 -----
@@ -3176,6 +3212,11 @@ function updateInventoryLinkNote_() {
   const clearButton = el('inventory-clear-btn');
   if (!note) return getInventoryReferenceState_();
   const state = getInventoryReferenceState_();
+  const startedNote = el('inventory-started-note');
+  if (startedNote) {
+    startedNote.hidden = state.empty || !state.valid;
+    startedNote.textContent = startedNote.hidden ? '' : `選択中の在庫：${state.label || '在庫を指定済み'}`;
+  }
   note.className = 'note small inventory-link-note';
   if (summary) {
     summary.className = 'inventory-selected-summary';
@@ -8900,6 +8941,7 @@ globalThis.MercariAppTestHooks = {
   collectMeasurements,
   formatMeasurements,
   collectState,
+  startListingFromInventory_,
   restoreState,
   deriveMercariSize,
   buildDescriptionProductName,

@@ -137,12 +137,12 @@ assert.match(source, /inventoryMeta:/);
 assert.match(source, /clearInventorySelection_\(\{ persist: false \}\)/);
 assert.match(styles, /\.inventory-selected-summary/);
 assert.match(styles, /\.inventory-candidate-item/);
-assert.match(serviceWorker, /mercari-description-v20261016a/);
+assert.match(serviceWorker, /mercari-description-v20261017a/);
 
 console.log(JSON.stringify({
   ok: true,
   inventorySelection: 'manual-only',
   temporaryDraftPreserved: true,
   fingerprintIncludesInventory: true,
-  version: 'v20261016a',
+  version: 'v20261017a',
 }));
