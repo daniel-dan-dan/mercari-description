@@ -61,7 +61,7 @@ function fixture(handler, initial = null) {
   const confirm = fixture(async path => path.includes('/result') ? { ok: true, operationId: confirmOp.operationId, status: 'done',
     receipt: { inventoryUuid: uuid, itemId: verified ? 'm1234' : 'm9999', listingChecked: true, readbackVerified: true } } : hub(), confirmOp);
   await confirm.controller.resume();
-  assert.ok(confirm.controller.state.pending); assert.equal(confirm.calls.filter(c => c.path.includes('/result')).length, 30);
+  assert.ok(confirm.controller.state.pending); assert.equal(confirm.calls.filter(c => c.path.includes('/result')).length, 150);
   verified = true; await confirm.controller.resume(); assert.equal(confirm.controller.state.pending, null);
   assert.match(confirm.controller.state.message, /チェックを確認/);
 
@@ -105,6 +105,6 @@ function fixture(handler, initial = null) {
   assert.match(html, /id="reset-btn"[\s\S]*?id="inventory-hub-open"[\s\S]*?id="settings-btn"/);
   assert.match(html, /id="inventory-hub-open"[^>]*aria-label="在庫"[^>]*><span aria-hidden="true">📦<\/span><\/button>/);
   assert.doesNotMatch(source, /\.innerHTML\s*=/);
-  assert.match(fs.readFileSync('sw.js', 'utf8'), /inventory-hub\.js\?v=20261017b/);
+  assert.match(fs.readFileSync('sw.js', 'utf8'), /inventory-hub\.js\?v=20261017c/);
   console.log('PASS inventory hub: held rows, filters, safe links, GET-only recovery, reload, exact receipt, no double writes, storage failures and stale reads');
 })().catch(error => { console.error(error); process.exitCode = 1; });

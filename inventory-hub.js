@@ -43,7 +43,7 @@
   }
 
   function createController({ request, storage, operationId, onChange = () => {}, isVisible = () => true,
-    wait = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
+    wait = ms => new Promise(resolve => setTimeout(resolve, ms)), now = () => Date.now() }) {
     const state = { data: null, pending: null, loading: false, working: false, stale: false, message: '', kind: '', loadError: '', storageError: false };
     let refreshVersion = 0;
     try {
@@ -126,15 +126,20 @@
         notice(text(result.message || result.error) || '照合を完了できませんでした。内容を確認してからもう一度お試しください。', 'error');
         return true;
       }
-      notice(text(result.message || result.error) || (result.status === 'needs_review'
+      const summary = result.summary;
+      const hasProgress = result.status === 'running' && Number.isSafeInteger(summary?.observed) && summary.observed >= 0
+        && Number.isSafeInteger(summary?.updated) && summary.updated >= 0;
+      const progress = hasProgress ? `出品${summary.observed}件を確認、${summary.updated}件のチェックを反映済みです。照合を続けています…` : '';
+      notice(progress || text(result.message || result.error) || (result.status === 'needs_review'
         ? '反映状況の確認が必要です。「結果を再確認」で確認してください。'
         : 'メルカリの商品と在庫を確認しています…'), result.status === 'needs_review' ? 'warn' : '');
       return false;
     }
     async function poll() {
       // Start with one persisted operation; continue only while visible/pending;
-      // stop at a verified terminal result, failure, or 30 read-only polls.
-      for (let attempt = 0; attempt < 30 && state.pending && isVisible(); attempt++) {
+      // stop at a verified terminal result, failure, 150 reads, or ten minutes.
+      const deadline = now() + 10 * 60 * 1000;
+      for (let attempt = 0; attempt < 150 && state.pending && isVisible() && now() < deadline; attempt++) {
         const id = state.pending.operationId;
         let result;
         try { result = await request(`/inventory/hub/result?operationId=${encodeURIComponent(id)}`); }
@@ -145,7 +150,7 @@
         if (state.pending?.operationId !== id) return;
         if (accept(result)) { await refresh().catch(() => {}); return; }
         if (result?.status === 'needs_review' || result?.ok === false) return;
-        if (attempt < 29) await wait(2000);
+        if (attempt < 149 && isVisible() && now() < deadline) await wait(Math.min(4000, deadline - now()));
       }
       if (state.pending && isVisible()) notice('処理の結果をまだ確認できません。「結果を再確認」で続きの結果を確認できます。', 'warn');
     }
