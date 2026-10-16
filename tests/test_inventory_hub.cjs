@@ -105,6 +105,6 @@ function fixture(handler, initial = null) {
   assert.match(html, /id="reset-btn"[\s\S]*?id="inventory-hub-open"[\s\S]*?id="settings-btn"/);
   assert.match(html, /id="inventory-hub-open"[^>]*aria-label="在庫"[^>]*><span aria-hidden="true">📦<\/span><\/button>/);
   assert.doesNotMatch(source, /\.innerHTML\s*=/);
-  assert.match(fs.readFileSync('sw.js', 'utf8'), /inventory-hub\.js\?v=20261017c/);
+  assert.match(fs.readFileSync('sw.js', 'utf8'), /inventory-hub\.js\?v=20261017d/);
   console.log('PASS inventory hub: held rows, filters, safe links, GET-only recovery, reload, exact receipt, no double writes, storage failures and stale reads');
 })().catch(error => { console.error(error); process.exitCode = 1; });

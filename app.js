@@ -888,9 +888,12 @@ function isProductInputLocked_() {
 let inventoryHubReady_ = false;
 let inventoryHubSwitchInProgress_ = false;
 
-async function startListingFromInventory_(item, { saveCurrent = false } = {}) {
+async function startListingFromInventory_(item, { saveCurrent = false, differentProductConfirmed = false } = {}) {
   const uuid = normalizeInventoryUuid_(item?.inventoryUuid);
-  if (!uuid || !isMercariInventoryCandidate_(item) || item.canList !== true || item.listingState !== 'unlisted') {
+  const reviewAllowed = differentProductConfirmed && item?.listingState === 'review' && item.listingChecked === false
+    && !String(item.listingItemId || '').trim() && !item.listing && !item.holdReason
+    && Array.isArray(item.candidates) && item.candidates.length > 0;
+  if (!uuid || !isMercariInventoryCandidate_(item) || item.canList !== true || (item.listingState !== 'unlisted' && !reviewAllowed)) {
     throw new Error('この在庫から出品を始められません。一覧を更新してください。');
   }
   if (isProductInputLocked_() || inventoryHubSwitchInProgress_) throw new Error('処理が終わってから商品を切り替えてください。');

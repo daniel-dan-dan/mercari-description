@@ -15,6 +15,12 @@
     return ITEM_ID.test(id) ? `https://jp.mercari.com/item/${id}` : '';
   }
 
+  function canStartReviewItem(item) {
+    return item?.canList === true && item.listingState === 'review' && item.listingChecked === false
+      && !text(item.listingItemId) && !item.listing && !item.holdReason
+      && Array.isArray(item.candidates) && item.candidates.length > 0;
+  }
+
   function normalizeHub(data) {
     if (data?.ok !== true || !Array.isArray(data.items)) throw new Error(text(data?.error) || '在庫一覧を取得できませんでした。');
     const seen = new Set();
@@ -30,7 +36,8 @@
       const state = validIdentity && STATES.includes(item.listingState) ? item.listingState : 'review';
       const candidates = validIdentity ? (Array.isArray(item.candidates) ? item.candidates : []).filter(candidate => ITEM_ID.test(text(candidate.itemId))) : [];
       return { ...item, productName: text(item.productName) || '商品名未登録', listingState: state,
-        candidates, canList: validIdentity && item.canList === true && state === 'unlisted' && data.inventoryComplete === true };
+        candidates, canList: validIdentity && item.canList === true && data.inventoryComplete === true
+          && (state === 'unlisted' || canStartReviewItem({ ...item, candidates })) };
     });
     // Counts are the displayed eligible inventory, not a possibly partial source total.
     const counts = Object.fromEntries(STATES.map(state => [state, items.filter(item => item.listingState === state).length]));
@@ -268,13 +275,16 @@
       dialog.addEventListener('close', () => dialog.remove(), { once: true });
       actions.append(cancel, confirm); dialog.append(actions); doc.body.append(dialog); dialog.showModal(); cancel.focus();
     }
-    async function choose(item, saveCurrent) {
+    async function choose(item, saveCurrent, differentProductConfirmed = false) {
       switching = true; render();
       try {
         const data = await controller.refresh();
         const fresh = data.items.find(value => value.inventoryUuid === item.inventoryUuid);
-        if (!fresh?.canList || fresh.listingState !== 'unlisted') throw new Error('この商品の状態が変わりました。一覧を確認してください。');
-        await startListing(fresh, { saveCurrent });
+        const reviewAllowed = differentProductConfirmed && canStartReviewItem(fresh);
+        if (!fresh?.canList || (fresh.listingState !== 'unlisted' && !reviewAllowed)) throw new Error('この商品の状態が変わりました。一覧を確認してください。');
+        const candidateKey = value => JSON.stringify((value.candidates || []).map(candidate => [candidate.itemId, candidate.title]));
+        if (reviewAllowed && candidateKey(item) !== candidateKey(fresh)) throw new Error('候補が変わりました。一覧でもう一度確認してください。');
+        await startListing(fresh, { saveCurrent, differentProductConfirmed });
         showScreen('main-screen');
         win.scrollTo({ top: 0, behavior: 'instant' });
         const banner = get('inventory-started-note');
@@ -283,7 +293,15 @@
     }
     function select(item) {
       if (disabled() || locked()) return;
-      if (hasInput() && selectedUuid() !== item.inventoryUuid) {
+      const saveCurrent = hasInput() && selectedUuid() !== item.inventoryUuid;
+      if (item.listingState === 'review') {
+        if (!canStartReviewItem(item)) return;
+        ask({ title: '候補にない商品を出品する',
+          message: '表示された候補とは別の商品として、出品の準備を始めます。' + (saveCurrent ? '入力中の写真・採寸・説明文は一時保存します。' : ''), item,
+          label: saveCurrent ? '保存して出品準備へ' : '出品準備を始める', action: () => choose(item, saveCurrent, true) });
+        return;
+      }
+      if (saveCurrent) {
         ask({ title: '入力中の商品を一時保存', message: '今の写真・採寸・説明文を一時保存して、選んだ商品の出品準備を始めます。', item,
           label: '保存して切り替える', action: () => choose(item, true) });
       } else choose(item, false).catch(error => controller.notice(error.message, 'error'));
@@ -320,7 +338,7 @@
         if (!item.candidates.length && item.listing) appendListing(article, item.listing);
       }
       if (item.canList) {
-        const start = button('この商品を出品する', 'btn inventory-hub-start', () => select(item)); start.disabled = disabled() || locked(); article.append(start);
+        const start = button(item.listingState === 'review' ? '候補にない商品を出品する' : 'この商品を出品する', 'btn inventory-hub-start', () => select(item)); start.disabled = disabled() || locked(); article.append(start);
       }
       return article;
     }
@@ -394,7 +412,7 @@
     };
   }
 
-  globalThis.MercariInventoryHub = Object.freeze({ normalizeHub, filterItems, safeListingUrl, createController, createRequest, mount, OPERATION_KEY });
+  globalThis.MercariInventoryHub = Object.freeze({ normalizeHub, filterItems, safeListingUrl, canStartReviewItem, createController, createRequest, mount, OPERATION_KEY });
   if (!globalThis.__MERCARI_TEST__) mount({ document, window, storage: localStorage,
     ready: () => inventoryHubReady_, locked: () => isProductInputLocked_() || inventoryHubSwitchInProgress_,
     operationId: () => createOperationId_('inventory-hub'), showScreen,

@@ -41,5 +41,16 @@ function fixture() {
   assert.equal(unsafe.context.cleared, 0);
   const empty = fixture(); empty.context.meaningful = false;
   await empty.start(item); assert.equal(empty.context.saved, 0); assert.equal(empty.context.selected.uuid, uuid);
+  const reviewItem = { ...item, listingState: 'review', listingChecked: false, listingItemId: '', listing: null, holdReason: '', candidates: [{ itemId: 'm12345', title: '別の候補' }] };
+  const review = fixture();
+  await assert.rejects(review.start(reviewItem, { saveCurrent: true }), /始められません/);
+  assert.equal(review.context.saved, 0);
+  await review.start(reviewItem, { saveCurrent: true, differentProductConfirmed: true });
+  assert.equal(review.context.saved, 1); assert.equal(review.context.selected.uuid, uuid);
+  for (const extra of [{ listingChecked: true }, { listingItemId: 'm99' }, { listing: { itemId: 'm99' } }, { holdReason: '未確認' }, { candidates: [] }]) {
+    const blockedReview = fixture();
+    await assert.rejects(blockedReview.start({ ...reviewItem, ...extra }, { saveCurrent: true, differentProductConfirmed: true }), /始められません/);
+    assert.equal(blockedReview.context.saved, 0); assert.equal(blockedReview.context.cleared, 0);
+  }
   console.log('PASS inventory selection: input retained, explicit save, same-product continuation, storage failure, late edits, running locks, ineligible guards');
 })().catch(error => { console.error(error); process.exitCode = 1; });
