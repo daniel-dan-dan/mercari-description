@@ -272,7 +272,7 @@ const successfulHarness = createHarness({
     existingTokenPreserved: true,
     failedRevocationPersistedAndRetried: true,
     strictMacUrl: true,
-    version: 'v20261017a',
+    version: 'v20261017b',
   }));
 })().catch(error => {
   console.error(error);

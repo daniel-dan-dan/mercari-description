@@ -44,7 +44,7 @@
 
   function createController({ request, storage, operationId, onChange = () => {}, isVisible = () => true,
     wait = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
-    const state = { data: null, pending: null, loading: false, working: false, stale: false, message: '', kind: '', storageError: false };
+    const state = { data: null, pending: null, loading: false, working: false, stale: false, message: '', kind: '', loadError: '', storageError: false };
     let refreshVersion = 0;
     try {
       const saved = JSON.parse(storage.getItem(OPERATION_KEY) || 'null');
@@ -74,18 +74,20 @@
     async function refresh() {
       const version = ++refreshVersion;
       state.loading = true;
+      // Clear only the previous list-read error. Operation/hold notices survive.
+      state.loadError = '';
       emit();
       try {
         const data = normalizeHub(await request('/inventory/hub'));
         if (version === refreshVersion) {
-          if (state.stale && state.kind === 'error') { state.message = ''; state.kind = ''; }
           state.data = data; state.stale = false;
         }
         return data;
       } catch (error) {
         if (version === refreshVersion) {
           state.stale = true;
-          notice(`${state.data ? '前回の一覧を表示しています。' : ''}${text(error.message) || '在庫を取得できませんでした。'}「更新」で再確認できます。`, 'error');
+          state.loadError = `${state.data ? '前回の一覧を表示しています。' : ''}${text(error.message) || '在庫を取得できませんでした。'}「更新」で再確認できます。`;
+          emit();
         }
         throw error;
       } finally { if (version === refreshVersion) { state.loading = false; emit(); } }
@@ -319,9 +321,10 @@
     }
     function render() {
       const state = controller.state;
-      get('inventory-hub-status').hidden = !state.message;
-      get('inventory-hub-status').textContent = state.message;
-      get('inventory-hub-status').className = `status ${state.kind}`;
+      const statusMessage = [state.message, state.loadError].filter(Boolean).join('\n');
+      get('inventory-hub-status').hidden = !statusMessage;
+      get('inventory-hub-status').textContent = statusMessage;
+      get('inventory-hub-status').className = `status ${state.loadError ? 'error' : state.kind}`;
       get('inventory-hub-back').disabled = switching;
       get('inventory-hub-reconcile').disabled = disabled() || !state.data || !state.data.inventoryComplete || state.data.schemaReady !== true || state.storageError;
       get('inventory-hub-reconcile').textContent = state.working ? '確認中…' : 'メルカリと照合';
@@ -371,18 +374,26 @@
     return controller;
   }
 
-  globalThis.MercariInventoryHub = Object.freeze({ normalizeHub, filterItems, safeListingUrl, createController, mount, OPERATION_KEY });
+  function createRequest({ getServiceUrl, fetchWithTimeout, readJsonResponse }) {
+    return async (path, options = {}) => {
+      const service = await getServiceUrl();
+      const write = options.method === 'POST';
+      const requestOptions = write ? { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Operation-Id': options.body.operationId }, body: JSON.stringify(options.body) } : {};
+      // Full inventory reads may take up to the backend's 60-second deadline.
+      // Writes and result recovery retain their short, durable-operation timeout.
+      const timeout = !write && path === '/inventory/hub' ? 75000 : 30000;
+      const response = await fetchWithTimeout(`${service}${path}`, requestOptions, timeout);
+      const data = await readJsonResponse(response, '在庫照合');
+      return { ...data, httpStatus: response.status };
+    };
+  }
+
+  globalThis.MercariInventoryHub = Object.freeze({ normalizeHub, filterItems, safeListingUrl, createController, createRequest, mount, OPERATION_KEY });
   if (!globalThis.__MERCARI_TEST__) mount({ document, window, storage: localStorage,
     ready: () => inventoryHubReady_, locked: () => isProductInputLocked_() || inventoryHubSwitchInProgress_,
     operationId: () => createOperationId_('inventory-hub'), showScreen,
     hasInput: hasMeaningfulCurrentInput_, selectedUuid: () => normalizeInventoryUuid_(el('inventory-uuid-input')?.value), startListing: startListingFromInventory_,
-    request: async (path, options = {}) => {
-      const service = await getMercariServiceUrl();
-      const requestOptions = options.method === 'POST' ? { method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Operation-Id': options.body.operationId }, body: JSON.stringify(options.body) } : {};
-      const response = await fetchWithTimeout(`${service}${path}`, requestOptions, 30000);
-      const data = await readJsonResponse(response, '在庫照合');
-      return { ...data, httpStatus: response.status };
-    },
+    request: createRequest({ getServiceUrl: getMercariServiceUrl, fetchWithTimeout, readJsonResponse }),
   });
 })();
