@@ -1,0 +1,31 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const nodes=new Map(),timeouts=[];
+const c={console,URL,setTimeout,clearTimeout,__MERCARI_TEST__:true,localStorage:{getItem:()=>null},
+document:{getElementById:id=>{if(!nodes.has(id))nodes.set(id,{value:'',innerHTML:'',textContent:'',hidden:false,disabled:false,classList:{add(){}}});return nodes.get(id);}}};
+vm.createContext(c);vm.runInContext(fs.readFileSync('catalog-data.js','utf8')+'\n'+fs.readFileSync('app.js','utf8'),c);
+vm.runInContext('getMercariServiceUrl=async()=>"https://example.test";readJsonResponse=async r=>r;',c);
+const h=c.MercariAppTestHooks;
+c.document.getElementById('title-text').value='Aprica ベビーカー';
+c.document.getElementById('m-brand').value='Aprica';
+c.document.getElementById('m-sleeve').value='63';
+let calls=0;
+c.mock=async(url,opt,timeout)=>{calls++;timeouts.push(timeout);assert.ok(!opt.method||opt.method==='GET');return {ok:false,code:'INVENTORY_GAS_AUTH_REQUIRED',error:'private-upstream-html'};};
+vm.runInContext('fetchWithTimeout=mock;',c);
+(async()=>{
+await assert.rejects(h.loadInventoryCandidates_());
+assert.match(nodes.get('inventory-candidate-status').textContent,/Googleの利用許可/);
+await assert.rejects(h.loadInventorySuggestions_());
+assert.match(nodes.get('inventory-candidate-list').innerHTML,/Googleの利用許可/);
+assert.doesNotMatch(nodes.get('inventory-candidate-list').innerHTML,/private-upstream-html/);
+assert.equal(nodes.get('title-text').value,'Aprica ベビーカー');
+assert.equal(nodes.get('m-sleeve').value,'63');
+assert.equal(nodes.get('inventory-suggest-btn').disabled,false);
+assert.equal(calls,2);assert.ok(timeouts.every(n=>n===75000));
+c.mock=async()=>({ok:true,items:[]});vm.runInContext('fetchWithTimeout=mock;',c);
+await h.loadInventoryCandidates_({force:true});
+await h.loadInventorySuggestions_({force:true});
+assert.equal(nodes.get('inventory-candidate-status').textContent,'0件');
+assert.doesNotMatch(nodes.get('inventory-candidate-list').innerHTML,/Googleの利用許可/);
+console.log('PASS inventory candidate auth: safe guidance, input preservation, 75s read budget, no retry/write, explicit recovery');
+})().catch(e=>{console.error(e);process.exitCode=1;});

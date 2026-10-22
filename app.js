@@ -50,6 +50,7 @@ let inventorySuggestionRequestedKey = '';
 let inventorySuggestionEpoch = 0;
 let inventorySuggestionTimer = null;
 let inventorySuggestionState = 'idle';
+let inventorySuggestionFailureCode = '';
 const MAX_DRAFT_PAYLOAD_BYTES = 28 * 1024 * 1024;
 const MAX_IMAGE_EDGE = 1024;         // 長辺を1024pxにリサイズ（AI分析用・コスト節約）
 const MAX_MERCARI_EDGE = 1080;       // Mercariアップロード用（1:1撮影前提で1080×1080）
@@ -4093,6 +4094,7 @@ function renderInventoryCandidates_(items) {
 function inventorySuggestionMessage_(context = {}) {
   if (!String(context.title || '').trim()) return '商品名が入ると一致しそうな在庫を探せます。';
   if (inventorySuggestionState === 'loading') return 'ブランド名などで在庫シートを検索中…';
+  if (inventorySuggestionState === 'failed' && inventorySuggestionFailureCode === 'INVENTORY_GAS_AUTH_REQUIRED') return inventoryCandidateFailureMessage_({ inventoryCode: inventorySuggestionFailureCode });
   if (inventorySuggestionState === 'failed') return '追加の候補を取得できませんでした。「一致しそうな在庫を探す」で再試行できます。';
   return '一致しそうな在庫が見つかりませんでした。検索欄からも探せます。';
 }
@@ -4125,6 +4127,7 @@ async function loadInventorySuggestions_({ force = false } = {}) {
   const epoch = ++inventorySuggestionEpoch;
   clearTimeout(inventorySuggestionTimer);
   inventorySuggestionRequestedKey = key;
+  inventorySuggestionFailureCode = '';
   inventorySuggestionRows = [];
   inventorySuggestionContextKey = key;
   const queries = inventorySuggestionQueries_(context);
@@ -4152,7 +4155,10 @@ async function loadInventorySuggestions_({ force = false } = {}) {
     inventorySuggestionRows = rankInventoryCandidates_(found, context).suggested;
     finish('ready');
     return inventorySuggestionRows;
-  } catch (error) { finish('failed'); throw error; }
+  } catch (error) {
+    if (current()) inventorySuggestionFailureCode = error.inventoryCode || '';
+    finish('failed'); throw error;
+  }
 }
 
 function refreshInventorySuggestions_() {
@@ -4163,6 +4169,7 @@ function refreshInventorySuggestions_() {
   ++inventorySuggestionEpoch;
   clearTimeout(inventorySuggestionTimer);
   inventorySuggestionState = 'idle';
+  inventorySuggestionFailureCode = '';
   inventorySuggestionRows = [];
   const button = el('inventory-suggest-btn');
   if (button) button.disabled = false;
@@ -4174,15 +4181,27 @@ function refreshInventorySuggestions_() {
   }
 }
 
+function inventoryCandidateFailureMessage_(error, cached = false) {
+  if (error?.inventoryCode === 'INVENTORY_GAS_AUTH_REQUIRED') {
+    return (cached ? '前回の一覧を表示しています。' : '')
+      + '在庫シート側でGoogleの利用許可が必要です。所有者のGoogleアカウントで再ログインし、スクリプトの利用許可を確認してください。写真・採寸は残っています。';
+  }
+  return cached ? '前回の一覧です。更新できませんでした' : '取得できませんでした。「更新」で再試行';
+}
+
 async function fetchInventoryCandidates_(query, { force = false } = {}) {
   const cached = inventoryCandidateCache.get(query);
   if (!force && cached && Date.now() - cached.fetchedAt < INVENTORY_CACHE_MS) return cached.items;
   if (inventoryCandidateRequests.has(query)) return inventoryCandidateRequests.get(query);
   const pending = (async () => {
     const tunnelUrl = await getMercariServiceUrl();
-    const response = await fetchWithTimeout(`${tunnelUrl}/inventory/candidates?query=${encodeURIComponent(query)}&limit=${INVENTORY_CANDIDATE_LIMIT}`, {}, 30000);
+    const response = await fetchWithTimeout(`${tunnelUrl}/inventory/candidates?query=${encodeURIComponent(query)}&limit=${INVENTORY_CANDIDATE_LIMIT}`, {}, 75000);
     const data = await readJsonResponse(response, '在庫候補取得');
-    if (!response.ok || !data.ok || !Array.isArray(data.items)) throw new Error(data.error || '在庫候補を取得できませんでした');
+    if (!response.ok || !data.ok || !Array.isArray(data.items)) {
+      const error = new Error('在庫候補を取得できませんでした');
+      error.inventoryCode = data.code === 'INVENTORY_GAS_AUTH_REQUIRED' ? data.code : '';
+      throw error;
+    }
     const items = data.items.filter(isMercariInventoryCandidate_);
     if (inventoryCandidateCache.size >= 8) inventoryCandidateCache.delete(inventoryCandidateCache.keys().next().value);
     inventoryCandidateCache.set(query, { items, fetchedAt: Date.now() });
@@ -4212,7 +4231,7 @@ async function loadInventoryCandidates_({ force = false } = {}) {
     }
     return items;
   } catch (error) {
-    if (current() && status) status.textContent = cached ? '前回の一覧です。更新できませんでした' : '取得できませんでした。「更新」で再試行';
+    if (current() && status) status.textContent = inventoryCandidateFailureMessage_(error, !!cached);
     throw error;
   }
 }
