@@ -4,7 +4,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_root"
 
-for source_file in photo-adjust.js app.js inventory-hub.js review.js pair.js bootstrap.js public-config.js sw.js; do
+for source_file in photo-adjust.js photo-text.js photo-text-editor.js app.js inventory-hub.js review.js pair.js bootstrap.js public-config.js sw.js; do
   node --check "$source_file"
 done
 

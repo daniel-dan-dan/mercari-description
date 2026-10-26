@@ -924,7 +924,7 @@ async function startListingFromInventory_(item, { saveCurrent = false, different
 }
 
 function setTemporarySaveLock_(locked) {
-  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #inventory-hub-open, #settings-btn').forEach(control => {
+  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #photo-text-dialog button, #photo-text-dialog input, #photo-text-dialog select, #photo-text-dialog textarea, #reset-btn, #inventory-hub-open, #settings-btn').forEach(control => {
     if (locked) {
       if (control.dataset.temporarySaveWasDisabled === undefined) control.dataset.temporarySaveWasDisabled = control.disabled ? '1' : '0';
       control.disabled = true;
@@ -939,7 +939,7 @@ function setTemporarySaveLock_(locked) {
 
 function setDescriptionGenerationLock_(locked) {
   const controls = document.querySelectorAll(
-    '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #inventory-hub-open, #settings-btn'
+    '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #photo-text-dialog button, #photo-text-dialog input, #photo-text-dialog select, #photo-text-dialog textarea, #reset-btn, #inventory-hub-open, #settings-btn'
   );
   controls.forEach(control => {
     if (locked) {
@@ -965,7 +965,7 @@ function setDescriptionGenerationLock_(locked) {
 function setPhotoProcessingLock_(locked) {
   const controls = document.querySelectorAll(
     '#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, '
-      + '#compose-modal button, #compose-modal input, #compose-modal select, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #inventory-hub-open, #settings-btn'
+      + '#compose-modal button, #compose-modal input, #compose-modal select, #photo-adjust-dialog button, #photo-adjust-dialog input, #photo-text-dialog button, #photo-text-dialog input, #photo-text-dialog select, #photo-text-dialog textarea, #reset-btn, #inventory-hub-open, #settings-btn'
   );
   controls.forEach(control => {
     if (locked) {
@@ -996,11 +996,12 @@ function draftFormSignature_() {
     category: getSelectedMercariCategoryKey(), brand: el('m-brand')?.value || '',
     size: getSelectedMercariSize(), inventory: el('inventory-uuid-input')?.value || '',
     source: generationSourceFingerprint_(), product: lastAiData?.product_id || '',
+    photoText: uploadedImages.map(photo => photo.textOverlay || null),
   });
 }
 
 function setDraftSubmissionLock_(locked) {
-  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #reset-btn, #inventory-hub-open, #settings-btn').forEach(control => {
+  document.querySelectorAll('#description-panel button, #description-panel input, #description-panel select, #description-panel textarea, #compose-modal button, #compose-modal input, #photo-adjust-dialog button, #photo-adjust-dialog input, #photo-text-dialog button, #photo-text-dialog input, #photo-text-dialog select, #photo-text-dialog textarea, #reset-btn, #inventory-hub-open, #settings-btn').forEach(control => {
     if (locked) {
       if (control.dataset.draftWasDisabled === undefined) control.dataset.draftWasDisabled = control.disabled ? '1' : '0';
       control.disabled = true;
@@ -1158,6 +1159,7 @@ async function init() {
   el('reset-btn').addEventListener('click', resetAll);
   el('photo-input').addEventListener('change', handlePhotoSelect);
   setupPhotoEditor_();
+  setupPhotoTextEditor_();
   setSelectedProductGender(localStorage.getItem(PRODUCT_GENDER_STORAGE_KEY));
   renderMercariCategoryOptions();
   renderMercariSizeOptions();
@@ -1531,6 +1533,81 @@ async function revokeCurrentDeviceFromSettings_() {
 // ----- 写真アップロード＆リサイズ -----
 let uploadedImages = [];  // { dataUrl, mediaType, base64 }
 let photoEditorState = null;
+let photoTextEditor = null;
+
+function normalizePhotoTextOverlay_(value) {
+  if (!value || !String(value.text || '').trim()) return null;
+  if (!globalThis.MercariPhotoText) throw new Error('文字入れ機能を読み込めませんでした。アプリを開き直してください。');
+  const overlay = MercariPhotoText.normalizeOverlay(value);
+  return overlay.text.trim() ? overlay : null;
+}
+
+function listingPhotoDataUrl_(photo) {
+  return photo.listingDataUrl || (photo.listingBase64
+    ? `data:image/jpeg;base64,${photo.listingBase64}` : photo.dataUrl);
+}
+
+async function renderPhotoTextOutput_(photo, requestedOverlay) {
+  const source = hydrateTemporaryDraftPhoto_(photo);
+  const textOverlay = normalizePhotoTextOverlay_(requestedOverlay);
+  const updated = { ...source, textOverlay, listingBase64: '', listingBase64HQ: '',
+    listingDataUrl: '', listingThumbnailBase64: '' };
+  if (!textOverlay) return updated;
+  if (globalThis.document?.fonts?.ready) await document.fonts.ready;
+  const original = await loadImage(`data:${source.mediaType};base64,${source.base64HQ || source.base64}`);
+  const canvasHQ = photoCanvas_(original, MAX_MERCARI_EDGE);
+  MercariPhotoText.draw(canvasHQ, textOverlay);
+  const canvas = photoCanvas_(canvasHQ, MAX_IMAGE_EDGE);
+  updated.listingDataUrl = canvas.toDataURL('image/jpeg', .85);
+  updated.listingBase64 = updated.listingDataUrl.split(',')[1];
+  updated.listingBase64HQ = canvasHQ.toDataURL('image/jpeg', .92).split(',')[1];
+  updated.listingThumbnailBase64 = createThumbnailBase64FromCanvas_(canvas);
+  return updated;
+}
+
+async function applyPhotoTextEditor_(photo, overlay, isCurrent) {
+  if (isProductInputLocked_()) throw new Error('処理が終わってから操作してください。');
+  if (typeof isCurrent !== 'function' || !isCurrent()) throw new Error('商品または写真が変わりました。選び直してください。');
+  const photos = uploadedImages.slice();
+  const index = photos.indexOf(photo);
+  const context = `${currentProductWorkflowId}|${activeTemporaryDraftId || ''}`;
+  if (index < 0) throw new Error('写真が見つかりませんでした。');
+  const operationId = ++photoProcessingOperationId;
+  const checkOwnership = () => {
+    if (!isCurrent() || operationId !== photoProcessingOperationId
+        || context !== `${currentProductWorkflowId}|${activeTemporaryDraftId || ''}`
+        || photos.length !== uploadedImages.length || photos.some((item, i) => item !== uploadedImages[i])) {
+      throw new Error('商品または写真が変わったため、反映しませんでした。');
+    }
+  };
+  photoProcessingInProgress = true;
+  setPhotoProcessingLock_(true);
+  try {
+    const updated = await renderPhotoTextOutput_(photo, overlay);
+    checkOwnership();
+    uploadedImages[index] = updated;
+  } finally {
+    photoProcessingInProgress = false;
+    setPhotoProcessingLock_(false);
+  }
+  // Listing-only text does not change the image supplied to description analysis.
+  renderPreviews();
+  updateGenerateButton();
+  scheduleSave();
+  updateDraftChecklist();
+  return true;
+}
+
+function setupPhotoTextEditor_() {
+  if (!globalThis.MercariPhotoTextEditor || !el('photo-text-open')) return;
+  photoTextEditor = MercariPhotoTextEditor.create({
+    getPhotos: () => uploadedImages,
+    getContextKey: () => `${currentProductWorkflowId}|${activeTemporaryDraftId || ''}`,
+    isLocked: isProductInputLocked_,
+    onApply: applyPhotoTextEditor_,
+  });
+  el('photo-text-open').addEventListener('click', event => photoTextEditor.open(uploadedImages[0], event.currentTarget));
+}
 
 async function handlePhotoSelect(e) {
   if (draftSaveInProgress || temporarySaveInProgress) { e.target.value = ''; return; }
@@ -1675,11 +1752,12 @@ async function applyPhotoAdjustment_(photo, requestedAdjust) {
     const canvasHQ = adjustPhotoCanvas_(photoCanvas_(originalHQ, MAX_MERCARI_EDGE), adjust);
     base64HQ = canvasHQ.toDataURL('image/jpeg', 0.92).split(',')[1];
   }
-  return {
+  const updated = {
     ...source, dataUrl, base64: dataUrl.split(',')[1], base64HQ,
     thumbnailBase64: createThumbnailBase64FromCanvas_(canvas),
     adjust, adjustSourceVersion: 1,
   };
+  return source.textOverlay ? renderPhotoTextOutput_(updated, source.textOverlay) : updated;
 }
 
 function setPhotoEditorControls_(disabled) {
@@ -1833,7 +1911,10 @@ function updatePhotoEditorPreview_() {
     preview.height = canvas.height;
   }
   preview.getContext('2d').drawImage(canvas, 0, 0);
-  if (!el('photo-show-original').checked) adjustPhotoCanvas_(preview, adjust);
+  if (!el('photo-show-original').checked) {
+    adjustPhotoCanvas_(preview, adjust);
+    if (state.photo.textOverlay && globalThis.MercariPhotoText) MercariPhotoText.draw(preview, state.photo.textOverlay);
+  }
   el('photo-preview-caption').textContent = el('photo-show-original').checked ? '補正前' : '仕上がり';
   updatePhotoEditorSuggestion_();
 }
@@ -1990,7 +2071,7 @@ function renderPreviews() {
     item.draggable = !isProductInputLocked_();
     item.dataset.idx = idx;
     item.innerHTML = `
-      <img src="${img.dataUrl}" alt="">
+      <img src="${listingPhotoDataUrl_(img)}" alt="">
       <button class="remove" type="button" data-idx="${idx}" title="削除" aria-label="${idx + 1}枚目の写真を削除">×</button>
       <span class="preview-num">${idx + 1}</span>
       <button class="photo-adjust-open" type="button" aria-label="${idx + 1}枚目の明るさを調整">明るさ</button>
@@ -2015,7 +2096,11 @@ function renderPreviews() {
     });
   });
   const composeBtnRow = el('compose-btn-row');
-  if (composeBtnRow) composeBtnRow.hidden = uploadedImages.length < 2;
+  if (composeBtnRow) composeBtnRow.hidden = uploadedImages.length < 1;
+  for (const id of ['compose-open-btn', 'grid2-btn', 'grid4-btn']) {
+    const button = el(id);
+    if (button) button.disabled = isProductInputLocked_() || uploadedImages.length < (id === 'grid4-btn' ? 4 : 2);
+  }
   updatePhotoSummary();
 }
 
@@ -5460,6 +5545,10 @@ function compactTemporaryDraftPhoto_(photo = {}) {
     originalBase64HQ: source.originalBase64HQ !== source.base64HQ ? source.originalBase64HQ : '',
     adjust: source.adjust,
     adjustSourceVersion: 1,
+    textOverlay: source.textOverlay,
+    listingBase64: source.listingBase64,
+    listingBase64HQ: source.listingBase64HQ,
+    listingThumbnailBase64: source.listingThumbnailBase64,
   };
 }
 
@@ -5474,6 +5563,9 @@ function hydrateTemporaryDraftPhoto_(photo = {}) {
   const originalBase64 = hasSource
     ? String(photo.originalBase64 || String(photo.originalDataUrl || '').split(',')[1] || base64)
     : base64;
+  const textOverlay = normalizePhotoTextOverlay_(photo.textOverlay);
+  const listingBase64 = textOverlay ? safeTemporaryThumbnailBase64_(photo.listingBase64 || '') : '';
+  const listingBase64HQ = textOverlay ? safeTemporaryThumbnailBase64_(photo.listingBase64HQ || '') : '';
   return {
     mediaType, base64, base64HQ, dataUrl,
     thumbnailBase64: String(photo.thumbnailBase64 || ''),
@@ -5481,6 +5573,9 @@ function hydrateTemporaryDraftPhoto_(photo = {}) {
     originalBase64HQ: hasSource ? String(photo.originalBase64HQ || base64HQ) : base64HQ,
     adjust: hasSource ? (photo.adjust || { brightness: 0, temp: 0, contrast: 0 }) : { brightness: 0, temp: 0, contrast: 0 },
     adjustSourceVersion: 1,
+    textOverlay, listingBase64, listingBase64HQ,
+    listingDataUrl: listingBase64 ? `data:image/jpeg;base64,${listingBase64}` : '',
+    listingThumbnailBase64: textOverlay ? safeTemporaryThumbnailBase64_(photo.listingThumbnailBase64 || '') : '',
   };
 }
 
@@ -5527,7 +5622,7 @@ function temporaryDraftSummaryFromRecord_(record = {}) {
     canGenerate: photos.length > 0 && !!snapshot.category,
     thumbnailMediaType: mediaType,
     thumbnailBase64: safeTemporaryThumbnailBase64_(
-      firstPhoto.thumbnailBase64 || firstPhoto.base64 || firstPhoto.base64HQ || ''
+      firstPhoto.listingThumbnailBase64 || firstPhoto.thumbnailBase64 || firstPhoto.base64 || firstPhoto.base64HQ || ''
     ),
   };
 }
@@ -8455,12 +8550,17 @@ function buildDraftPayload_(input) {
     mercari_brand: String(input.mercariBrand || '').trim(),
     mercari_size: input.mercariSize || '',
     inventoryUuid: normalizeInventoryUuid_(input.inventoryUuid),
-    photos: (input.photos || []).map(img => ({
-      base64: preferHighQuality
-        ? (img.base64HQ || img.base64)
-        : (img.base64 || img.base64HQ),
-      mediaType: img.mediaType,
-    })),
+    photos: (input.photos || []).map(img => {
+      const hasText = !!normalizePhotoTextOverlay_(img.textOverlay);
+      const listing = preferHighQuality
+        ? (img.listingBase64HQ || img.listingBase64)
+        : (img.listingBase64 || img.listingBase64HQ);
+      if (hasText && !listing) throw new Error('文字入り写真を復元できませんでした。「文字入れ」で反映し直してください。');
+      return {
+        base64: hasText ? listing : (preferHighQuality ? (img.base64HQ || img.base64) : (img.base64 || img.base64HQ)),
+        mediaType: hasText ? 'image/jpeg' : img.mediaType,
+      };
+    }),
     mercari_condition: input.mercariCondition,
     mercari_shipping: 'らくらくメルカリ便',
   };
@@ -8976,6 +9076,7 @@ globalThis.MercariAppTestHooks = {
   defaultNewMinPrice: price => Math.max(300, Math.floor(Number(price || 0) * 0.7)),
   formatCurrentSessionSaveError_,
   compactTemporaryDraftPhoto_,
+  normalizePhotoTextOverlay_, listingPhotoDataUrl_, renderPhotoTextOutput_, applyPhotoTextEditor_,
   hydrateTemporaryDraftPhoto_,
   compactTemporaryDraftState_,
   hydrateTemporaryDraftState_,
