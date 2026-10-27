@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261027b">
-  <script src="public-config.js?v=20261027b"></script>
+  <link rel="stylesheet" href="styles.css?v=20261027c">
+  <script src="public-config.js?v=20261027c"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -59,7 +59,7 @@
           </div>
           <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
         </details>
-      <p class="settings-version" id="settings-version">v20261027b / UI改善・セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20261027c / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
@@ -89,7 +89,7 @@
 
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261027b</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261027c</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="inventory-hub-open" class="icon-btn" type="button" title="在庫" aria-label="在庫" disabled><i data-lucide="package" aria-hidden="true"></i></button>
@@ -397,7 +397,7 @@
           <figure class="photo-text-figure">
             <canvas id="photo-text-preview" aria-label="文字入り写真のプレビュー" aria-describedby="photo-text-drag-hint"></canvas>
           </figure>
-          <p id="photo-text-drag-hint" class="note small">文字を指で動かせます。</p>
+          <p id="photo-text-drag-hint" class="note small">1本指で移動、2本指で文字サイズを調整。</p>
         </div>
         <div class="photo-text-scroll" role="region" aria-label="文字の設定" tabindex="0">
           <div class="photo-text-input-field">
@@ -414,27 +414,16 @@
               <button type="button" data-text-style="white-black" aria-pressed="true"><span class="photo-text-style-sample white-black" aria-hidden="true">あ</span><span>白＋黒ふち</span></button>
               <button type="button" data-text-style="black-white" aria-pressed="false"><span class="photo-text-style-sample black-white" aria-hidden="true">あ</span><span>黒＋白ふち</span></button>
               <button type="button" data-text-style="red-white" aria-pressed="false"><span class="photo-text-style-sample red-white" aria-hidden="true">あ</span><span>赤＋白ふち</span></button>
+              <button type="button" data-text-style="white-gold" aria-pressed="false"><span class="photo-text-style-sample white-gold" aria-hidden="true">あ</span><span>白＋金ふち</span></button>
             </div>
           </fieldset>
-          <div class="photo-slider-field photo-text-size-field">
-            <label for="photo-text-size">文字の大きさ <output id="photo-text-size-value" for="photo-text-size">標準</output></label>
-            <input id="photo-text-size" type="range" min="0.025" max="0.18" step="0.005" value="0.075">
-          </div>
           <details id="photo-text-details" class="photo-text-details">
-            <summary>位置・ふちの太さ</summary>
+            <summary>ふち・斜体</summary>
             <div class="photo-text-detail-fields">
               <label class="photo-text-check"><input id="photo-text-italic" type="checkbox" checked>斜体にする</label>
               <div class="photo-slider-field">
                 <label for="photo-text-stroke">ふちの太さ <output id="photo-text-stroke-value" for="photo-text-stroke">標準</output></label>
                 <input id="photo-text-stroke" type="range" min="0" max="0.015" step="0.001" value="0.006">
-              </div>
-              <div class="photo-slider-field">
-                <label for="photo-text-x">左右の位置 <output id="photo-text-x-value" for="photo-text-x">4%</output></label>
-                <input id="photo-text-x" type="range" min="0" max="1" step="0.005" value="0.04">
-              </div>
-              <div class="photo-slider-field">
-                <label for="photo-text-y">上下の位置 <output id="photo-text-y-value" for="photo-text-y">4%</output></label>
-                <input id="photo-text-y" type="range" min="0" max="1" step="0.005" value="0.04">
               </div>
               <div class="photo-text-detail-actions">
                 <button id="photo-text-reset-position" class="btn small" type="button">左上に戻す</button>
@@ -458,7 +447,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261027b</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261027c</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -469,13 +458,13 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20261027b"></script>
-  <script src="photo-adjust.js?v=20261027b"></script>
-  <script src="photo-text.js?v=20261027b"></script>
-  <script src="photo-text-editor.js?v=20261027b"></script>
-  <script src="app.js?v=20261027b"></script>
-  <script src="inventory-hub.js?v=20261027b"></script>
-  <script src="review.js?v=20261027b"></script>
-  <script src="bootstrap.js?v=20261027b"></script>
+  <script src="catalog-data.js?v=20261027c"></script>
+  <script src="photo-adjust.js?v=20261027c"></script>
+  <script src="photo-text.js?v=20261027c"></script>
+  <script src="photo-text-editor.js?v=20261027c"></script>
+  <script src="app.js?v=20261027c"></script>
+  <script src="inventory-hub.js?v=20261027c"></script>
+  <script src="review.js?v=20261027c"></script>
+  <script src="bootstrap.js?v=20261027c"></script>
 </body>
 </html>

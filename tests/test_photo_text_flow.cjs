@@ -57,6 +57,13 @@ function testRetentionAndPayload() {
   for (const duplicated of ['dataUrl', 'originalDataUrl', 'listingDataUrl']) {
     assert.equal(Object.hasOwn(compact, duplicated), false, `${duplicated} is not duplicated in storage`);
   }
+  const gold = hooks.hydrateTemporaryDraftPhoto_(hooks.compactTemporaryDraftPhoto_({
+    ...textPhoto, textOverlay: { ...overlay, style: 'white-gold', fontSize: .13, x: .23, y: .31 },
+  }));
+  assert.equal(gold.textOverlay.style, 'white-gold');
+  assert.equal(gold.textOverlay.fontSize, .13);
+  assert.equal(gold.textOverlay.x, .23); assert.equal(gold.textOverlay.y, .31);
+  assert.equal(gold.base64, ai); assert.equal(gold.originalBase64HQ, originalHQ);
   const restored = hooks.hydrateTemporaryDraftPhoto_(compact);
   assert.equal(restored.dataUrl, jpeg(ai)); assert.equal(restored.originalDataUrl, jpeg(original));
   assert.equal(restored.originalBase64HQ, originalHQ);

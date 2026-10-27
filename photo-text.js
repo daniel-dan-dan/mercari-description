@@ -16,6 +16,7 @@
     'white-black': Object.freeze({ fill: '#ffffff', stroke: '#161616' }),
     'black-white': Object.freeze({ fill: '#161616', stroke: '#ffffff' }),
     'red-white': Object.freeze({ fill: '#ed2639', stroke: '#ffffff' }),
+    'white-gold': Object.freeze({ fill: '#ffffff', stroke: '#a87927', metallic: true }),
   });
 
   function bounded(value, min, max, fallback) {
@@ -191,7 +192,20 @@
       context.strokeStyle = colours.stroke;
       context.fillStyle = colours.fill;
       if (result.strokeWidth) result.lines.forEach((line, index) => {
-        context.strokeText(line, result.drawX, result.baseline + index * result.lineHeight);
+        const baseline = result.baseline + index * result.lineHeight;
+        context.lineWidth = result.strokeWidth * 2;
+        context.strokeStyle = colours.stroke;
+        if (colours.metallic && typeof context.createLinearGradient === 'function') {
+          // Keep a quiet dark-gold edge, with the same satin sheen on each line
+          // at every preview/export size. The white interior is painted last.
+          context.strokeText(line, result.drawX, baseline);
+          const gold = context.createLinearGradient(0, baseline - result.fontSize, 0, baseline + result.fontSize * .1);
+          [[0, '#b17b24'], [.28, '#d6ad56'], [.42, '#e8c574'], [.62, '#c19134'], [.85, '#d8ac51'], [1, '#b47d23']]
+            .forEach(([offset, colour]) => gold.addColorStop(offset, colour));
+          context.strokeStyle = gold;
+          context.lineWidth = result.strokeWidth * 1.76;
+        }
+        context.strokeText(line, result.drawX, baseline);
       });
       // Paint every outline behind every fill, so thick outlines never cover
       // the interiors of adjacent text or subsequent lines.

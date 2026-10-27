@@ -21,6 +21,9 @@ function fakeCanvas(width, height, { oldMetrics = false } = {}) {
         actualBoundingBoxRight: width + size * .14,
         actualBoundingBoxAscent: size * .83, actualBoundingBoxDescent: size * .23 };
     },
+    createLinearGradient(x0, y0, x1, y1) {
+      return { x0, y0, x1, y1, stops: [], addColorStop(offset, colour) { this.stops.push([offset, colour]); } };
+    },
     strokeText(text, x, y) { calls.push({ kind: 'stroke', text, x, y, width: this.lineWidth, style: this.strokeStyle }); },
     fillText(text, x, y) { calls.push({ kind: 'fill', text, x, y, style: this.fillStyle }); },
   };
@@ -86,6 +89,27 @@ for (const style of Object.keys(engine.STYLES)) {
   assert.deepEqual(canvas.calls.map(call => call.kind), ['fill']);
   assert.equal(canvas.calls[0].style, engine.STYLES[style].fill);
 }
+
+// Gold must keep white interiors, stable per-line sheen, and fitting bounds at every output size.
+assert.equal(engine.normalizeOverlay({ style: 'white-gold' }).style, 'white-gold');
+for (const edge of [180, 640, 1024, 1080]) {
+  const gold = fakeCanvas(edge, edge);
+  const bounds = engine.draw(gold, { text: 'SAMPLE\nMODEL 123', style: 'white-gold' });
+  const strokes = gold.calls.filter(call => call.kind === 'stroke');
+  const fills = gold.calls.filter(call => call.kind === 'fill');
+  assert.equal(strokes.length, 4);
+  assert.equal(fills.length, 2);
+  assert.ok(fills.every(call => call.style === '#ffffff'));
+  assert.deepEqual(strokes[1].style.stops, strokes[3].style.stops);
+  assert.notEqual(strokes[1].style.y0, strokes[3].style.y0);
+  assert.ok(strokes[1].style.y1 > strokes[1].style.y0);
+  assert.ok(bounds.x + bounds.width <= edge && bounds.y + bounds.height <= edge);
+  assert.ok(gold.calls.slice(-2).every(call => call.kind === 'fill'));
+}
+const fallback = fakeCanvas(640, 640);
+delete fallback.context.createLinearGradient;
+engine.draw(fallback, { text: 'Text', style: 'white-gold' });
+assert.equal(fallback.calls[0].style, engine.STYLES['white-gold'].stroke);
 
 const browser = { Intl };
 vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../photo-text.js'), 'utf8'), browser);

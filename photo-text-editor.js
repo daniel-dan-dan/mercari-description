@@ -45,11 +45,8 @@
     function writeForm(overlay) {
       const normalized = engine.normalizeOverlay(overlay);
       text.value = normalized.text;
-      byId('size').value = normalized.fontSize;
       byId('stroke').value = normalized.stroke;
       byId('italic').checked = normalized.italic;
-      byId('x').value = normalized.x;
-      byId('y').value = normalized.y;
       styleButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.textStyle === normalized.style)));
       count();
     }
@@ -58,11 +55,8 @@
       return engine.normalizeOverlay({
         ...state.overlay,
         text: text.value,
-        fontSize: Number(byId('size').value),
         stroke: Number(byId('stroke').value),
         italic: byId('italic').checked,
-        x: Number(byId('x').value),
-        y: Number(byId('y').value),
       });
     }
 
@@ -83,11 +77,6 @@
         current.overlay.x = current.layout.x / canvas.width;
         current.overlay.y = current.layout.y / canvas.height;
       }
-      byId('x').value = current.overlay.x;
-      byId('y').value = current.overlay.y;
-      byId('x-value').textContent = `${Math.round(current.overlay.x * 100)}%`;
-      byId('y-value').textContent = `${Math.round(current.overlay.y * 100)}%`;
-      byId('size-value').textContent = current.overlay.fontSize < .06 ? '小' : current.overlay.fontSize < .1 ? '標準' : '大';
       byId('stroke-value').textContent = current.overlay.stroke === 0 ? 'なし' : current.overlay.stroke < .005 ? '細い' : current.overlay.stroke < .009 ? '標準' : '太い';
       controls();
     }
@@ -135,7 +124,7 @@
       current.photo = photo;
       current.image = null;
       current.layout = null;
-      current.drag = null;
+      clearGestures(current);
       current.overlay = engine.normalizeOverlay(current.edits.get(photo) || photo.textOverlay);
       const sequence = ++current.sequence;
       photoSelect.value = String(current.photos.indexOf(photo));
@@ -164,7 +153,7 @@
 
     function cleanup() {
       const trigger = state?.trigger;
-      if (state) state.sequence++;
+      if (state) { state.sequence++; clearGestures(state); }
       state = null;
       composing = false;
       canvas.classList.remove('is-dragging');
@@ -186,7 +175,7 @@
       if (!photosArray.includes(selected)) return false;
       state = { photosArray, photos: photosArray.slice(), photo: selected, contextKey: getContextKey(),
         trigger: trigger || document.activeElement, image: null, layout: null, overlay: null,
-        busy: false, sequence: 0, edits: new Map(), drag: null };
+        busy: false, sequence: 0, edits: new Map(), drag: null, pointers: new Map(), pinch: null };
       photoSelect.replaceChildren();
       state.photos.forEach((_, index) => {
         const option = document.createElement('option');
@@ -212,7 +201,7 @@
       const overlay = engine.normalizeOverlay(current.overlay);
       const isCurrent = () => owns(current) && current.photo === photo;
       current.busy = true;
-      current.drag = null;
+      clearGestures(current);
       canvas.classList.remove('is-dragging');
       controls();
       status('写真に反映しています…');
@@ -233,7 +222,7 @@
       }
     }
 
-    function canvasPoint(event) {
+    function canvasPoint(event, allowOutside = false) {
       const rect = canvas.getBoundingClientRect();
       const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
       if (!Number.isFinite(scale) || scale <= 0) return null;
@@ -241,7 +230,7 @@
       const top = rect.top + (rect.height - canvas.height * scale) / 2;
       const x = (event.clientX - left) / scale;
       const y = (event.clientY - top) / scale;
-      if (x < 0 || y < 0 || x > canvas.width || y > canvas.height) return null;
+      if (!allowOutside && (x < 0 || y < 0 || x > canvas.width || y > canvas.height)) return null;
       return { x, y };
     }
 
@@ -266,7 +255,7 @@
         render();
       }
     });
-    for (const name of ['size', 'stroke', 'italic', 'x', 'y']) byId(name).addEventListener('input', inputChanged);
+    for (const name of ['stroke', 'italic']) byId(name).addEventListener('input', inputChanged);
     styleButtons.forEach(button => button.addEventListener('click', () => {
       if (!state?.image || state.busy || !owns(state)) return;
       state.overlay = { ...readForm(), style: button.dataset.textStyle };
@@ -287,33 +276,68 @@
       writeForm(state.overlay);
       render();
     });
+    function clearGestures(current) {
+      const ids = [...current.pointers.keys()];
+      current.pointers.clear();
+      current.drag = null;
+      current.pinch = null;
+      canvas.classList.remove('is-dragging');
+      ids.forEach(id => { if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id); });
+    }
+    function startPinch(current) {
+      const [first, second] = [...current.pointers.values()];
+      const distance = Math.hypot(second.x - first.x, second.y - first.y);
+      current.drag = null;
+      current.pinch = distance > 1 ? { distance, fontSize: current.overlay.fontSize } : null;
+      canvas.classList.add('is-dragging');
+    }
     canvas.addEventListener('pointerdown', event => {
       const current = state;
-      if (!current?.image || current.busy || isLocked() || !owns(current) || !current.layout || event.isPrimary === false) return;
+      if (!current?.image || current.busy || isLocked() || !owns(current) || !current.layout
+          || event.button > 0 || current.pointers.size >= 2) return;
       const point = canvasPoint(event);
       const box = current.layout;
-      if (!point || point.x < box.x - 12 || point.x > box.x + box.width + 12
-          || point.y < box.y - 12 || point.y > box.y + box.height + 12) return;
+      if (!point) return;
       event.preventDefault();
-      current.drag = { pointerId: event.pointerId, point, x: box.x / canvas.width, y: box.y / canvas.height };
+      current.pointers.set(event.pointerId, point);
       canvas.setPointerCapture(event.pointerId);
+      if (current.pointers.size === 2) { startPinch(current); return; }
+      if (point.x < box.x - 12 || point.x > box.x + box.width + 12
+          || point.y < box.y - 12 || point.y > box.y + box.height + 12) return;
+      current.drag = { pointerId: event.pointerId, point, x: box.x / canvas.width, y: box.y / canvas.height };
       canvas.classList.add('is-dragging');
     });
     canvas.addEventListener('pointermove', event => {
       const current = state;
-      const drag = current?.drag;
-      if (!drag || event.pointerId !== drag.pointerId || current.busy || !owns(current)) return;
-      const point = canvasPoint(event);
+      if (!current?.pointers.has(event.pointerId)) return;
+      if (current.busy || isLocked() || !owns(current)) { clearGestures(current); return; }
+      const point = canvasPoint(event, true);
       if (!point) return;
       event.preventDefault();
+      current.pointers.set(event.pointerId, point);
+      if (current.pointers.size === 2) {
+        if (!current.pinch) startPinch(current);
+        if (!current.pinch) return;
+        const [first, second] = [...current.pointers.values()];
+        const distance = Math.hypot(second.x - first.x, second.y - first.y);
+        current.overlay = engine.normalizeOverlay({ ...current.overlay,
+          fontSize: current.pinch.fontSize * distance / current.pinch.distance });
+        render();
+        return;
+      }
+      const drag = current.drag;
+      if (!drag || event.pointerId !== drag.pointerId) return;
       current.overlay = engine.normalizeOverlay({ ...current.overlay,
         x: drag.x + (point.x - drag.point.x) / canvas.width,
         y: drag.y + (point.y - drag.point.y) / canvas.height });
       render();
     });
     function stopDrag(event) {
-      if (!state?.drag || state.drag.pointerId !== event.pointerId) return;
+      if (!state?.pointers.has(event.pointerId)) return;
+      if (event.type === 'pointercancel') { clearGestures(state); return; }
+      state.pointers.delete(event.pointerId);
       state.drag = null;
+      state.pinch = null;
       canvas.classList.remove('is-dragging');
       if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     }
