@@ -200,8 +200,8 @@ function setSelectedProductGender(value, { persist = true } = {}) {
     input.checked = input.value === gender;
   });
   if (persist) localStorage.setItem(PRODUCT_GENDER_STORAGE_KEY, gender);
-  const note = el('product-gender-note');
-  if (note) note.hidden = !nonApparel;
+  const categoryField = el('category-field');
+  if (categoryField) categoryField.hidden = nonApparel;
   const sizeField = el('m-size-field');
   if (sizeField) sizeField.hidden = nonApparel;
   const categorySelect = el('category');

@@ -166,7 +166,7 @@ const radios = [
   { value: 'other', checked: false },
 ];
 const uiElements = {
-  'product-gender-note': { hidden: true },
+  'category-field': { hidden: false },
   'm-size-field': { hidden: false },
   'category': { value: 'tops', disabled: false },
   'm-size': { value: 'XL', dataset: { userEdited: '1' } },
@@ -189,11 +189,18 @@ context.document = {
 
 hooks.setSelectedProductGender('other');
 assert.equal(radios.find(radio => radio.value === 'other').checked, true);
-assert.equal(uiElements['product-gender-note'].hidden, false);
+assert.equal(uiElements['category-field'].hidden, true);
 assert.equal(uiElements['m-size-field'].hidden, true);
 assert.equal(uiElements.category.disabled, true);
 assert.equal(uiElements['m-size'].value, '');
 assert.equal(uiElements['m-size'].dataset.userEdited, '');
+for (const audience of ['men', 'women']) {
+  hooks.setSelectedProductGender(audience);
+  assert.equal(uiElements['category-field'].hidden, false);
+  assert.equal(uiElements.category.disabled, false);
+}
+hooks.setSelectedProductGender('other');
+assert.equal(uiElements['category-field'].hidden, true);
 
 assert.equal(hooks.invalidateGeneratedResultAfterInputChange_('対象'), true);
 assert.equal(uiElements['title-text'].value, '');
@@ -208,10 +215,10 @@ const indexHtml = fs.readFileSync('index.html', 'utf8');
 const audienceRadios = indexHtml.match(/name="product-gender"/g) || [];
 assert.equal(audienceRadios.length, 3);
 assert.match(indexHtml, /name="product-gender" value="other"/);
-assert.match(indexHtml, /id="product-gender-note"/);
-assert.match(indexHtml, /工具などアパレル以外として生成します/);
+assert.doesNotMatch(indexHtml, /id="product-gender-note"|工具などアパレル以外として生成します/);
+assert.match(indexHtml, /id="category-field"/);
 assert.match(indexHtml, /id="m-size-field"/);
-assert.match(indexHtml, /v20261027c \/ UI改善・セキュリティ強化/);
+assert.match(indexHtml, /v20261027d \/ UI改善・セキュリティ強化/);
 
 assert.match(source, /syncBroadCategoryForProductGenderChange_\(input\.value\)/);
 assert.match(source, /el\('category'\)\.value = isNonApparelProductAudience\(\) \? 'other' : ''/);
@@ -226,17 +233,17 @@ const styles = fs.readFileSync('styles.css', 'utf8');
 assert.match(styles, /\.gender-segmented\s*\{[\s\S]*grid-template-columns:\s*repeat\(3/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20261027c/);
+assert.match(serviceWorker, /mercari-description-v20261027d/);
 
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
-assert.match(pairHtml, /styles\.css\?v=20261027c/);
+assert.match(pairHtml, /styles\.css\?v=20261027d/);
 
 console.log(JSON.stringify({
   ok: true,
   audiences: ['men', 'women', 'other'],
   nonApparelCategory: 'manual-after-draft',
   nonApparelSize: 'not-required',
-  version: 'v20261027c',
+  version: 'v20261027d',
 }));
 
 // Empty measurements must never produce placeholder rows or empty suit sections.
