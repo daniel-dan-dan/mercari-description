@@ -1636,10 +1636,6 @@ async function handlePhotoSelect(e) {
   }
   const operationId = ++photoProcessingOperationId;
   const startingDraftId = activeTemporaryDraftId;
-  const selectedTone = el('photo-auto-tone')?.value;
-  const toneMode = ['standard', 'black', 'white', 'none'].includes(selectedTone) ? selectedTone : 'standard';
-  const colourMode = el('photo-auto-colour')?.value;
-  const warmth = colourMode === 'warm' ? -18 : colourMode === 'cool' ? 18 : 0;
   const processedImages = [];
   photoProcessingInProgress = true;
   setPhotoProcessingLock_(true);
@@ -1649,7 +1645,8 @@ async function handlePhotoSelect(e) {
     // and finish after every file is processed or ownership changes.
     for (const file of toAdd) {
       try {
-        const processed = await processImage(file, toneMode, warmth);
+        // Uploads keep their original tone; correction remains available per photo.
+        const processed = await processImage(file, 'none', 0);
         if (operationId !== photoProcessingOperationId || startingDraftId !== activeTemporaryDraftId) {
           break;
         }
@@ -1716,7 +1713,7 @@ function adjustPhotoCanvas_(canvas, adjust) {
   return canvas;
 }
 
-async function processImage(file, toneMode = 'standard', warmth = 0) {
+async function processImage(file, toneMode = 'none', warmth = 0) {
   const source = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
@@ -2081,8 +2078,6 @@ function renderPreviews() {
     adjustButton.addEventListener('click', () => openPhotoEditor_(img, adjustButton));
     grid.appendChild(item);
   });
-  const adjustNote = el('photo-auto-note');
-  if (adjustNote) adjustNote.hidden = !uploadedImages.length;
   grid.querySelectorAll('.remove').forEach(b => {
     b.disabled = isProductInputLocked_();
     b.addEventListener('click', () => {
@@ -6405,8 +6400,6 @@ function scheduleSave() {
 function restoreState(s) {
   if (draftSaveInProgress || temporarySaveInProgress) return;
   if (!s) return;
-  const photoTone = el('photo-auto-tone'); if (photoTone) photoTone.value = 'standard';
-  const photoColour = el('photo-auto-colour'); if (photoColour) photoColour.value = 'off';
   activeTemporaryDraftId = s.temporaryDraftId || null;
   currentProductWorkflowId = String(s.productWorkflowId || s.temporaryDraftId || s.lastAiData?.product_id || '') || createOperationId_('product-workflow');
   const restoredProductGender = resolveRestoredProductGender_(s);
@@ -6516,8 +6509,6 @@ async function clearCurrentProduct_({ clearSession = true, scroll = false, compl
   currentProductWorkflowId = '';
   renderPreviews();
   const photoInput = el('photo-input'); if (photoInput) photoInput.value = '';
-  const photoTone = el('photo-auto-tone'); if (photoTone) photoTone.value = 'standard';
-  const photoColour = el('photo-auto-colour'); if (photoColour) photoColour.value = 'off';
   el('category').value = isNonApparelProductAudience() ? 'other' : '';
   renderMeasurements();
   el('title-text').value = '';
