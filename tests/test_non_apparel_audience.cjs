@@ -93,6 +93,8 @@ assert.doesNotMatch(nonApparelDescription, /L（平置き採寸）/);
 assert.match(nonApparelDescription, /状態・付属品・仕様は、写真と説明文をご確認ください/);
 assert.doesNotMatch(nonApparelDescription, /自宅保管の中古品/);
 assert.doesNotMatch(nonApparelDescription, /AACD/);
+assert.ok(nonApparelDescription.startsWith('ご覧いただきありがとうございます✨'));
+assert.doesNotMatch(nonApparelDescription, /フォロー|円以上|割引不可/);
 
 const apparelDescription = hooks.buildDescription(
   {
@@ -112,6 +114,8 @@ assert.match(apparelDescription, /【サイズ】M（平置き採寸）/);
 assert.match(apparelDescription, /【素材】綿100%/);
 assert.match(apparelDescription, /自宅保管の中古品/);
 assert.match(apparelDescription, /AACD/);
+assert.match(apparelDescription, /✨フォロー割あり✨/);
+assert.match(hooks.buildDescription({}, '', '', 'women'), /✨フォロー割あり✨/);
 
 const sanitizedNonApparel = hooks.sanitizeAiDataForSeason({
   appeal: '冬場の除雪作業に使える工具です。',
@@ -207,7 +211,7 @@ assert.match(indexHtml, /name="product-gender" value="other"/);
 assert.match(indexHtml, /id="product-gender-note"/);
 assert.match(indexHtml, /工具などアパレル以外として生成します/);
 assert.match(indexHtml, /id="m-size-field"/);
-assert.match(indexHtml, /v20261027a \/ UI改善・セキュリティ強化/);
+assert.match(indexHtml, /v20261027b \/ UI改善・セキュリティ強化/);
 
 assert.match(source, /syncBroadCategoryForProductGenderChange_\(input\.value\)/);
 assert.match(source, /el\('category'\)\.value = isNonApparelProductAudience\(\) \? 'other' : ''/);
@@ -222,17 +226,17 @@ const styles = fs.readFileSync('styles.css', 'utf8');
 assert.match(styles, /\.gender-segmented\s*\{[\s\S]*grid-template-columns:\s*repeat\(3/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20261027a/);
+assert.match(serviceWorker, /mercari-description-v20261027b/);
 
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
-assert.match(pairHtml, /styles\.css\?v=20261027a/);
+assert.match(pairHtml, /styles\.css\?v=20261027b/);
 
 console.log(JSON.stringify({
   ok: true,
   audiences: ['men', 'women', 'other'],
   nonApparelCategory: 'manual-after-draft',
   nonApparelSize: 'not-required',
-  version: 'v20261027a',
+  version: 'v20261027b',
 }));
 
 // Empty measurements must never produce placeholder rows or empty suit sections.

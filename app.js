@@ -4831,7 +4831,7 @@ function buildDescription(
 日本流通自主管理協会加盟店（AACD）
 質屋・古物市場`;
 
-  return `〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜
+  const followDiscount = nonApparel ? '' : `〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜
 ✨フォロー割あり✨
 3000円以上 → 200円引き
 5000円以上 → 300円引き
@@ -4841,7 +4841,9 @@ function buildDescription(
 ※購入後は割引不可です
 〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜
 
-ご覧いただきありがとうございます✨
+`;
+
+  return `${followDiscount}ご覧いただきありがとうございます✨
 
 ${appeal}
 

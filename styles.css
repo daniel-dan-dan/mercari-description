@@ -4160,7 +4160,9 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
   font-size: 14px;
   font-weight: 600;
 }
+.photo-text-preview-area { flex: 0 0 auto; display: grid; gap: 6px; }
 .photo-text-scroll {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -4263,8 +4265,11 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
   .photo-text-footer > .note { font-size: 11px; }
 }
 @media (max-height: 700px) {
-  #photo-text-preview { height: min(30svh, 210px); }
-  .photo-text-content { gap: 9px; }
+  #photo-text-preview { height: min(26svh, 170px); }
+  .photo-text-content { padding: 12px; gap: 8px; }
+}
+@media (max-height: 480px) {
+  #photo-text-preview { height: min(20svh, 80px); }
 }
 
 /* Inventory estimates stay visible, alongside the newest-first fallback. */
