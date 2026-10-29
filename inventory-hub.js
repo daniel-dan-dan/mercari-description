@@ -103,9 +103,10 @@
       const pending = state.pending;
       if (!pending) return false;
       if (result?.ok === false && result.requestAccepted === false && result.code === 'OPERATION_NOT_FOUND') {
-        remember(null);
-        notice('処理は受け付けられていませんでした。もう一度「メルカリと照合」を押してください。', 'warn');
-        return true;
+        // A result GET can race the original POST's durable admission (or reach
+        // a restarting service). Missing is not proof that no write can happen.
+        notice('受付状況をまだ確認できません。受付情報は残しています。「結果を再確認」で確認してください。', 'warn');
+        return false;
       }
       if (result?.operationId !== pending.operationId) return false;
       if (result.status === 'needs_review' && result.serverStoredHold === true) {

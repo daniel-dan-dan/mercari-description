@@ -75,7 +75,10 @@ assert.match(source, /generatedResultCurrent[\s\S]{0,300}現在の写真・採�
 assert.match(source, /saveDevBtn2\.disabled = true/);
 assert.match(source, /applyBtn\.disabled = true/);
 assert.match(source, /renderGridCanvas\([\s\S]{0,500}applyBtn\.disabled = false/);
-assert.match(source, /async function addComposedImageToApp[\s\S]{0,500}photoProcessingInProgress = true/);
+const composeFunction = vm.runInContext('addComposedImageToApp.toString()', context);
+const composeLock = composeFunction.indexOf('photoProcessingInProgress = true');
+assert.ok(composeLock >= 0 && composeLock < composeFunction.indexOf('await loadImage('),
+  '画像変換を待つ前に写真操作をロックする');
 
 const refreshUrlCalls = source.match(/refreshUrl: refreshMacServiceUrl/g) || [];
 assert.ok(refreshUrlCalls.length >= 3, '長時間処理と下書き処理で接続URLを更新する');
@@ -90,10 +93,10 @@ assert.match(pairJs, /value\.length <= 512/);
 assert.match(pairJs, /\^\[A-Za-z0-9\._~-\]\+\$/);
 assert.doesNotMatch(pairHtml, /<script(?:\s[^>]*)?>\s*(?!<)/);
 assert.match(pairHtml, /Content-Security-Policy/);
-assert.match(serviceWorker, /mercari-description-v20261027d/);
-assert.match(serviceWorker, /styles\.css\?v=20261027d/);
-assert.match(serviceWorker, /catalog-data\.js\?v=20261027d/);
-assert.match(serviceWorker, /app\.js\?v=20261027d/);
+assert.match(serviceWorker, /mercari-description-v20261029a/);
+assert.match(serviceWorker, /styles\.css\?v=20261029a/);
+assert.match(serviceWorker, /catalog-data\.js\?v=20261029a/);
+assert.match(serviceWorker, /app\.js\?v=20261029a/);
 assert.doesNotMatch(serviceWorker, /ignoreSearch:\s*true/, 'offline lookup must not mix differently versioned assets');
 assert.match(serviceWorker, /caches\.open\(CACHE_NAME\)/);
 assert.match(serviceWorker, /event\.request\.mode === 'navigate'/);
@@ -107,5 +110,5 @@ console.log(JSON.stringify({
   offlineVersionedAssets: true,
   likesDecreaseVisible: true,
   urlSafety: true,
-  version: 'v20261027d',
+  version: 'v20261029a',
 }));

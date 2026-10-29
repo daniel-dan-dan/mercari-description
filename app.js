@@ -7528,15 +7528,70 @@ const composeState = {
   _drawSelection: null, // 形状切替時の再描画フック
 };
 
+let imageComposeSession_ = null;
+
+function beginImageComposeSession_(kind) {
+  gridComposeRenderOperationId += 1;
+  imageComposeSession_ = {
+    kind, photos: uploadedImages.slice(), selectionOperation: 0,
+    context: `${currentProductWorkflowId}|${activeTemporaryDraftId || ''}`,
+  };
+  return imageComposeSession_;
+}
+
+function isImageComposeSessionCurrent_(session) {
+  return !!session && imageComposeSession_ === session && !el('compose-modal').hidden
+    && session.context === `${currentProductWorkflowId}|${activeTemporaryDraftId || ''}`
+    && session.photos.length === uploadedImages.length
+    && session.photos.every((photo, index) => uploadedImages[index] === photo);
+}
+
+function showImageComposeError_(session, message) {
+  if (imageComposeSession_ === session && !el('compose-modal').hidden) {
+    el('compose-step-label').textContent = message;
+  }
+}
+
+async function selectComposePhoto_(session, index, role) {
+  if (!isImageComposeSessionCurrent_(session) || isProductInputLocked_()) return;
+  const photo = session.photos[index];
+  if (!photo) return;
+  const operation = ++session.selectionOperation;
+  el('compose-step-label').textContent = '写真を読み込んでいます…';
+  try {
+    const img = await loadImage(photo.dataUrl);
+    if (!isImageComposeSessionCurrent_(session) || operation !== session.selectionOperation) return;
+    // Commit the image and its identity together, only for the most recent choice.
+    if (role === 'source') {
+      composeState.sourceIdx = index;
+      composeState.sourceImg = img;
+      composeState.cropRect = null;
+      composeState.croppedCanvas = null;
+      composeState.step = 2;
+    } else {
+      composeState.baseIdx = index;
+      composeState.baseImg = img;
+      composeState.step = 4;
+    }
+    renderComposeStep();
+  } catch (error) {
+    if (!isImageComposeSessionCurrent_(session) || operation !== session.selectionOperation) return;
+    console.error('合成する写真の読込みに失敗しました:', error);
+    showImageComposeError_(session, '写真を読み込めませんでした。もう一度選んでください。');
+  }
+}
+
 const SIZE_RATIO = { small: 0.22, medium: 0.30, large: 0.40 };
 const BORDER_RATIO = 0.009; // ベース画像長辺に対する枠太さ
 const MARGIN_RATIO = 0.035; // 角からのマージン
 
 function openImageCompose() {
+  if (isProductInputLocked_()) return;
   if (uploadedImages.length < 2) {
     alert('画像合成には2枚以上の写真が必要です');
     return;
   }
+  beginImageComposeSession_('cutout');
   composeState.step = 1;
   composeState.sourceIdx = null;
   composeState.baseIdx = null;
@@ -7549,21 +7604,25 @@ function openImageCompose() {
   composeState.shape = 'rect';
   composeState.replaceBase = false;
   composeState._drawSelection = null;
-  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">v20260927a</span>`;
+  el('compose-title').innerHTML = `✂️ 切り抜き合成 <span class="ver-tag">${escapeHtml(globalThis.MercariPublicConfig?.version || '')}</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderComposeStep();
 }
 
 function closeImageCompose() {
+  imageComposeSession_ = null;
   gridComposeRenderOperationId += 1;
   el('compose-modal').hidden = true;
   document.body.style.overflow = '';
   // タイトルを既定に戻す（グリッド合成から閉じた場合も対応）
-  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260927a</span>`;
+  el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">${escapeHtml(globalThis.MercariPublicConfig?.version || '')}</span>`;
 }
 
 function renderComposeStep() {
+  const session = imageComposeSession_;
+  if (!isImageComposeSessionCurrent_(session) || session.kind !== 'cutout') return;
+  session.selectionOperation += 1;
   const body = el('compose-body');
   const actions = el('compose-actions');
   const label = el('compose-step-label');
@@ -7572,14 +7631,7 @@ function renderComposeStep() {
 
   if (composeState.step === 1) {
     label.textContent = 'ステップ1: 切り抜く写真（タグなど）を選んでください';
-    body.appendChild(buildThumbGrid(null, (idx) => {
-      composeState.sourceIdx = idx;
-      loadImage(uploadedImages[idx].dataUrl).then(img => {
-        composeState.sourceImg = img;
-        composeState.step = 2;
-        renderComposeStep();
-      });
-    }));
+    body.appendChild(buildThumbGrid(null, idx => selectComposePhoto_(session, idx, 'source')));
     return;
   }
 
@@ -7656,14 +7708,7 @@ function renderComposeStep() {
 
   if (composeState.step === 3) {
     label.textContent = 'ステップ3: 貼り付け先の写真を選んでください';
-    body.appendChild(buildThumbGrid(composeState.sourceIdx, (idx) => {
-      composeState.baseIdx = idx;
-      loadImage(uploadedImages[idx].dataUrl).then(img => {
-        composeState.baseImg = img;
-        composeState.step = 4;
-        renderComposeStep();
-      });
-    }));
+    body.appendChild(buildThumbGrid(composeState.sourceIdx, idx => selectComposePhoto_(session, idx, 'base')));
 
     const backBtn = document.createElement('button');
     backBtn.className = 'btn';
@@ -7751,9 +7796,11 @@ function renderComposeStep() {
     saveDevBtn.className = 'btn';
     saveDevBtn.textContent = '📥 保存のみ';
     saveDevBtn.addEventListener('click', async () => {
+      if (!isImageComposeSessionCurrent_(session) || isProductInputLocked_()) return;
       const cv = el('compose-preview-canvas');
       if (!cv) return;
       const blob = await (await fetch(cv.toDataURL('image/jpeg', 0.9))).blob();
+      if (!isImageComposeSessionCurrent_(session)) return;
       await saveBlobToDevice(blob, `mercari-compose-${Date.now()}.jpg`);
     });
     actions.appendChild(saveDevBtn);
@@ -8153,10 +8200,23 @@ function renderComposePreview(canvas) {
 
 async function addComposedImageToApp(dataUrl, options = {}) {
   if (isProductInputLocked_()) return false;
-  if (uploadedImages.length >= MAX_SELECT_PHOTOS) {
+  const session = options.session;
+  if (!isImageComposeSessionCurrent_(session)) {
+    showImageComposeError_(session, '商品または写真が変わりました。閉じて選び直してください。');
+    return false;
+  }
+  const photos = session.photos;
+  const replacePhoto = options.replacePhoto || null;
+  const removePhotos = new Set(options.removePhotos || []);
+  if ((replacePhoto && !photos.includes(replacePhoto))
+      || (replacePhoto && removePhotos.has(replacePhoto))
+      || [...removePhotos].some(photo => !photos.includes(photo))) return false;
+  const finalCount = photos.length - removePhotos.size + (replacePhoto ? 0 : 1);
+  if (finalCount > MAX_SELECT_PHOTOS) {
     alert(`写真選択は最大${MAX_SELECT_PHOTOS}枚までです`); return false;
   }
   let added = false;
+  const operationId = ++photoProcessingOperationId;
   photoProcessingInProgress = true;
   setPhotoProcessingLock_(true);
   try {
@@ -8179,12 +8239,25 @@ async function addComposedImageToApp(dataUrl, options = {}) {
       base64: smallDataUrl.split(',')[1], base64HQ, thumbnailBase64,
       originalDataUrl: smallDataUrl, originalBase64HQ: base64HQ, adjustSourceVersion: 1, adjust: { brightness: 0, temp: 0, contrast: 0 },
     };
-    if (options.insertAt === 'front') {
-      uploadedImages.unshift(composedImage);
-    } else {
-      uploadedImages.push(composedImage);
+    if (operationId !== photoProcessingOperationId || !isImageComposeSessionCurrent_(session)) {
+      showImageComposeError_(session, '商品または写真が変わったため反映していません。閉じて選び直してください。');
+      return false;
     }
+    // Build every output first, then commit the addition/replacement/removals together.
+    // Failed conversion or a cancelled/stale session must never remove source photos.
+    const nextPhotos = photos.filter(photo => !removePhotos.has(photo));
+    if (replacePhoto) {
+      nextPhotos[nextPhotos.indexOf(replacePhoto)] = composedImage;
+    } else if (options.insertAt === 'front') {
+      nextPhotos.unshift(composedImage);
+    } else {
+      nextPhotos.push(composedImage);
+    }
+    uploadedImages = nextPhotos;
     added = true;
+  } catch (error) {
+    console.error('合成画像の反映に失敗しました:', error);
+    showImageComposeError_(session, '合成画像を追加できませんでした。元の写真は変更していません。もう一度お試しください。');
   } finally {
     photoProcessingInProgress = false;
     setPhotoProcessingLock_(false);
@@ -8197,28 +8270,30 @@ async function addComposedImageToApp(dataUrl, options = {}) {
 }
 
 async function applyCompose() {
+  if (isProductInputLocked_()) return false;
+  const session = imageComposeSession_;
+  if (!isImageComposeSessionCurrent_(session) || session.kind !== 'cutout') {
+    showImageComposeError_(session, '商品または写真が変わりました。閉じて選び直してください。');
+    return false;
+  }
   const canvas = el('compose-preview-canvas');
-  if (!canvas) return;
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-  let deletedBaseBeforeAdd = false;
-  if (uploadedImages.length >= MAX_SELECT_PHOTOS) {
-    const canDeleteBase = Number.isInteger(composeState.baseIdx);
-    if (!canDeleteBase || !confirm('写真が30枚あるため、このままでは合成画像を追加できません。貼り付け先の写真を削除して合成画像を追加しますか？')) {
-      alert(`写真選択は最大${MAX_SELECT_PHOTOS}枚までです`);
-      return;
-    }
-    deletedBaseBeforeAdd = removeUploadedImagesByIndices([composeState.baseIdx]);
+  const basePhoto = session.photos[composeState.baseIdx];
+  if (!canvas || !basePhoto || !composeState.baseImg || !composeState.croppedCanvas) return false;
+  if (!composeState.replaceBase && session.photos.length >= MAX_SELECT_PHOTOS) {
+    showImageComposeError_(session, '写真は30枚までです。「ベース画像を差し替える」をオンにするか、閉じて写真を減らしてください。');
+    return false;
   }
-  let shouldDeleteBaseAfterAdd = false;
-  if (!deletedBaseBeforeAdd && Number.isInteger(composeState.baseIdx)) {
-    const baseNumber = composeState.baseIdx + 1;
-    shouldDeleteBaseAfterAdd = confirm(`合成前の貼り付け先写真（${baseNumber}枚目）を一覧から削除しますか？`);
-  }
-  if (await addComposedImageToApp(dataUrl, { insertAt: 'front' })) {
-    if (shouldDeleteBaseAfterAdd) {
-      removeUploadedImagesByIndices([composeState.baseIdx + 1]);
-    }
-    closeImageCompose();
+  try {
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    const added = await addComposedImageToApp(dataUrl, {
+      session, insertAt: 'front', replacePhoto: composeState.replaceBase ? basePhoto : null,
+    });
+    if (added && imageComposeSession_ === session) closeImageCompose();
+    return added;
+  } catch (error) {
+    console.error('合成画像の作成に失敗しました:', error);
+    showImageComposeError_(session, '合成画像を作成できませんでした。元の写真は変更していません。もう一度お試しください。');
+    return false;
   }
 }
 
@@ -8233,20 +8308,25 @@ const gridComposeState = {
 };
 
 function openGridCompose(mode) {
+  if (isProductInputLocked_() || ![2, 4].includes(mode)) return;
   if (uploadedImages.length < mode) {
     alert(`${mode}枚合成には写真が${mode}枚以上必要です`);
     return;
   }
+  beginImageComposeSession_('grid');
   gridComposeState.mode = mode;
   gridComposeState.selected = [];
   // モーダルを合成モード用タイトルにして開く
-  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">v20260927a</span>`;
+  el('compose-title').innerHTML = `📐 ${mode}枚合成 <span class="ver-tag">${escapeHtml(globalThis.MercariPublicConfig?.version || '')}</span>`;
   el('compose-modal').hidden = false;
   document.body.style.overflow = 'hidden';
   renderGridSelectStep();
 }
 
 function renderGridSelectStep() {
+  const session = imageComposeSession_;
+  if (!isImageComposeSessionCurrent_(session) || session.kind !== 'grid') return;
+  gridComposeRenderOperationId += 1;
   const mode = gridComposeState.mode;
   const sel = gridComposeState.selected;
   const body = el('compose-body');
@@ -8274,6 +8354,7 @@ function renderGridSelectStep() {
       cell.appendChild(orderEl);
     }
     cell.addEventListener('click', () => {
+      if (!isImageComposeSessionCurrent_(session) || isProductInputLocked_()) return;
       const existIdx = gridComposeState.selected.indexOf(idx);
       if (existIdx >= 0) {
         // 選択解除
@@ -8304,7 +8385,6 @@ function renderGridSelectStep() {
   cancelBtn.className = 'btn';
   cancelBtn.textContent = '← キャンセル';
   cancelBtn.addEventListener('click', () => {
-    el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260927a</span>`;
     closeImageCompose();
   });
   actions.appendChild(cancelBtn);
@@ -8322,7 +8402,13 @@ function renderGridSelectStep() {
 }
 
 function renderGridPreviewStep() {
+  const session = imageComposeSession_;
+  if (!isImageComposeSessionCurrent_(session) || session.kind !== 'grid') return;
   const mode = gridComposeState.mode;
+  const selectedIndices = [...gridComposeState.selected];
+  if (selectedIndices.length !== mode || new Set(selectedIndices).size !== mode
+      || selectedIndices.some(index => !Number.isInteger(index) || !session.photos[index])) return;
+  const sourcePhotos = selectedIndices.map(index => session.photos[index]);
   const body = el('compose-body');
   const actions = el('compose-actions');
   const label = el('compose-step-label');
@@ -8338,6 +8424,8 @@ function renderGridPreviewStep() {
   body.appendChild(wrap);
 
   const renderOperationId = ++gridComposeRenderOperationId;
+  const isCurrent = () => isImageComposeSessionCurrent_(session)
+    && renderOperationId === gridComposeRenderOperationId && canvas.isConnected;
   label.textContent = '合成画像を作成中です。完了までお待ちください。';
 
   // 戻る
@@ -8352,7 +8440,9 @@ function renderGridPreviewStep() {
   saveDevBtn2.textContent = '📥 保存のみ';
   saveDevBtn2.disabled = true;
   saveDevBtn2.addEventListener('click', async () => {
+    if (saveDevBtn2.disabled || !isCurrent() || isProductInputLocked_()) return;
     const blob = await (await fetch(canvas.toDataURL('image/jpeg', 0.90))).blob();
+    if (!isCurrent()) return;
     await saveBlobToDevice(blob, `mercari-grid${mode}-${Date.now()}.jpg`);
   });
   actions.appendChild(saveDevBtn2);
@@ -8362,33 +8452,32 @@ function renderGridPreviewStep() {
   applyBtn.textContent = '➕ アプリに追加';
   applyBtn.disabled = true;
   applyBtn.addEventListener('click', async () => {
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
-    const sourceIndices = [...gridComposeState.selected];
-    let deletedSourcesBeforeAdd = false;
-    if (uploadedImages.length >= MAX_SELECT_PHOTOS) {
-      if (!confirm(`写真が30枚あるため、このままでは合成画像を追加できません。合成前の${mode}枚を削除して合成画像を追加しますか？`)) {
-        alert(`写真選択は最大${MAX_SELECT_PHOTOS}枚までです`);
-        return;
-      }
-      deletedSourcesBeforeAdd = removeUploadedImagesByIndices(sourceIndices);
-    }
-    if (await addComposedImageToApp(dataUrl)) {
-      if (!deletedSourcesBeforeAdd && confirm(`合成前の${mode}枚の写真を一覧から削除しますか？`)) {
-        removeUploadedImagesByIndices(sourceIndices);
-      }
-      el('compose-title').innerHTML = `✂️ 画像合成 <span class="ver-tag">v20260927a</span>`;
-      closeImageCompose();
+    if (applyBtn.disabled || !isCurrent() || isProductInputLocked_()) return;
+    const atLimit = session.photos.length >= MAX_SELECT_PHOTOS;
+    const removeSources = confirm(atLimit
+      ? `写真が30枚あるため、このままでは合成画像を追加できません。合成前の${mode}枚を削除して合成画像を追加しますか？`
+      : `合成前の${mode}枚の写真を一覧から削除しますか？`);
+    if (atLimit && !removeSources) return;
+    try {
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
+      const added = await addComposedImageToApp(dataUrl, {
+        session, removePhotos: removeSources ? sourcePhotos : [],
+      });
+      if (added && imageComposeSession_ === session) closeImageCompose();
+    } catch (error) {
+      console.error('合成画像の作成に失敗しました:', error);
+      showImageComposeError_(session, '合成画像を作成できませんでした。元の写真は変更していません。もう一度お試しください。');
     }
   });
   actions.appendChild(applyBtn);
-  renderGridCanvas(canvas, mode, gridComposeState.selected).then(() => {
-    if (renderOperationId !== gridComposeRenderOperationId || !canvas.isConnected) return;
+  renderGridCanvas(canvas, mode, selectedIndices, session.photos, isCurrent).then(() => {
+    if (!isCurrent()) return;
     label.textContent = '合成プレビュー。問題なければ「追加」を押してください。';
     saveDevBtn2.disabled = false;
     applyBtn.disabled = false;
   }).catch(error => {
-    console.error('画像合成プレビュー失敗:', error);
-    if (renderOperationId === gridComposeRenderOperationId && canvas.isConnected) {
+    if (isCurrent()) {
+      console.error('画像合成プレビュー失敗:', error);
       label.textContent = '合成画像を作成できませんでした。戻って写真を選び直してください。';
     }
   });
@@ -8417,7 +8506,7 @@ function drawCellCover(ctx, img, dx, dy, dw, dh) {
   ctx.drawImage(img, sx, sy, sWidth, sHeight, dx, dy, dw, dh);
 }
 
-async function renderGridCanvas(canvas, mode, selectedIndices) {
+async function renderGridCanvas(canvas, mode, selectedIndices, photos = uploadedImages.slice(), isCurrent = () => true) {
   const cell = GRID_CELL;
   if (mode === 2) {
     canvas.width = cell * 2;  // 2160
@@ -8446,9 +8535,13 @@ async function renderGridCanvas(canvas, mode, selectedIndices) {
     ];
   }
 
+  // Start with the selected snapshot, continue only for this preview, and stop
+  // when all cells are drawn or the product/photos/view change.
   for (let i = 0; i < mode; i++) {
-    const imgData = uploadedImages[selectedIndices[i]];
+    if (!isCurrent()) throw new Error('合成プレビューが変更されました');
+    const imgData = photos[selectedIndices[i]];
     const img = await loadImage(imgData.dataUrl);
+    if (!isCurrent()) throw new Error('合成プレビューが変更されました');
     drawCellCover(ctx, img, cells[i].dx, cells[i].dy, cells[i].dw, cells[i].dh);
   }
 }

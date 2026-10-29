@@ -82,7 +82,33 @@ function fixture(handler, initial = null) {
     assert.equal(known.calls.length, 1); assert.match(known.controller.state.message, /受付前の拒否/);
   }
   const notAccepted = fixture(async path => path.includes('/result') ? { ok: false, code: 'OPERATION_NOT_FOUND', requestAccepted: false } : hub(), pending);
-  await notAccepted.controller.resume(); assert.equal(notAccepted.controller.state.pending, null); assert.match(notAccepted.controller.state.message, /受け付けられていません/);
+  await notAccepted.controller.resume();
+  assert.equal(notAccepted.controller.state.pending.operationId, pending.operationId);
+  assert.equal(notAccepted.values.has(h.OPERATION_KEY), true);
+  assert.match(notAccepted.controller.state.message, /受付情報は残しています/);
+  assert.equal(await notAccepted.controller.start('reconcile'), false);
+  assert.equal(notAccepted.calls.some(call => call.options.method === 'POST'), false);
+
+  // A confirmation POST exceeding 30 seconds can still be queued. Missing GET
+  // responses must retain its receipt; later completion is recovered with GET.
+  let confirmReady = false;
+  const queuedConfirm = fixture(async (path, options) => {
+    if (options.method === 'POST') throw Error('fixture 30-second timeout');
+    if (path.includes('/result')) return confirmReady
+      ? { ok: true, operationId: 'inventory-hub-fixture-001', status: 'done',
+          receipt: { inventoryUuid: uuid, itemId: 'm1234', listingChecked: true, readbackVerified: true } }
+      : { ok: false, code: 'OPERATION_NOT_FOUND', requestAccepted: false };
+    return hub();
+  });
+  await queuedConfirm.controller.start('confirm', { inventoryUuid: uuid, itemId: 'm1234', expectedTitle: 'fixture' });
+  assert.equal(queuedConfirm.controller.state.pending.operationId, 'inventory-hub-fixture-001');
+  assert.equal(queuedConfirm.values.has(h.OPERATION_KEY), true);
+  assert.equal(await queuedConfirm.controller.start('confirm'), false);
+  confirmReady = true;
+  await queuedConfirm.controller.resume();
+  assert.equal(queuedConfirm.controller.state.pending, null);
+  assert.equal(queuedConfirm.calls.filter(call => call.options.method === 'POST').length, 1);
+  assert.match(queuedConfirm.controller.state.message, /チェックを確認/);
   const held = fixture(async path => path.includes('/result') ? { ok: true, operationId: pending.operationId, status: 'needs_review', serverStoredHold: true } : hub(), pending);
   await held.controller.resume(); assert.equal(held.controller.state.pending, null); assert.match(held.controller.state.message, /確認待ち/);
 
@@ -109,6 +135,6 @@ function fixture(handler, initial = null) {
     assert.ok(button.includes('aria-label='), id + ' keeps its accessible name');
   }
   assert.doesNotMatch(source, /\.innerHTML\s*=/);
-  assert.match(fs.readFileSync('sw.js', 'utf8'), /inventory-hub\.js\?v=20261027d/);
+  assert.match(fs.readFileSync('sw.js', 'utf8'), /inventory-hub\.js\?v=20261029a/);
   console.log('PASS inventory hub: held rows, filters, safe links, GET-only recovery, reload, exact receipt, no double writes, storage failures and stale reads');
 })().catch(error => { console.error(error); process.exitCode = 1; });
