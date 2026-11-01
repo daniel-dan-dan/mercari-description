@@ -202,6 +202,8 @@ function setSelectedProductGender(value, { persist = true } = {}) {
   if (persist) localStorage.setItem(PRODUCT_GENDER_STORAGE_KEY, gender);
   const categoryField = el('category-field');
   if (categoryField) categoryField.hidden = nonApparel;
+  const researchNote = el('other-research-note');
+  if (researchNote) researchNote.hidden = !nonApparel;
   const sizeField = el('m-size-field');
   if (sizeField) sizeField.hidden = nonApparel;
   const categorySelect = el('category');
@@ -2712,9 +2714,9 @@ const NON_APPAREL_SYSTEM_PROMPT = `あなたはメルカリで工具・家電・
 2. item — 商品の種類。写真や銘板から確認できる一般名・型番を簡潔にまとめる
 3. tag_size — 必ず "---"
 4. color — 写真で確認できる色を「カタカナ＋漢字」で記載。光や影を考慮し、判断できない場合は推測せず "---"
-5. material — 写真や銘板から確認できる素材、型番、品番、電圧、容量、セット内容など。確認できない項目は推測しない
+5. material — 写真や銘板から確認できる型番・品番・仕様。内部データ用で説明文に素材欄は作らない
 6. condition — 写真で確認できる傷、汚れ、使用感、欠品を具体的に記載。写真だけで動作確認済みとは書かない
-7. appeal — 用途、機能、付属品、仕様を中心に2〜5項目の箇条書き。各項目は「・」で始め、改行する。着用・着心地・季節の服装に関する表現は使わない
+7. appeal — メーカー・型番をもとにネットで確認した特徴・機能・使い方を2〜5項目の箇条書き。公式製品ページ・取扱説明書を優先し、同一型番の情報だけを使う。調べられなければ "---"。着用・着心地・季節の服装に関する表現は使わない
 8. mercari_condition — 以下の6択から1つ: "新品、未使用" / "未使用に近い" / "目立った傷や汚れなし" / "やや傷や汚れあり" / "傷や汚れあり" / "全体的に状態が悪い"
 9. mercari_category_key — 必ず "unknown"
 10. title_keywords — 型番、電圧、容量、数量、付属品、状態など、写真から確認できる検索語を2〜5個
@@ -2737,12 +2739,12 @@ function buildPastListingStylePrompt(stylePrompt) {
 function buildAppealWritingRules_(productGender = getSelectedProductGender()) {
   const nonApparel = isNonApparelProductAudience(productGender);
   const example = nonApparel
-    ? '・写真で確認できる仕様と、扱いやすい形状が特徴。\n・必要な付属品がまとまっているため、日々の作業へすぐに取り入れられます。'
+    ? '・公式情報で確認できた機能を簡潔に紹介します。\n・用途や使い方も、同じ型番の資料で確認した範囲にまとめます。'
     : '・滑らかな肌触りと、落ち着いた色合いが魅力。\n・端正なシルエットで、幅広い装いに自然となじみます。';
   return `訴求文（appeal）の文体ルール（過去出品例より優先）:
 - 特徴ごとに「・」で始まる箇条書きにし、項目間は改行する。JSON文字列内では改行を\\nで表す
 - 2〜5項目を目安とし、確認できる特徴が少ない場合は水増ししない。1項目は1〜2文で簡潔に書く
-- 年式、別注、素材、機能、付属品は写真・入力から確認できるものだけを書く。例にある具体的な商品情報は流用しない
+- ${nonApparel ? '特徴・機能・使い方は同一型番のネット出典で確認した情報だけを書く。標準付属品と実物の付属品を区別し、動作確認は推測しない' : '年式、別注、素材、機能、付属品は写真・入力から確認できるものだけを書く'}。例にある具体的な商品情報は流用しない
 - 意味の切れ目には読点「、」を入れる。特に「また」「さらに」「一方で」「そのため」などの接続語の直後には読点を付ける
 - 長い修飾句や理由・条件を文頭に置いた場合も、主文との境目に読点を入れる。ただし短い文へ読点をむやみに増やさない
 - すべての文末に「。」を付ける（自然な「！」「？」で終わる場合を除く）
@@ -2772,7 +2774,7 @@ ${audiencePrompt}
 今回の季節ワードルール:
 - 現在日付: ${formatSeasonRuleDate()}
 ${nonApparel
-    ? '- アパレル以外では季節に合わせた着用訴求を加えず、写真で確認できる用途・仕様だけを書く'
+    ? '- アパレル以外では季節に合わせた着用訴求を加えず、同一型番の出典で確認した用途・仕様だけを書く'
     : `- 販売訴求では「${seasonRule.label}」に合う季節ワードだけを使う
 - 使ってよい季節ワード例: ${seasonRule.allowedWords.join('、')}
 - 使わない季節外れワード: ${seasonRule.disallowedWords.join('、')}
@@ -2792,7 +2794,7 @@ function buildProductAudiencePrompt_(productGender = getSelectedProductGender())
 - item には商品の種類を、material には写真で確認できる素材・型番・品番・電源仕様などを簡潔に含める
 - tag_size は "---" とし、衣類用のサイズ推定を行わない
 - 現在の自動カテゴリ候補はアパレル用のため、mercari_category_key は必ず "unknown" にする
-- appeal は着用場面ではなく、用途・機能・付属品・確認できる仕様を中心に書く`;
+- appeal は着用場面ではなく、ネットで確認した用途・機能・使い方を中心に書く。標準付属品は実物と照合し、不明なものは要確認として残す`;
   }
 
   const genderLabel = PRODUCT_GENDER_LABELS[normalized] || PRODUCT_GENDER_LABELS.men;
@@ -4709,7 +4711,7 @@ async function callDescriptionAiWithReceipt_(images, onChunk) {
   }
 
   const listingStylePrompt = await fetchListingStyleFromMac(tunnelUrl, { statusCallback: onChunk });
-  const payload = { images: aiImages, systemPrompt: buildDescriptionSystemPrompt(listingStylePrompt) };
+  const payload = { images: aiImages, systemPrompt: buildDescriptionSystemPrompt(listingStylePrompt), productAudience: getSelectedProductGender() };
   const payloadBytes = estimateJsonBytes(payload);
   if (payloadBytes > MAX_AI_PAYLOAD_BYTES) {
     throw new Error(`写真データが大きすぎます。現在約${Math.ceil(payloadBytes / 1024 / 1024)}MBです。写真を減らすか、合成してから再実行してください。`);
@@ -4717,7 +4719,7 @@ async function callDescriptionAiWithReceipt_(images, onChunk) {
   receipt = { operationId: createOperationId_('describe'), fingerprint, createdAt: Date.now() };
   writeDescriptionOperations_([receipt, ...readDescriptionOperations_()]);
   const omittedCount = Math.max(0, images.length - aiImages.length);
-  onChunk?.(`AIが画像を分析中...${omittedCount ? `（AI分析は先頭${MAX_AI_PHOTOS}枚まで。残り${omittedCount}枚は下書き保存には残ります）` : ''}`);
+  onChunk?.(`${isNonApparelProductAudience() ? '写真の解析とメーカー・型番の商品調査中...' : 'AIが画像を分析中...'}${omittedCount ? `（AI分析は先頭${MAX_AI_PHOTOS}枚まで。残り${omittedCount}枚は下書き保存には残ります）` : ''}`);
   let res, data;
   try {
     res = await fetchWithTimeout(`${tunnelUrl}/describe`, {
@@ -4799,6 +4801,137 @@ function buildDescriptionProductName(aiData, mercariTitle = '') {
   return parts.length ? parts.join(' ') : '---';
 }
 
+function otherSourceUrl_(value) {
+  try {
+    const u = new URL(String(value || ''));
+    return u.protocol === 'https:' && !u.username && !u.password ? u.href : '';
+  } catch (_) { return ''; }
+}
+
+function normalizeOtherResearch_(input) {
+  const r = input && typeof input === 'object' ? input : {};
+  const sources = (Array.isArray(r.sources) ? r.sources : []).slice(0, 40)
+    .filter(s => s && otherSourceUrl_(s.url)).map(s => ({ url: otherSourceUrl_(s.url), title: String(s.title || s.url).slice(0, 200) }));
+  const allowed = new Set(sources.map(s => s.url));
+  const verified = r.status === 'verified' && sources.length > 0 && !!r.manufacturer && !!r.model;
+  const sourced = (list, key, limit) => verified && Array.isArray(list)
+    ? list.filter(x => x && typeof x[key] === 'string' && x[key].trim() && allowed.has(otherSourceUrl_(x.source_url)))
+      .slice(0, limit).map(x => ({ [key]: x[key].trim().slice(0, 600), source_url: otherSourceUrl_(x.source_url), observation: x.observation === 'pictured' ? 'pictured' : 'unknown' })) : [];
+  return { status: verified ? 'verified' : 'needs_review', manufacturer: String(r.manufacturer || '').slice(0, 160), model: String(r.model || '').slice(0, 160),
+    sources, features: sourced(r.features, 'text', 5), standard_accessories: sourced(r.standard_accessories, 'name', 30),
+    pictured_accessories: (Array.isArray(r.pictured_accessories) ? r.pictured_accessories : []).filter(x => typeof x === 'string').slice(0, 30),
+    note: String(r.note || (verified ? '' : 'メーカー・型番の出典を確認できませんでした。確認できない特徴は記載していません。')).slice(0, 500) };
+}
+
+function initialOtherReview_(research) {
+  const r = normalizeOtherResearch_(research);
+  return { choices: r.standard_accessories.map(x => x.observation === 'pictured' ? 'included' : 'unknown'), extras: '',
+    operation: '動作未確認です。', confirmed: false, title: '', description: '' };
+}
+
+function otherAccessoryText_(research, review) {
+  const included = [], missing = [], unknown = [];
+  research.standard_accessories.forEach((item, index) => {
+    const choice = review.choices?.[index];
+    (choice === 'included' ? included : choice === 'missing' ? missing : unknown).push(item.name);
+  });
+  included.push(...String(review.extras || '').split('\n').map(x => x.trim()).filter(Boolean));
+  const lines = [...new Set(included)].map(x => '・' + x);
+  if (missing.length) lines.push('欠品：' + missing.join('、'));
+  if (unknown.length) lines.push('要確認：' + unknown.join('、'));
+  return lines.join('\n') || (review.confirmed ? '付属品はありません。' : '付属品は確認中です。');
+}
+
+function buildOtherDescription_(data, productName) {
+  const research = normalizeOtherResearch_(data.research);
+  const review = data.other_review || initialOtherReview_(data.research);
+  const appeal = research.features.map(x => '・' + x.text.replace(/^・/, '')).join('\n');
+  return ['ご覧いただきありがとうございます✨', appeal, `【商品名】\n${productName}`,
+    `【状態】\n${data.condition || '状態は写真をご確認ください。'}`,
+    `【付属品】\n${otherAccessoryText_(research, review)}`,
+    `【動作確認】\n${String(review.operation || '').trim() || '動作未確認です。'}`,
+    '✅即購入OKです！\n※状態・付属品・仕様は、写真と説明文をご確認ください。'].filter(Boolean).join('\n\n');
+}
+
+function otherReviewReady_(data, title, description) {
+  const r = data?.other_review, research = normalizeOtherResearch_(data?.research);
+  return !!r?.confirmed && r.title === title && r.description === description && typeof r.operation === 'string' && !!r.operation.trim()
+    && Array.isArray(r.choices) && r.choices.length === research.standard_accessories.length
+    && r.choices.every(x => ['included', 'missing'].includes(x));
+}
+
+let otherReviewRenderedFor_ = null;
+function renderOtherReview_() {
+  const panel = el('other-review-panel');
+  if (!panel) return;
+  const data = lastAiData;
+  const visible = isNonApparelProductAudience() && data?.other_template_version === 1 && !el('result-section')?.hidden;
+  panel.hidden = !visible;
+  if (!visible) { otherReviewRenderedFor_ = null; return; }
+  if (otherReviewRenderedFor_ === data) {
+    const checkbox = panel.querySelector('[data-other-confirm]');
+    if (checkbox) checkbox.checked = otherReviewReady_(data, el('title-text').value, el('result-text').value);
+    return;
+  }
+  otherReviewRenderedFor_ = data;
+  const research = normalizeOtherResearch_(data.research);
+  const saved = data.other_review || {};
+  const review = data.other_review = { ...initialOtherReview_(data.research), ...saved,
+    extras: typeof saved.extras === 'string' ? saved.extras.slice(0, 1500) : '',
+    operation: typeof saved.operation === 'string' ? saved.operation.slice(0, 1500) : '動作未確認です。',
+    choices: research.standard_accessories.map((x, i) => ['included','missing'].includes(saved.choices?.[i]) ? saved.choices[i] : 'unknown') };
+  const source = url => `<a href="${escapeHtml(otherSourceUrl_(url))}" target="_blank" rel="noopener noreferrer">出典</a>`;
+  panel.innerHTML = `<h3>商品調査・付属品・動作確認</h3>
+    <p class="note">調べた商品：${escapeHtml([research.manufacturer, research.model].filter(Boolean).join(' ') || '型番未確認')}</p>
+    <p class="note small">${escapeHtml(research.note)}</p>
+    ${research.features.length ? `<ul class="other-facts">${research.features.map(x => `<li>${escapeHtml(x.text)} ${source(x.source_url)}</li>`).join('')}</ul>` : ''}
+    <p class="note small">標準付属品をネットで調べ、写真から候補を表示しています。実際の付属・欠品を確認してください。写っていないだけでは欠品にしません。</p>
+    ${research.standard_accessories.length ? '<div class="button-row"><button class="btn small" type="button" data-other-bulk="included">すべて付属</button><button class="btn small" type="button" data-other-bulk="missing">すべて欠品</button></div>' : ''}
+    <div class="other-accessories">${research.standard_accessories.map((x, i) => `<label>${escapeHtml(x.name)} ${source(x.source_url)}
+      <select data-other-choice="${i}" aria-label="${escapeHtml(x.name)}の有無">
+      <option value="unknown" ${!['included','missing'].includes(review.choices?.[i]) ? 'selected' : ''}>要確認</option>
+      <option value="included" ${review.choices?.[i] === 'included' ? 'selected' : ''}>付属しています${x.observation === 'pictured' ? '（写真の候補）' : ''}</option>
+      <option value="missing" ${review.choices?.[i] === 'missing' ? 'selected' : ''}>欠品しています</option></select></label>`).join('')}</div>
+    ${research.pictured_accessories.length ? `<p class="note small">写真に見える候補：${escapeHtml(research.pictured_accessories.join('、'))}</p>` : ''}
+    <label for="other-extras">付属品の追加・標準一覧がない場合</label>
+    <textarea id="other-extras" data-other-field="extras" rows="2" maxlength="1500" placeholder="実際に付属するものを1行ずつ。何も付かない場合は空欄。">${escapeHtml(review.extras || '')}</textarea>
+    <label for="other-operation">動作確認</label>
+    <textarea id="other-operation" data-other-field="operation" rows="3" maxlength="1500" placeholder="実際に確認した内容と結果。未確認の部分も記載してください。">${escapeHtml(review.operation || '動作未確認です。')}</textarea>
+    <label class="other-confirm"><input type="checkbox" data-other-confirm ${otherReviewReady_(data, el('title-text').value, el('result-text').value) ? 'checked' : ''}>メーカー・型番と調査内容、付属品・動作確認の記載を現物と確認しました</label>
+    <p class="note small" data-other-status role="status"></p>`;
+  const change = event => {
+    if (lastAiData !== data || isProductInputLocked_()) return;
+    const target = event.target;
+    if (target.dataset.otherBulk) {
+      if (!['included','missing'].includes(target.dataset.otherBulk)) return;
+      review.choices = research.standard_accessories.map(() => target.dataset.otherBulk);
+      panel.querySelectorAll('[data-other-choice]').forEach(select => { select.value = target.dataset.otherBulk; });
+    }
+    else if (target.dataset.otherChoice !== undefined) review.choices[Number(target.dataset.otherChoice)] = target.value;
+    else if (target.dataset.otherField) review[target.dataset.otherField] = target.value;
+    else if (!target.hasAttribute('data-other-confirm')) return;
+    const checkbox = panel.querySelector('[data-other-confirm]');
+    if (target.hasAttribute('data-other-confirm')) {
+      const unresolved = research.standard_accessories.some((x, i) => !['included','missing'].includes(review.choices?.[i]));
+      review.confirmed = target.checked && !unresolved && !!String(review.operation || '').trim();
+      checkbox.checked = review.confirmed;
+      panel.querySelector('[data-other-status]').textContent = review.confirmed ? '' : (unresolved ? '付属品の「要確認」を選び直してください。' : (!String(review.operation || '').trim() ? '動作確認を入力してください。未確認の場合は「動作未確認です。」と記載します。' : '記載内容を確認してチェックしてください。'));
+    } else {
+      review.confirmed = false; checkbox.checked = false;
+    }
+    // Change only these two blocks, keeping any hand-edited introduction/state.
+    const textarea = el('result-text');
+    textarea.value = textarea.value.replace(/【付属品】[\s\S]*?(?=\n\n【動作確認】)/, `【付属品】\n${otherAccessoryText_(research, review)}`)
+      .replace(/【動作確認】[\s\S]*?(?=\n\n✅即購入OKです！)/, `【動作確認】\n${String(review.operation || '').trim() || '動作未確認です。'}`);
+    data.description = textarea.value;
+    review.title = el('title-text').value; review.description = textarea.value;
+    scheduleSave(); updateDraftChecklist();
+  };
+  panel.onchange = change;
+  panel.oninput = event => { if (event.target.dataset.otherField) change(event); };
+  panel.onclick = event => { if (event.target.dataset.otherBulk) change(event); };
+}
+
 function buildDescription(
   aiData,
   measurementText,
@@ -4813,16 +4946,11 @@ function buildDescription(
   const condition = aiData.condition || '---';
   const appeal = formatAppealBullets_(aiData.appeal);
   const nonApparel = isNonApparelProductAudience(productGender);
-  const sizeBlock = nonApparel
-    ? (measurementText ? `【寸法】\n${measurementText}` : '')
-    : [`【サイズ】${tagSize}（平置き採寸）`, measurementText,
+  if (nonApparel) return buildOtherDescription_(aiData, productName);
+  const sizeBlock = [`【サイズ】${tagSize}（平置き採寸）`, measurementText,
       measurementText ? '※多少の誤差はご了承ください。' : ''].filter(Boolean).join('\n');
-  const materialLabel = nonApparel ? '素材・仕様' : '素材';
-  const closingBlock = nonApparel
-    ? `✅即購入OKです！
-✅丁寧に梱包して発送いたします。
-※状態・付属品・仕様は、写真と説明文をご確認ください。`
-    : `✅即購入OKです！
+  const materialLabel = '素材';
+  const closingBlock = `✅即購入OKです！
 ✅丁寧に梱包して発送いたします。
 ※あくまで自宅保管の中古品ですので、ご理解のある方のご購入をお願いいたします。
 
@@ -4831,7 +4959,7 @@ function buildDescription(
 日本流通自主管理協会加盟店（AACD）
 質屋・古物市場`;
 
-  const followDiscount = nonApparel ? '' : `〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜
+  const followDiscount = `〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜〜
 ✨フォロー割あり✨
 3000円以上 → 200円引き
 5000円以上 → 300円引き
@@ -4865,7 +4993,8 @@ function syncDescriptionProductNameFromTitle_() {
   const textarea = el('result-text');
   if (!title || !textarea?.value) return;
   const productName = buildDescriptionProductName(lastAiData || {}, title);
-  const next = textarea.value.replace(/^【商品名】.*$/m, `【商品名】${productName}`);
+  const next = textarea.value.replace(/^【商品名】(?:\r?\n)?[^\r\n]*$/m,
+    `【商品名】${isNonApparelProductAudience() ? '\n' : ''}${productName}`);
   if (next !== textarea.value) textarea.value = next;
   if (lastAiData) lastAiData.description = textarea.value;
 }
@@ -5322,6 +5451,11 @@ async function generateDescription() {
       description: description,
       category: measurements.category,
       product_gender: getSelectedProductGender(),
+      ...(isNonApparelProductAudience() ? {
+        other_template_version: 1,
+        research: normalizeOtherResearch_(aiData.research),
+        other_review: initialOtherReview_(aiData.research),
+      } : {}),
       generation_input_fingerprint: generationInputFingerprint,
       mercari_category_key: mercariCategoryKey,
       brand: aiData.brand || '',
@@ -8548,6 +8682,7 @@ async function renderGridCanvas(canvas, mode, selectedIndices, photos = uploaded
 
 // ----- 下書きチェックリスト -----
 function updateDraftChecklist() {
+  renderOtherReview_();
   updateTitleFieldDisplay_();
   refreshInventorySuggestions_();
   const checklist = el('draft-checklist');
@@ -8613,6 +8748,11 @@ function updateDraftChecklist() {
     },
   ];
   const detailsOpen = !!checklist.querySelector?.('details')?.open;
+  if (lastAiData?.other_template_version === 1 && isNonApparelProductAudience()) {
+    const reviewed = otherReviewReady_(lastAiData, el('title-text').value, el('result-text').value);
+    items.push({ ok: reviewed, shortLabel: '付属品・動作確認', target: 'other-review-panel',
+      label: reviewed ? '商品調査・付属品・動作確認を現物と確認済みです' : '付属品の要確認を解消し、記載内容を現物と確認してください' });
+  }
   checklist.hidden = false;
   checklist.innerHTML = renderDraftChecklist_(items, detailsOpen);
   listingValidation = { ok: items.every(item => item.ok), items };
@@ -9153,6 +9293,7 @@ globalThis.MercariAppTestHooks = {
   restoreState,
   deriveMercariSize,
   buildDescriptionProductName,
+  normalizeOtherResearch_, initialOtherReview_, otherAccessoryText_, buildOtherDescription_, otherReviewReady_, renderOtherReview_,
   buildMercariTitle,
   cleanMercariTitleMarketingWords,
   isExcludedMercariTitleMarketingText,

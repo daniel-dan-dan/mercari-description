@@ -1,0 +1,33 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const ctx={console,URL,__MERCARI_TEST__:true,localStorage:{getItem:()=>null}}; ctx.globalThis=ctx;
+vm.createContext(ctx); vm.runInContext(fs.readFileSync('catalog-data.js','utf8')+'\n'+fs.readFileSync('app.js','utf8'),ctx);
+const h=ctx.MercariAppTestHooks, url='https://maker.example.com/model';
+const research={status:'verified',manufacturer:'メーカー',model:'MODEL-123',sources:[{url,title:'公式製品'}],
+ features:[{text:'公式で確認した機能です。',source_url:url}],
+ standard_accessories:[{name:'電源コード',source_url:url,observation:'pictured'},{name:'取扱説明書',source_url:url,observation:'unknown'}],pictured_accessories:['ケース']};
+const data={brand:'メーカー',item:'家電 MODEL-123',condition:'側面に傷があります。',appeal:'出典のない宣伝文',research};
+const review=h.initialOtherReview_(research); data.other_review=review;
+let text=h.buildDescription(data,'縦：100cm','メーカー 家電 MODEL-123','other');
+for(const label of ['【商品名】','【状態】','【付属品】','【動作確認】']) assert.ok(text.includes(label));
+assert.match(text,/公式で確認した機能です。/); assert.match(text,/要確認：取扱説明書/); assert.match(text,/動作未確認です。/);
+assert.doesNotMatch(text,/【カラー】|【寸法】|【サイズ】|【素材|フォロー割|発送|出典のない宣伝文/);
+assert.equal(h.otherReviewReady_(data,'title',text),false);
+review.confirmed=true; review.title='title'; review.description=text;
+assert.equal(h.otherReviewReady_(data,'title',text),false,'unresolved accessories block finalization');
+review.choices[1]='missing'; review.extras='ケース';
+text=h.buildDescription(data,'','title','other'); review.description=text;
+assert.match(text,/欠品：取扱説明書/); assert.match(text,/・ケース/);
+assert.equal(h.otherReviewReady_(data,'title',text),true);
+assert.equal(h.otherReviewReady_(data,'changed',text),false); assert.equal(h.otherReviewReady_(data,'title',text+'edited'),false);
+const restored=JSON.parse(JSON.stringify(data)); assert.equal(h.otherReviewReady_(restored,'title',text),true);
+assert.equal(h.otherReviewReady_(restored,'title',text.replace('傷','汚れ')),false);
+const bad=h.normalizeOtherResearch_({...research,sources:[{url:'javascript:alert(1)'}]}); assert.equal(bad.features.length,0);
+const unverified=h.buildDescription({...data,research:{...research,status:'needs_review'}},'','','other');
+assert.doesNotMatch(unverified,/公式で確認した機能です|出典のない宣伝文/);
+const none=h.buildDescription({other_review:{choices:[],extras:'',operation:'動作確認が不要な商品です。',confirmed:true}},'','','other');
+assert.match(none,/付属品はありません。/); assert.match(none,/動作確認が不要/);
+const apparel=h.buildDescription({brand:'テスト',material:'綿100%',color:'白'},'肩幅：45cm','','men');
+assert.match(apparel,/フォロー割/); assert.match(apparel,/【素材】綿100%/); assert.match(apparel,/肩幅：45cm/); assert.match(apparel,/発送/);
+const html=fs.readFileSync('index.html','utf8'); assert.match(html,/id="other-review-panel"/);
+console.log('PASS sourced other template, accessories states, confirmation gate, edited/rehydrated state, unsafe sources, apparel preservation');

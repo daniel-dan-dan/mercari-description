@@ -87,8 +87,9 @@ const nonApparelDescription = hooks.buildDescription(
   'マキタ 充電式ドライバードリル',
   'other',
 );
-assert.match(nonApparelDescription, /【寸法】\n縦：20cm/);
-assert.match(nonApparelDescription, /【素材・仕様】型番 DF001/);
+assert.doesNotMatch(nonApparelDescription, /【寸法】|【素材・仕様】|【カラー】|丁寧に梱包|発送/);
+assert.match(nonApparelDescription, /【付属品】\n付属品は確認中です。/);
+assert.match(nonApparelDescription, /【動作確認】\n動作未確認です。/);
 assert.doesNotMatch(nonApparelDescription, /L（平置き採寸）/);
 assert.match(nonApparelDescription, /状態・付属品・仕様は、写真と説明文をご確認ください/);
 assert.doesNotMatch(nonApparelDescription, /自宅保管の中古品/);
@@ -218,7 +219,7 @@ assert.match(indexHtml, /name="product-gender" value="other"/);
 assert.doesNotMatch(indexHtml, /id="product-gender-note"|工具などアパレル以外として生成します/);
 assert.match(indexHtml, /id="category-field"/);
 assert.match(indexHtml, /id="m-size-field"/);
-assert.match(indexHtml, /v20261029a \/ UI改善・セキュリティ強化/);
+assert.match(indexHtml, /v20261101a \/ UI改善・セキュリティ強化/);
 
 assert.match(source, /syncBroadCategoryForProductGenderChange_\(input\.value\)/);
 assert.match(source, /el\('category'\)\.value = isNonApparelProductAudience\(\) \? 'other' : ''/);
@@ -233,17 +234,17 @@ const styles = fs.readFileSync('styles.css', 'utf8');
 assert.match(styles, /\.gender-segmented\s*\{[\s\S]*grid-template-columns:\s*repeat\(3/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20261029a/);
+assert.match(serviceWorker, /mercari-description-v20261101a/);
 
 const pairHtml = fs.readFileSync('pair.html', 'utf8');
-assert.match(pairHtml, /styles\.css\?v=20261029a/);
+assert.match(pairHtml, /styles\.css\?v=20261101a/);
 
 console.log(JSON.stringify({
   ok: true,
   audiences: ['men', 'women', 'other'],
   nonApparelCategory: 'manual-after-draft',
   nonApparelSize: 'not-required',
-  version: 'v20261029a',
+  version: 'v20261101a',
 }));
 
 // Empty measurements must never produce placeholder rows or empty suit sections.

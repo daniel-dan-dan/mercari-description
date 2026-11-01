@@ -4269,3 +4269,12 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 /* Inventory estimates stay visible, alongside the newest-first fallback. */
 .inventory-match-reason { color: #9a4962; line-height: 1.5; }
 #inventory-suggest-btn { grid-column: 1 / -1; }
+/* Sourced non-apparel facts and the actual used-item checks. */
+.other-review-panel { margin: 16px 0; overflow-wrap: anywhere; }
+.other-review-panel a { color: #a92b42; text-decoration: underline; }
+.other-review-panel label { display: block; margin-top: 12px; }
+.other-review-panel textarea, .other-review-panel select { width: 100%; box-sizing: border-box; }
+.other-review-panel .other-confirm { display: flex; align-items: flex-start; gap: 8px; line-height: 1.6; }
+.other-review-panel .other-confirm input { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 3px; }
+.other-facts { padding-left: 1.3em; }
+.other-facts li { margin-bottom: 8px; }

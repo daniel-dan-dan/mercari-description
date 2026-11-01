@@ -137,7 +137,7 @@ assert.ok(
 );
 
 const nonApparelPrompt = hooks.buildDescriptionSystemPrompt('', 'other');
-assert.match(nonApparelPrompt, /日々の作業へすぐに取り入れられます/);
+assert.match(nonApparelPrompt, /同じ型番の資料で確認した範囲/);
 assert.doesNotMatch(nonApparelPrompt, /滑らかな肌触り|軽やかな着心地|幅広い装い/);
 
 const description = hooks.buildDescription(
@@ -163,7 +163,7 @@ console.log(JSON.stringify({
   ok: true,
   punctuationFallback: true,
   promptPriority: 'appeal-rules-after-past-style',
-  version: 'v20261029a',
+  version: 'v20261101a',
 }));
 
 const bulletInput = '・素材が特徴です。軽く羽織れます。\n・型番3.5です。';

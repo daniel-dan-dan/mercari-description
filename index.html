@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261029a">
-  <script src="public-config.js?v=20261029a"></script>
+  <link rel="stylesheet" href="styles.css?v=20261101a">
+  <script src="public-config.js?v=20261101a"></script>
   <script src="vendor/lucide/lucide.min.js?v=1.24.0"></script>
 </head>
 <body>
@@ -59,7 +59,7 @@
           </div>
           <p id="listing-style-status" class="note small unknown">まだ過去出品の文体を取得していません。</p>
         </details>
-      <p class="settings-version" id="settings-version">v20261029a / UI改善・セキュリティ強化</p>
+      <p class="settings-version" id="settings-version">v20261101a / UI改善・セキュリティ強化</p>
     </section>
 
     <!-- メイン画面 -->
@@ -89,7 +89,7 @@
 
     <section id="main-screen" class="screen" hidden>
       <header>
-        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261029a</small></div>
+        <div class="app-heading"><h1>メルカリAI出品</h1><small class="app-version">v20261101a</small></div>
         <div class="header-actions">
           <button id="reset-btn" class="icon-btn" title="入力内容をリセット" aria-label="入力内容をリセット"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           <button id="inventory-hub-open" class="icon-btn" type="button" title="在庫" aria-label="在庫" disabled><i data-lucide="package" aria-hidden="true"></i></button>
@@ -179,6 +179,7 @@
             </label>
           </div>
         </div>
+        <p id="other-research-note" class="note small" hidden>メーカー・型番が読める写真も追加してください。生成時にネットで特徴と標準付属品を調べます。通常の生成料金に加えて検索のAPI料金がかかります。</p>
         <div id="category-field">
           <label for="category">カテゴリ</label>
           <select id="category">
@@ -219,6 +220,8 @@
         <label for="title-text">商品名</label>
         <textarea id="title-text" rows="2" spellcheck="false" aria-describedby="title-character-count"></textarea>
         <p id="title-character-count" class="title-character-count" aria-live="polite">0/40</p>
+
+        <section id="other-review-panel" class="draft-card other-review-panel" aria-label="商品調査・付属品・動作確認" hidden></section>
 
         <label for="result-text">説明文</label>
         <textarea id="result-text" rows="18" spellcheck="false"></textarea>
@@ -446,7 +449,7 @@
     <section id="compose-modal" class="modal" hidden>
       <div class="modal-content compose">
         <header class="modal-header">
-          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261029a</span></h2>
+          <h2 id="compose-title">✂️ 画像合成 <span class="ver-tag">v20261101a</span></h2>
           <button id="compose-close" class="icon-btn" title="閉じる" aria-label="画像編集を閉じる"><i data-lucide="x" aria-hidden="true"></i></button>
         </header>
         <p id="compose-step-label" class="compose-step-label"></p>
@@ -457,13 +460,13 @@
 
   </div>
 
-  <script src="catalog-data.js?v=20261029a"></script>
-  <script src="photo-adjust.js?v=20261029a"></script>
-  <script src="photo-text.js?v=20261029a"></script>
-  <script src="photo-text-editor.js?v=20261029a"></script>
-  <script src="app.js?v=20261029a"></script>
-  <script src="inventory-hub.js?v=20261029a"></script>
-  <script src="review.js?v=20261029a"></script>
-  <script src="bootstrap.js?v=20261029a"></script>
+  <script src="catalog-data.js?v=20261101a"></script>
+  <script src="photo-adjust.js?v=20261101a"></script>
+  <script src="photo-text.js?v=20261101a"></script>
+  <script src="photo-text-editor.js?v=20261101a"></script>
+  <script src="app.js?v=20261101a"></script>
+  <script src="inventory-hub.js?v=20261101a"></script>
+  <script src="review.js?v=20261101a"></script>
+  <script src="bootstrap.js?v=20261101a"></script>
 </body>
 </html>
