@@ -1,0 +1,36 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const nodes=new Map();
+const checkbox={checked:false,dataset:{},hasAttribute:n=>n==='data-other-confirm'};
+const status={textContent:''}, selects=[0,1].map(i=>({dataset:{otherChoice:String(i)},value:'unknown',hasAttribute:()=>false}));
+const panel={hidden:true,innerHTML:'',querySelector:s=>s==='[data-other-confirm]'?checkbox:status,querySelectorAll:()=>selects};
+nodes.set('other-review-panel',panel);nodes.set('result-section',{hidden:false});nodes.set('title-text',{value:'メーカー MODEL-123'});nodes.set('result-text',{value:''});
+const context={console,URL,__MERCARI_TEST__:true,document:{getElementById:id=>nodes.get(id)||null},localStorage:{getItem:()=>null}};
+context.globalThis=context;vm.createContext(context);
+vm.runInContext(fs.readFileSync('catalog-data.js','utf8')+'\n'+fs.readFileSync('app.js','utf8'),context);
+vm.runInContext('getSelectedProductGender=()=>"other";isProductInputLocked_=()=>false;scheduleSave=()=>{};updateDraftChecklist=()=>{};',context);
+const h=context.MercariAppTestHooks,url='https://maker.example.com/product';
+const data={product_id:'fixture',other_template_version:1,condition:'検証用の状態です。',research:{status:'verified',manufacturer:'メーカー',model:'MODEL-123',sources:[{url}],
+ features:[{text:'特徴です。',source_url:url}],standard_accessories:[{name:'コード',source_url:url,observation:'pictured'},{name:'説明書',source_url:url,observation:'unknown'}]}};
+data.other_review=h.initialOtherReview_(data.research);context.fixture=data;vm.runInContext('lastAiData=fixture',context);
+const text=nodes.get('result-text');text.value=h.buildOtherDescription_(data,'メーカー MODEL-123');
+h.renderOtherReview_();assert.equal(panel.hidden,false);
+function confirm(){checkbox.checked=true;panel.onchange({target:checkbox});}
+confirm();assert.equal(checkbox.checked,false);assert.match(status.textContent,/要確認/);
+const bulk={dataset:{otherBulk:'included'},hasAttribute:()=>false};panel.onclick({target:bulk});
+assert.equal(selects[1].value,'included');assert.match(text.value,/・説明書/);
+selects[1].value='missing';panel.onchange({target:selects[1]});assert.match(text.value,/欠品：説明書/);
+assert.equal(checkbox.checked,false);
+const operation={dataset:{otherField:'operation'},value:'通電のみ確認。その他の動作は未確認です。',hasAttribute:()=>false};panel.oninput({target:operation});
+assert.match(text.value,/通電のみ確認/);assert.equal(checkbox.checked,false);
+confirm();assert.equal(checkbox.checked,true);assert.equal(h.otherReviewReady_(data,nodes.get('title-text').value,text.value),true);
+text.value=text.value.replace('特徴です。','手動で調整した特徴です。');h.renderOtherReview_();assert.equal(checkbox.checked,false);
+confirm();assert.equal(checkbox.checked,true);assert.match(text.value,/手動で調整した特徴/);
+nodes.get('title-text').value='メーカー MODEL-123 本体';h.renderOtherReview_();assert.equal(checkbox.checked,false);confirm();assert.equal(checkbox.checked,true);
+const restored=JSON.parse(JSON.stringify(data));context.fixture=restored;vm.runInContext('lastAiData=fixture',context);h.renderOtherReview_();assert.equal(checkbox.checked,true);
+assert.equal(h.otherReviewReady_(restored,nodes.get('title-text').value,text.value),true);
+const oldHandler=panel.onchange;context.fixture={...restored,product_id:'new',other_review:h.initialOtherReview_(restored.research)};
+vm.runInContext('lastAiData=fixture',context);oldHandler({target:operation});assert.equal(context.fixture.other_review.confirmed,false);
+context.fixture.research.standard_accessories[0].name='<img src=x onerror=alert(1)>';h.renderOtherReview_();
+assert.ok(panel.innerHTML.includes('&lt;img'));assert.ok(!panel.innerHTML.includes('<img src=x'));
+console.log('PASS other review events: unresolved block, bulk/individual choice, operation edit, confirmation, manual text preservation, title edit, restoration, stale product and XSS');
