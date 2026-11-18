@@ -566,10 +566,15 @@ textarea.streaming {
   background: #fff8f8;
 }
 .result-meta {
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto;
   align-items: center;
   font-size: 12px;
 }
+.result-meta strong { grid-column: 1 / -1; }
+.result-meta details { grid-column: 1 / -1; min-width: 0; }
+.result-meta summary { padding: 8px 0; cursor: pointer; }
+.result-meta ul { margin: 4px 0; padding-left: 1.4em; overflow-wrap: anywhere; }
+.result-meta li + li { margin-top: 6px; }
 .markdown-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .markdown-overview div { min-width: 0; }
 .markdown-overview span,

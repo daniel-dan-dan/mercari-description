@@ -5114,8 +5114,11 @@ function renderResultMetadata_(data = {}) {
   const photoCount = Number(data.photo_count || uploadedImages.length || 0);
   node.hidden = false;
   node.innerHTML = `<strong>この商品の結果</strong><span>生成: ${escapeHtml(generated)}</span><span>${Array.isArray(data.photo_notes) ? photoCount + '枚中' + data.photo_notes.length + '枚を確認' : '写真: ' + photoCount + '枚'}</span>`;
-  const unclear = (data.photo_notes || []).flatMap((note, i) => note.includes('要確認') ? [(i + 1) + '枚目：' + note] : []);
-  if (unclear.length) node.innerHTML += '<span>' + unclear.map(escapeHtml).join('<br>') + '</span>';
+  const unclear = (Array.isArray(data.photo_notes) ? data.photo_notes : []).flatMap((note, i) => typeof note === 'string' && note.includes('要確認') ? [(i + 1) + '枚目：' + note] : []);
+  if (unclear.length) {
+    node.innerHTML += '<details><summary>要確認の写真（' + unclear.length + '枚）</summary><ul>'
+      + unclear.map(note => '<li>' + escapeHtml(note) + '</li>').join('') + '</ul></details>';
+  }
 }
 
 function missingTitleWordsInDescription_() {
