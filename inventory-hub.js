@@ -125,7 +125,9 @@
         }
         remember(null);
         if (result.interruptedBatch) {
-          notice(result.message || '途中で中断しました。残りの商品を再照合してください。', 'warn');
+          const count = result.summary?.updated;
+          const verified = Number.isSafeInteger(count) && count >= 0 ? count + '件のチェックを反映済みです。' : '';
+          notice('照合が途中で中断しました。' + verified + '残りの商品はもう一度照合してください。', 'warn');
           return true;
         }
         const updated = Number(result.summary?.updated);

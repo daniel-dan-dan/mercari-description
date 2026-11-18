@@ -55,6 +55,16 @@ function fixture(handler, initial = null) {
   assert.equal(resumed.calls.some(call => call.options.method === 'POST'), false);
   assert.equal(resumed.controller.state.pending.operationId, pending.operationId);
 
+  const partial = fixture(async path => path.includes('/result') ? { ok: true, operationId: pending.operationId,
+    status: 'done', interruptedBatch: true, summary: {updated: 2} } : hub(), pending);
+  await partial.controller.resume();
+  assert.equal(partial.controller.state.kind, 'warn');
+  assert.match(partial.controller.state.message, /2件.*残り/);
+  const noService = fixture(async () => { throw Object.assign(Error('送信前の接続失敗'), {beforeSend: true}); });
+  await noService.controller.start('reconcile');
+  assert.equal(noService.controller.state.pending, null);
+  assert.equal(noService.calls.length, 1);
+
   // Confirmation is not successful without exact item identity and readback.
   const confirmOp = { operationId: 'inventory-hub-confirm-old', kind: 'confirm', inventoryUuid: uuid, itemId: 'm1234' };
   let verified = false;
@@ -135,6 +145,6 @@ function fixture(handler, initial = null) {
     assert.ok(button.includes('aria-label='), id + ' keeps its accessible name');
   }
   assert.doesNotMatch(source, /\.innerHTML\s*=/);
-  assert.match(fs.readFileSync('sw.js', 'utf8'), /inventory-hub\.js\?v=20261118a/);
+  assert.match(fs.readFileSync('sw.js', 'utf8'), /inventory-hub\.js\?v=20261118b/);
   console.log('PASS inventory hub: held rows, filters, safe links, GET-only recovery, reload, exact receipt, no double writes, storage failures and stale reads');
 })().catch(error => { console.error(error); process.exitCode = 1; });
