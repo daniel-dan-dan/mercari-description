@@ -108,13 +108,13 @@ const indexHtml = fs.readFileSync('index.html', 'utf8');
 });
 assert.match(indexHtml, />一時保存して次の商品へ</);
 assert.match(indexHtml, /この端末内に保存します/);
-assert.match(indexHtml, /styles\.css\?v=20261101b/);
-assert.match(indexHtml, /app\.js\?v=20261101b/);
+assert.match(indexHtml, /styles\.css\?v=20261118a/);
+assert.match(indexHtml, /app\.js\?v=20261118a/);
 
 assert.match(source, /const DB_VERSION = 2;/);
 assert.match(source, /const DB_TEMPORARY_DRAFT_STORE = 'inputDrafts';/);
 assert.match(source, /const DB_TEMPORARY_DRAFT_SUMMARY_STORE = 'inputDraftSummaries';/);
-assert.match(source, /await putTemporaryDraft_\(record, existing\?\.updatedAt \?\? null\);[\s\S]*await clearCurrentProduct_/);
+assert.match(source, /await putTemporaryDraft_\(record, activeTemporaryDraftId && !conflict \? activeDraftRevision : null\);[\s\S]*await clearCurrentProduct_/);
 assert.match(source, /async function putTemporaryDraft_\(record, expectedUpdatedAt = null\)[\s\S]*current\?\.status === 'generating'/);
 assert.match(source, /status: 'failed'/);
 assert.match(source, /現在の写真と採寸は消していません/);
@@ -140,7 +140,7 @@ assert.match(styles, /\.temporary-draft-card/);
 assert.match(styles, /\.btn\.temporary-save-btn/);
 
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
-assert.match(serviceWorker, /mercari-description-v20261101b/);
+assert.match(serviceWorker, /mercari-description-v20261118a/);
 
 console.log(JSON.stringify({
   ok: true,
@@ -149,5 +149,5 @@ console.log(JSON.stringify({
   compactPhotoFields: Object.keys(compactPhoto),
   measurementCount: hooks.temporaryDraftMeasurementCount_(compactState),
   statuses: ['incomplete', 'saved', 'failed', 'generated'],
-  version: 'v20261101b',
+  version: 'v20261118a',
 }));

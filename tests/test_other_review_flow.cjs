@@ -34,3 +34,14 @@ vm.runInContext('lastAiData=fixture',context);oldHandler({target:operation});ass
 context.fixture.research.standard_accessories[0].name='<img src=x onerror=alert(1)>';h.renderOtherReview_();
 assert.ok(panel.innerHTML.includes('&lt;img'));assert.ok(!panel.innerHTML.includes('<img src=x'));
 console.log('PASS other review events: unresolved block, bulk/individual choice, operation edit, confirmation, manual text preservation, title edit, restoration, stale product and XSS');
+
+// A seller can edit the closing sentence before recording a failed operation.
+context.fixture=data; vm.runInContext('lastAiData=fixture',context);
+text.value=text.value.replace('✅即購入OKです！','即購入歓迎です。');
+h.renderOtherReview_();
+operation.value='水漏れがあります。';panel.oninput({target:operation});confirm();
+assert.ok(text.value.includes('【動作確認】\n水漏れがあります。'));
+assert.ok(text.value.includes('即購入歓迎です。'));
+assert.equal(h.otherReviewReady_(data,nodes.get('title-text').value,text.value),true);
+text.value=text.value.replace('【動作確認】','【試験結果】');confirm();
+assert.equal(h.otherReviewReady_(data,nodes.get('title-text').value,text.value),false);

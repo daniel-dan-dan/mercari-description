@@ -124,6 +124,10 @@
           }
         }
         remember(null);
+        if (result.interruptedBatch) {
+          notice(result.message || '途中で中断しました。残りの商品を再照合してください。', 'warn');
+          return true;
+        }
         const updated = Number(result.summary?.updated);
         notice(pending.kind === 'confirm' ? '在庫シートへのチェックを確認しました。'
           : `照合しました。${Number.isFinite(updated) ? `${updated}件のチェックを反映しました。` : ''}確認待ちの商品もご確認ください。`, 'success');
@@ -181,7 +185,8 @@
         let result;
         try {
           result = await request(`/inventory/hub/${kind}`, { method: 'POST', body: { ...payload, operationId: id } });
-        } catch (_) {
+        } catch (error) {
+          if (error.beforeSend) { remember(null); notice(error.message, 'error'); return false; }
           notice('受付結果を確認しています。同じ処理は再送しません。', 'warn');
         }
         const rejected = result?.ok === false && (result.requestAccepted === false
@@ -400,7 +405,9 @@
 
   function createRequest({ getServiceUrl, fetchWithTimeout, readJsonResponse }) {
     return async (path, options = {}) => {
-      const service = await getServiceUrl();
+      let service;
+      try { service = await getServiceUrl(); }
+      catch (error) { throw Object.assign(new Error('Macに接続できません。接続を確認して再試行してください。'), { beforeSend: true }); }
       const write = options.method === 'POST';
       const requestOptions = write ? { method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Operation-Id': options.body.operationId }, body: JSON.stringify(options.body) } : {};

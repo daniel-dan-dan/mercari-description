@@ -4279,3 +4279,5 @@ button.draft-check-item { display: grid; grid-template-columns: 24px minmax(0, 1
 .other-review-panel .other-confirm input { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 3px; }
 .other-facts { padding-left: 1.3em; }
 .other-facts li { margin-bottom: 8px; }
+
+.file-label:has(+ input:focus-visible) { outline: 3px solid currentColor; }
